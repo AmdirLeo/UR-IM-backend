@@ -1,13 +1,20 @@
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI
+import uvicorn
+from core.config import settings
 
-app = FastAPI(title="IM System API")
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
+    debug=settings.DEBUG
+)
 
-@app.get("/")
-async def root():
-    return {"message": "Backend System Initialized"}
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "online",
+        "project": settings.PROJECT_NAME,
+        "version": settings.VERSION
+    }
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    await websocket.send_text("WebSocket connection established")
-    await websocket.close()
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
