@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     # --- 安全与 JWT 配置 ---
     JWT_SECRET_KEY: str
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30 #默认为30分钟
 
     # --- 邮件服务配置 (可选) ---
     MAIL_USERNAME: Optional[str] = None

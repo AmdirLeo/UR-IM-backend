@@ -16,5 +16,3 @@ backend/
 └── db/                  # 【持久层】数据存取核心
     ├── database.py      # 连接池管理：asyncpg pool 的初始化与生命周期
     └── repositories/    # 原生 SQL 操作：唯一允许编写 SQL 语句的地方
-
-frontemd/
