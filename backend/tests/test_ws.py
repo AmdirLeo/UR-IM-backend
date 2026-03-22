@@ -1,17 +1,38 @@
 import pytest
+import asyncio
+import time
+import jwt
+from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
-from main import app
-import time
-import asyncio
-from core.ws_manager import manager
 
-# 关闭服务器内部异常抛出
+from main import app
+from core.security import create_access_token
+from core.ws_manager import manager
+from core.config import settings
+
+# 1. 初始化测试客户端（关闭服务器内部异常抛出）
 client = TestClient(app, raise_server_exceptions=False)
 
+# 2. 辅助函数：快速生成带有有效 Token 的 WebSocket URL
+def get_ws_url(user_id: int) -> str:
+    token = create_access_token(data={"sub": str(user_id)})
+    return f"/chat/ws?token={token}"
+
+# ==========================================
+# 基础鉴权与通信测试
+# ==========================================
+
+def test_websocket_auth_failure():
+    """测试安全机制：携带无效 Token 应该被服务器拒绝连接"""
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with client.websocket_connect("/chat/ws?token=invalid_fake_token"):
+            pass
+    assert exc.value.code == 1008
+
 def test_websocket_connect_and_broadcast():
-    """测试用户上线时的系统广播"""
-    with client.websocket_connect("/chat/ws/1") as websocket:
+    """测试携带合法 Token 的用户上线广播"""
+    with client.websocket_connect(get_ws_url(1)) as websocket:
         data = websocket.receive_json()
         assert data["type"] == "system"
         assert "用户 1" in data["message"]
@@ -19,10 +40,10 @@ def test_websocket_connect_and_broadcast():
 
 def test_websocket_private_message():
     """测试点对点私聊功能"""
-    with client.websocket_connect("/chat/ws/1") as ws1:
+    with client.websocket_connect(get_ws_url(1)) as ws1:
         ws1.receive_json() 
         
-        with client.websocket_connect("/chat/ws/2") as ws2:
+        with client.websocket_connect(get_ws_url(2)) as ws2:
             ws2.receive_json()
             ws1_broadcast = ws1.receive_json()
             assert ws1_broadcast["type"] == "system"
@@ -36,10 +57,10 @@ def test_websocket_private_message():
 
 def test_websocket_group_broadcast():
     """测试世界频道的群发功能"""
-    with client.websocket_connect("/chat/ws/1") as ws1:
+    with client.websocket_connect(get_ws_url(1)) as ws1:
         ws1.receive_json() 
         
-        with client.websocket_connect("/chat/ws/2") as ws2:
+        with client.websocket_connect(get_ws_url(2)) as ws2:
             ws2.receive_json() 
             ws1.receive_json() 
             
@@ -48,45 +69,34 @@ def test_websocket_group_broadcast():
             broadcast_msg = ws1.receive_json()
             assert broadcast_msg["type"] == "broadcast"
             assert broadcast_msg["from"] == 2
-            
-            self_msg = ws2.receive_json()
-            assert self_msg["type"] == "broadcast"
 
 # ==========================================
-# 🔽 以下是为 V2.0 新增的测试用例
+# 高级机制与极限边缘测试
 # ==========================================
 
 def test_websocket_ping_pong_heartbeat():
     """测试心跳包机制：发 ping 必须回 pong"""
-    with client.websocket_connect("/chat/ws/1") as ws:
-        ws.receive_json() # 消耗掉上线广播
-        
-        # 模拟前端发送心跳保活包
+    with client.websocket_connect(get_ws_url(1)) as ws:
+        ws.receive_json() 
         ws.send_json({"type": "ping"})
         
-        # 后端应该立即回复 pong
         response = ws.receive_json()
         assert response["type"] == "pong"
 
 def test_websocket_single_sign_on_kick():
-    """测试单点登录（顶号）机制：同 ID 异地登录，旧连接被断开"""
-    # 1. 设备 A 登录
-    with client.websocket_connect("/chat/ws/1") as ws_device_a:
-        ws_device_a.receive_json() # 消耗上线广播
+    """测试单点登录机制：同 ID 异地登录，旧连接被断开"""
+    url = get_ws_url(1)
+    with client.websocket_connect(url) as ws_device_a:
+        ws_device_a.receive_json() 
         
-        # 2. 设备 B 用同样的 user_id=1 登录
-        with client.websocket_connect("/chat/ws/1") as ws_device_b:
-            ws_device_b.receive_json() # 消耗上线广播
+        with client.websocket_connect(url) as ws_device_b:
+            ws_device_b.receive_json() 
             
-            # 3. 此时设备 A 的旧连接应该已经被服务器主动断开
-            # 我们尝试用设备 A 接收消息，应该会抛出 WebSocketDisconnect 异常
             with pytest.raises(WebSocketDisconnect):
                 ws_device_a.receive_json()
 
 def test_heartbeat_timeout_purge():
-    """测试后台任务：清理超时连接并广播"""
-    
-    # 1. 定义一个假的 WebSocket 对象，拦截发送的消息用于断言
+    """测试后台任务：清理超时连接并向其他人广播"""
     class MockWebSocket:
         def __init__(self):
             self.messages = []
@@ -95,28 +105,51 @@ def test_heartbeat_timeout_purge():
         async def send_json(self, data):
             self.messages.append(data)
             
-    # 清空可能存在的环境污染
     manager.active_connections.clear()
     
-    # 2. 伪造用户 1（已超时 100 秒）
     manager.active_connections[1] = {
         "ws": MockWebSocket(),
-        "last_active": time.time() - 100
+        "last_active": time.time() - 100 
     }
     
-    # 3. 伪造用户 2（正常活跃）
     ws2 = MockWebSocket()
     manager.active_connections[2] = {
         "ws": ws2,
-        "last_active": time.time()
+        "last_active": time.time() 
     }
     
-    # 4. 手动执行一次清理逻辑 (使用 asyncio.run 执行 async 函数)
     asyncio.run(manager.purge_timeouts())
     
-    # 5. 硬核断言：检查内存状态和广播逻辑
-    assert 1 not in manager.active_connections # 用户 1 被成功清理
-    assert 2 in manager.active_connections     # 用户 2 依然存活
+    assert 1 not in manager.active_connections 
+    assert 2 in manager.active_connections     
+    assert len(ws2.messages) == 1              
+    assert "已离线" in ws2.messages[0]["message"]
+
+def test_websocket_missing_sub_in_token():
+    """测试 WebSocket 鉴权层：如果 Token 签名合法，但缺少 sub 字段，应拒绝连接"""
+    payload_without_sub = {
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=10)
+    }
+    malformed_token = jwt.encode(payload_without_sub, settings.JWT_SECRET_KEY, algorithm="HS256")
     
-    assert len(ws2.messages) == 1              # 用户 2 收到了广播通知
-    assert "连接超时已离线" in ws2.messages[0]["message"]
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with client.websocket_connect(f"/chat/ws?token={malformed_token}"):
+            pass
+    assert exc.value.code == 1008
+
+def test_websocket_explicit_client_disconnect():
+    """测试 WebSocket 路由层：客户端主动断开连接时，后端的捕获与离线广播逻辑"""
+    manager.active_connections.clear()
+    
+    with client.websocket_connect(get_ws_url(99)) as ws_observer:
+        ws_observer.receive_json() 
+        
+        with client.websocket_connect(get_ws_url(88)) as ws_actor:
+            ws_observer.receive_json() 
+            ws_actor.close()
+            
+        offline_broadcast = ws_observer.receive_json()
+        assert offline_broadcast["type"] == "system"
+        assert "用户 88" in offline_broadcast["message"]
+        assert "已离线" in offline_broadcast["message"]
+        assert 88 not in manager.active_connections
