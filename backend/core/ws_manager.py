@@ -53,26 +53,25 @@ class ConnectionManager:
         for user_id in list(self.active_connections.keys()):
             await self.send_personal_message(message, user_id)
 
+    async def purge_timeouts(self):
+        current_time = time.time()
+        timeout_users = [
+            uid for uid, conn in self.active_connections.items()
+            if current_time - conn["last_active"] > self.HEARTBEAT_TIMEOUT
+        ]
+        
+        for uid in timeout_users:
+            print(f"[Heartbeat] 发现僵尸连接，强制踢出用户 {uid}")
+            await self.disconnect(uid)
+            await self.broadcast({
+                "type": "system", 
+                "message": f"用户 {uid} 连接超时已离线"
+            })
+
     async def check_heartbeats(self):
-        """
-        后台死循环巡检：定期清理僵尸连接
-        """
         while True:
-            await asyncio.sleep(10) # 每 10 秒巡检一次
-            current_time = time.time()
-            # 找出所有超时的 user_id
-            timeout_users = [
-                uid for uid, conn in self.active_connections.items()
-                if current_time - conn["last_active"] > self.HEARTBEAT_TIMEOUT
-            ]
-            
-            for uid in timeout_users:
-                print(f"[Heartbeat] 发现僵尸连接，强制踢出用户 {uid}")
-                await self.disconnect(uid)
-                await self.broadcast({
-                    "type": "system", 
-                    "message": f"用户 {uid} 连接超时已离线"
-                })
+            await asyncio.sleep(10)
+            await self.purge_timeouts()
 
 # 全局单例
 manager = ConnectionManager()

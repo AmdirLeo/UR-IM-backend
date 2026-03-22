@@ -3,10 +3,17 @@ venv/
 __pycache__/
 *.pyc
 .env
+*.py[cod]
+*$py.class
+env/
 
 # 操作系统与 IDE
 .DS_Store
 .vscode/
 .idea/
 
+# 测试与覆盖率报告产物
 .pytest_cache/
+.coverage
+htmlcov/
+coverage.xml

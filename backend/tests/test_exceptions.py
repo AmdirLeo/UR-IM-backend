@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field
 from core.exceptions import setup_exception_handlers, BusinessException
+from fastapi.exceptions import RequestValidationError
 
 # 1. 构造测试专用的微型应用并注册异常处理器
 app = FastAPI()
@@ -11,6 +12,12 @@ setup_exception_handlers(app)
 @app.get("/test-business-error")
 async def trigger_business_error():
     raise BusinessException(status_code=400, detail="业务逻辑错误测试")
+
+# 专门用于触发空错误列表的路由
+@app.get("/test-empty-validation-error")
+async def trigger_empty_validation_error():
+    # 强行抛出一个没有错误详情的异常
+    raise RequestValidationError(errors=[])
 
 class MockSchema(BaseModel):
     # 要求 name 至少 5 个字符，用于触发 Pydantic 校验错误
@@ -52,4 +59,13 @@ def test_global_exception_handler():
     data = response.json()
     assert data["code"] == 500
     assert data["msg"] == "服务器内部错误，请稍后再试"
+    assert data["data"] is None
+
+def test_empty_validation_exception_handler():
+    response = client.get("/test-empty-validation-error")
+    assert response.status_code == 422
+    data = response.json()
+    assert data["code"] == 422
+    # 完美命中我们要测试的 else 分支！
+    assert data["msg"] == "数据格式错误" 
     assert data["data"] is None
