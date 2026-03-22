@@ -19,8 +19,8 @@ class UserCreate(UserBase):
 # 3. 登录时的请求体
 # ==========================================
 class UserLogin(BaseModel):
-    # 工业界标准：允许用户用用户名或邮箱登录
-    username_or_email: str = Field(..., description="用户名或邮箱")
+    # 工业界标准：允许用户用使用id或邮箱登录
+    id_or_email: str = Field(..., description="id或邮箱")
     password: str = Field(..., description="明文密码")
 
 # ==========================================
