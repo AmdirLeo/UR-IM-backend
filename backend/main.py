@@ -6,6 +6,7 @@ from core.config import settings
 from core.exceptions import setup_exception_handlers
 from api.routes import chat
 from core.ws_manager import manager
+from api.routes import chat, message
 
 # 使用 lifespan 管理后台任务
 from contextlib import asynccontextmanager
@@ -37,6 +38,8 @@ app.add_middleware(
 setup_exception_handlers(app)
 
 app.include_router(chat.router, prefix="/chat", tags=["IM WebSocket"])
+
+app.include_router(message.router, prefix="/api/messages", tags=["Message API"])
 
 @app.get("/health")
 async def health_check():
