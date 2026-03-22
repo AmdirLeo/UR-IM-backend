@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from core.config import settings
+from core.exceptions import setup_exception_handlers
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -19,6 +20,8 @@ app.add_middleware(
     allow_methods=["*"],  # 允许所有 HTTP 方法 (GET, POST, etc.)
     allow_headers=["*"],  # 允许所有请求头
 )
+
+setup_exception_handlers(app)
 
 @app.get("/health")
 async def health_check():
