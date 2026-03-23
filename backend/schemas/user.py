@@ -1,41 +1,51 @@
 from pydantic import BaseModel, EmailStr, Field
+from typing import Optional
 
 # ==========================================
-# 1. 共享的基础属性
+# 1. 注册相关结构
 # ==========================================
-class UserBase(BaseModel):
-    # Field(...) 表示必填项，并利用 min_length/max_length 防御恶意超长字符串
+class EmailRequest(BaseModel):
+    email: EmailStr = Field(..., description="邮箱地址")
+
+class UserRegister(BaseModel):
     username: str = Field(..., min_length=3, max_length=20, description="用户名")
+    password: str = Field(..., min_length=6, max_length=50, description="明文密码")
     email: EmailStr = Field(..., description="用户邮箱")
+    verification_code: str = Field(..., description="邮箱验证码")
+
+class RegisterResponse(BaseModel):
+    code: int = 200
+    id: int = Field(..., description="数据库生成的自增全局唯一ID")
 
 # ==========================================
-# 2. 注册时的请求体 (接收前端传来的 JSON)
-# ==========================================
-class UserCreate(UserBase):
-    # 继承了 username 和 email，额外增加 password
-    password: str = Field(..., min_length=6, max_length=50, description="明文密码，后端必须哈希后存库")
-
-# ==========================================
-# 3. 登录时的请求体
+# 2. 登录相关结构
 # ==========================================
 class UserLogin(BaseModel):
-    # 工业界标准：允许用户用使用id或邮箱登录
-    id_or_email: str = Field(..., description="id或邮箱")
+    # 严格按照新文档，使用 id (数据库自增的数字，前端可能会传字符串格式)
+    id: str = Field(..., description="用户ID (数据库自增主键)")
     password: str = Field(..., description="明文密码")
 
-# ==========================================
-# 4. 返回给前端的用户信息
-# ==========================================
-class UserResponse(UserBase):
-    # 继承了 username 和 email，增加全局唯一 ID，但绝对没有 password！
-    user_id: int  
-    
-    # 核心配置：允许直接把数据库查询结果（ORM 对象或 Record）自动转化为 JSON
-    model_config = {"from_attributes": True}
+class LoginResponse(BaseModel):
+    code: int = 200
+    token: str = Field(..., description="JWT 访问令牌")
 
 # ==========================================
-# 5. JWT Token 返回结构
+# 3. 信息修改相关结构
 # ==========================================
-class Token(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
+class UserEdit(BaseModel):
+    user_name: Optional[str] = Field(None, min_length=3, max_length=20, description="新用户名")
+    old_password: Optional[str] = Field(None, min_length=6, max_length=50, description="旧密码")
+    new_password: Optional[str] = Field(None, min_length=6, max_length=50, description="新密码")
+    email: Optional[EmailStr] = Field(None, description="新邮箱")
+
+class EmailEdit(BaseModel):
+    password: str = Field(..., description="当前明文密码，用于验证身份")
+    # 注意：新文档中写的是 new-email，在 Pydantic 中可以通过 alias 完美映射到 Python 变量
+    new_email: EmailStr = Field(..., alias="new-email", description="新邮箱地址")
+
+# ==========================================
+# 4. 通用基础响应
+# ==========================================
+class BaseResponse(BaseModel):
+    code: int = 200
+    msg: Optional[str] = None
