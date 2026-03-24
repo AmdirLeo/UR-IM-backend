@@ -114,10 +114,9 @@ async def search_users(conn: asyncpg.Connection, keyword: str) -> list[dict]:
     query = """
         SELECT user_id, username, avatar_url 
         FROM user_account 
-        WHERE username ILIKE $1 OR email ILIKE $1
-        LIMIT 20; 
+        WHERE username ILIKE $1
+        LIMIT 20;
     """
-    # 拼接模糊查询的通配符 %
     search_pattern = f"%{keyword}%"
     rows = await conn.fetch(query, search_pattern)
     return [dict(row) for row in rows]
