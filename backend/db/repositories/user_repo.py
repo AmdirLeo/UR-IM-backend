@@ -115,7 +115,7 @@ async def search_users(conn: asyncpg.Connection, keyword: str) -> list[dict]:
         SELECT user_id, username, avatar_url 
         FROM user_account 
         WHERE username ILIKE $1 OR email ILIKE $1
-        LIMIT 20; -- 限制返回数量，防止恶意查询拖垮数据库
+        LIMIT 20; 
     """
     # 拼接模糊查询的通配符 %
     search_pattern = f"%{keyword}%"
