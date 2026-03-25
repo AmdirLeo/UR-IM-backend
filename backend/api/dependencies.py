@@ -1,14 +1,17 @@
 import jwt
 from fastapi import Depends
+from typing import Annotated, Any
 from fastapi.security import OAuth2PasswordBearer
 from core.config import settings
 from core.exceptions import BusinessException
+import asyncpg
+from db.database import get_db_conn
 
 # 声明前端携带 Token 的标准方式：在 HTTP Header 中使用 Authorization: Bearer <token>
 # 这里的 tokenUrl 只是给 Swagger UI 测试用的提示，告诉它去哪里换取 Token
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
-async def get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
+def get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
     """
     全局 Token 拦截与解析依赖。
     如果 Token 合法，返回解密后的 user_id；如果非法或过期，直接抛出全局 401 异常拦截请求。
@@ -35,3 +38,7 @@ async def get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
     except jwt.InvalidTokenError:
         # 捕获 Token 签名错误、被篡改或格式错误等异常
         raise BusinessException(status_code=401, detail="无效的身份凭证")
+    
+CurrentUserId = Annotated[int, Depends(get_current_user_id)]
+
+DBConnection = Annotated[asyncpg.Connection, Depends(get_db_conn)]

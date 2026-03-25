@@ -26,7 +26,6 @@ class ConnectionManager:
         if user_id in self.active_connections:
             ws = self.active_connections[user_id]["ws"]
             try:
-                # 尝试优雅关闭 WebSocket
                 await ws.close()
             except Exception:
                 pass

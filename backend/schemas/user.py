@@ -49,3 +49,9 @@ class EmailEdit(BaseModel):
 class BaseResponse(BaseModel):
     code: int = 200
     msg: Optional[str] = None
+
+# 忘记密码
+class UserForgetPWD(BaseModel):
+    password: str = Field(..., min_length=6, max_length=50, description="明文密码")
+    email: EmailStr = Field(..., description="用户邮箱")
+    verification_code: str = Field(..., description="邮箱验证码")
