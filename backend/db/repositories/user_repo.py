@@ -1,6 +1,6 @@
 import asyncpg
 
-async def create_user(conn: asyncpg.Connection, username: str, password_hash: str, email: str) -> int:
+async def db_create_user(conn: asyncpg.Connection, username: str, password_hash: str, email: str) -> int:
     """
     创建一个新用户
     返回新创建的 user_id
@@ -15,7 +15,7 @@ async def create_user(conn: asyncpg.Connection, username: str, password_hash: st
     user_id = await conn.fetchval(query, username, password_hash, email)
     return user_id
 
-async def get_user_by_email(conn: asyncpg.Connection, email: str) -> dict | None:
+async def db_get_user_by_email(conn: asyncpg.Connection, email: str) -> dict | None:
     """
     通过邮箱查找用户（主要用于登录时校验密码，或注册时检查邮箱是否已存在）
     """
@@ -24,7 +24,7 @@ async def get_user_by_email(conn: asyncpg.Connection, email: str) -> dict | None
     row = await conn.fetchrow(query, email)
     return dict(row) if row else None
 
-async def get_user_by_id(conn: asyncpg.Connection, user_id: int) -> dict | None:
+async def db_get_user_by_id(conn: asyncpg.Connection, user_id: int) -> dict | None:
     """
     通过 ID 获取用户信息（用于展示个人主页）
     注意：这里刻意没有 SELECT password 字段，防止密码哈希被意外泄露给前端
@@ -37,7 +37,16 @@ async def get_user_by_id(conn: asyncpg.Connection, user_id: int) -> dict | None:
     row = await conn.fetchrow(query, user_id)
     return dict(row) if row else None
 
-async def update_user_login_time(conn: asyncpg.Connection, user_id: int):
+async def db_get_password_by_id(conn: asyncpg.Connection, user_id: int) -> str | None:
+    """
+    通过 ID 获取用户的密码哈希（仅用于登录时验证密码）
+    注意：这个函数只返回 password 字段，其他信息都不返回
+    """
+    query = "SELECT password FROM user_account WHERE user_id = $1;"
+    password_hash = await conn.fetchval(query, user_id)
+    return password_hash
+
+async def db_update_user_login_time(conn: asyncpg.Connection, user_id: int):
     """
     更新用户的最后登录时间
     """
@@ -48,7 +57,7 @@ async def update_user_login_time(conn: asyncpg.Connection, user_id: int):
     """
     await conn.execute(query, user_id)
 
-async def delete_user(conn: asyncpg.Connection, user_id: int) -> bool:
+async def db_delete_user(conn: asyncpg.Connection, user_id: int) -> bool:
     """
     注销用户账号。
     得益于建表时的 ON DELETE CASCADE 机制，
@@ -62,14 +71,14 @@ async def delete_user(conn: asyncpg.Connection, user_id: int) -> bool:
     # 如果状态字符串包含 'DELETE 1'，说明真的删掉了一个用户
     return status == 'DELETE 1'
 
-async def update_user_password(conn: asyncpg.Connection, user_id: int, new_password_hash: str) -> bool:
+async def db_update_user_password(conn: asyncpg.Connection, user_id: int, new_password_hash: str) -> bool:
     """
     专门用于修改密码（对应忘记密码或主动修改密码接口）
     """
     query = "UPDATE user_account SET password = $1 WHERE user_id = $2;"
     status = await conn.execute(query, new_password_hash, user_id)
     return status == 'UPDATE 1'
-async def update_user_profile(
+async def db_update_user_profile(
     conn: asyncpg.Connection, 
     user_id: int, 
     username: str = None, 
@@ -106,9 +115,9 @@ async def update_user_profile(
     status = await conn.execute(query, *values)
     return status == 'UPDATE 1'
 
-async def search_users(conn: asyncpg.Connection, keyword: str) -> list[dict]:
+async def db_search_users(conn: asyncpg.Connection, keyword: str) -> list[dict]:###分页待实现
     """
-    通过用户名或邮箱模糊查找用户
+    通过用户名模糊查找用户
     返回脱敏后的信息列表（用户名，id，头像url）
     """
     query = """

@@ -3,7 +3,7 @@ import redis.asyncio as redis
 # 初始化连接客户端
 redis_client = redis.from_url("redis://localhost:6379/0", decode_responses=True)
 
-async def save_verification_code(email: str, code: str, expire_minutes: int = 5) -> None:
+async def db_save_verification_code(email: str, code: str, expire_minutes: int = 5) -> None:
     """
     将验证码存入 Redis，并设置过期时间
     """
@@ -11,7 +11,7 @@ async def save_verification_code(email: str, code: str, expire_minutes: int = 5)
     
     await redis_client.set(key, code, ex=expire_minutes * 60)
 
-async def verify_code(email: str, code: str) -> bool:
+async def db_verify_code(email: str, code: str) -> bool:
     """
     校验验证码是否正确
     """
