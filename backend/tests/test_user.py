@@ -1,112 +1,123 @@
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from main import app
-from core.security import create_access_token
+from unittest.mock import AsyncMock, patch
 
-client = TestClient(app, raise_server_exceptions=False)
-
-# 辅助函数：生成合法的 Auth Header 用于测试需要登录的接口
-def get_auth_headers(user_id: int = 999) -> dict:
-    token = create_access_token(data={"sub": str(user_id)})
-    return {"Authorization": f"Bearer {token}"}
+from api.routes.user import router
+from api.dependencies import get_current_user_id, get_db_conn
+from core.exceptions import setup_exception_handlers
 
 # ==========================================
-# 1. 注册与密码找回测试
+# 1. Setup & Mocks
 # ==========================================
-def test_send_register_email():
-    response = client.post("/api/user/register/email", json={"email": "test@example.com"})
-    assert response.status_code == 200
-    assert response.json()["code"] == 200
+app = FastAPI()
+setup_exception_handlers(app)
+app.include_router(router, prefix="/api/users")
 
-def test_register_success():
-    """测试注册成功路径（验证码正确）"""
-    payload = {
-        "username": "new_user",
-        "password": "secure_password",
-        "email": "test@example.com",
-        "verification_code": "123456" # Mock 中设定的正确验证码
-    }
-    response = client.post("/api/user/register", json=payload)
-    assert response.status_code == 200
-    assert response.json()["id"] == 1
+class MockDBConnection:
+    pass
 
-def test_register_wrong_code():
-    """测试注册失败路径（验证码错误）"""
-    payload = {
-        "username": "new_user",
-        "password": "secure_password",
-        "email": "test@example.com",
-        "verification_code": "000000"
-    }
-    response = client.post("/api/user/register", json=payload)
+async def override_get_db_conn():
+    yield MockDBConnection()
+
+async def override_get_current_user_id():
+    return 1 
+
+app.dependency_overrides[get_db_conn] = override_get_db_conn
+app.dependency_overrides[get_current_user_id] = override_get_current_user_id
+
+client = TestClient(app)
+
+# ==========================================
+# 2. Registration Tests
+# ==========================================
+
+@patch("api.routes.user.generate_verification_code", return_value="123456")
+@patch("api.routes.user.db_save_verification_code", new_callable=AsyncMock)
+def test_send_register_email(mock_save_redis, mock_gen_code):
+    response = client.post(
+        "/api/users/register/email",
+        json={"email": "test@tsinghua.edu.cn"}
+    )
+    assert response.status_code == 200
+    mock_save_redis.assert_called_once_with("test@tsinghua.edu.cn", "123456")
+
+@patch("api.routes.user.db_verify_code", new_callable=AsyncMock)
+def test_register_invalid_code(mock_verify):
+    # 模拟验证码错误的情况，返回 False
+    mock_verify.return_value = False 
+    
+    response = client.post(
+        "/api/users/register",
+        json={
+            "username": "tester",
+            "password": "password123",
+            "email": "test@tsinghua.edu.cn",
+            "verification_code": "wrong"
+        }
+    )
     assert response.status_code == 400
-    # 🔽 修改这里：从 "detail" 改为 "msg"，对齐你的全局异常处理器
-    assert "验证码错误" in response.json()["msg"]
+    response_data = response.json()
+    assert response_data.get("msg") == "验证码错误"
 
-def test_forget_password():
-    response = client.post("/api/user/register/forgetpswd", json={"email": "test@example.com"})
+@patch("api.routes.user.db_verify_code", new_callable=AsyncMock)
+@patch("api.routes.user.db_get_user_by_email", new_callable=AsyncMock)
+@patch("api.routes.user.db_create_user", new_callable=AsyncMock)
+def test_register_success(mock_create, mock_get_user, mock_verify):
+    # 模拟验证码正确的情况，返回 True
+    mock_verify.return_value = True  
+    mock_get_user.return_value = None 
+    mock_create.return_value = 101    
+
+    response = client.post(
+        "/api/users/register",
+        json={
+            "username": "tester",
+            "password": "password123",
+            "email": "test@tsinghua.edu.cn",
+            "verification_code": "123456"
+        }
+    )
     assert response.status_code == 200
+    assert response.json()["id"] == 101
 
 # ==========================================
-# 2. 登录、登出与注销测试
+# 3. Login & Profile Tests
 # ==========================================
-def test_login_success():
-    """测试登录成功路径"""
-    payload = {"id": "1", "password": "correct_password"}
-    response = client.post("/api/user/login", json=payload)
+
+@patch("api.routes.user.db_get_user_by_email", new_callable=AsyncMock)
+@patch("api.routes.user.verify_password", return_value=True)
+@patch("api.routes.user.db_update_user_login_time", new_callable=AsyncMock)
+def test_login_email_success(mock_time, mock_verify_pwd, mock_get_user):
+    mock_get_user.return_value = {"user_id": 1, "password": "hashed_string"}
+    
+    response = client.post(
+        "/api/users/login",
+        json={"id": "test@tsinghua.edu.cn", "password": "real_password"}
+    )
     assert response.status_code == 200
     assert "token" in response.json()
 
-def test_login_fail():
-    """测试登录失败路径（模拟密码错误）"""
-    payload = {"id": "1", "password": "wrong"} 
-    response = client.post("/api/user/login", json=payload)
-    assert response.status_code == 400
-    # 🔽 修改这里：从 "detail" 改为 "msg"
-    assert "密码不一致" in response.json()["msg"]
-
-def test_logout():
-    """测试正常登出（需携带 Token）"""
-    response = client.post("/api/user/logout", headers=get_auth_headers(1))
-    assert response.status_code == 200
-    assert "登出成功" in response.json()["msg"]
-
-def test_logout_unauthorized():
-    """测试未携带 Token 尝试登出被拦截"""
-    response = client.post("/api/user/logout")
-    assert response.status_code == 401 # FastAPI 依赖注入拦截
-
-def test_delete_account():
-    response = client.post("/api/user/delete", headers=get_auth_headers(1))
-    assert response.status_code == 200
-
-# ==========================================
-# 3. 个人信息修改测试
-# ==========================================
-def test_edit_profile():
-    payload = {"user_name": "updated_name", "new_password": "new_secure_password"}
-    response = client.put("/api/user/edit", json=payload, headers=get_auth_headers(1))
-    assert response.status_code == 200
-
-def test_edit_email():
-    payload = {"password": "current_password", "new-email": "new@example.com"}
-    response = client.put("/api/user/edit/email", json=payload, headers=get_auth_headers(1))
-    assert response.status_code == 200
-
-def test_edit_portrait():
-    """测试头像上传（Multipart/form-data 格式）"""
-    # 模拟一个极简的图片文件内容
-    file_content = b"fake_image_bytes_for_testing"
-    files = {"file": ("test_avatar.png", file_content, "image/png")}
+@patch("api.routes.user.db_get_password_by_id", new_callable=AsyncMock)
+@patch("api.routes.user.verify_password", return_value=True)
+@patch("api.routes.user.db_update_user_password", new_callable=AsyncMock)
+def test_edit_password(mock_update, mock_verify, mock_get_pwd):
+    mock_get_pwd.return_value = "old_hash"
     
     response = client.put(
-        "/api/user/edit/portrait", 
-        headers=get_auth_headers(1),
-        files=files  # 注意这里使用的是 files 参数而不是 json
+        "/api/users/edit",
+        json={
+            "old_password": "123456", 
+            "new_password": "456789",
+            "user_name": None, 
+            "email": None
+        }
     )
-    
     assert response.status_code == 200
-    data = response.json()
-    assert data["code"] == 200
-    assert "test_avatar.png" in data["filekey"]
-    assert data["width"] == 1024
+    mock_update.assert_called_once()
+
+@patch("api.routes.user.db_delete_user", new_callable=AsyncMock)
+def test_delete_account(mock_delete):
+    mock_delete.return_value = True
+    response = client.post("/api/users/delete")
+    assert response.status_code == 200

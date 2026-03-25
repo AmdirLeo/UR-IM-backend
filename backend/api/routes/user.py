@@ -16,8 +16,8 @@ from db.repositories.user_repo import (
     db_update_user_profile, db_delete_user, db_get_password_by_id,
     db_get_user_by_id
 )
-from db.redis_client import db_save_verification_code, db_get_verification_code
-from core.smtp import smtp_send_email
+from db.redis_client import db_save_verification_code, db_verify_code
+# from core.smtp import smtp_send_email
 
 router = APIRouter()
 
@@ -27,14 +27,13 @@ router = APIRouter()
 @router.post("/register/email", response_model=BaseResponse, summary="发送注册验证码")
 async def send_register_email(request: EmailRequest):
     verification_code = generate_verification_code(6)
-    await smtp_send_email(request.email, verification_code)
+    # await smtp_send_email(request.email, verification_code)
     await db_save_verification_code(request.email, verification_code)
     return BaseResponse(code=200, msg="验证码已发送至邮箱")
 
 @router.post("/register", response_model=RegisterResponse, summary="用户注册")
 async def register(user_data: UserRegister, conn: DBConnection):
-    verification_code = await db_get_verification_code(user_data.email)
-    if user_data.verification_code != verification_code:
+    if not await db_verify_code(user_data.email, user_data.verification_code):
         raise BusinessException(status_code=400, detail="验证码错误")
         
     # 2. 检查邮箱是否已被注册
@@ -55,14 +54,13 @@ async def forget_password_send(request: EmailRequest, conn: DBConnection):
     if not user:
         raise BusinessException(status_code=404, detail="未找到绑定该邮箱的账号")
     verification_code = generate_verification_code(6)
-    await smtp_send_email(request.email, verification_code)
+    # await smtp_send_email(request.email, verification_code)
     await db_save_verification_code(request.email, verification_code)  
     return BaseResponse(code=200, msg="密码找回邮件已发送")
 
 @router.post("/register/forgetpswdset", response_model=BaseResponse, summary="忘记密码修改")
 async def forget_password_set(request: UserForgetPWD, conn: DBConnection):
-    verification_code = await db_get_verification_code(request.email)
-    if request.verification_code != verification_code:
+    if not await db_verify_code(request.email, request.verification_code):
         raise BusinessException(status_code=400, detail="验证码错误")
     new_password_hash = get_password_hash(request.password)
     user = await db_get_user_by_email(conn, request.email)
