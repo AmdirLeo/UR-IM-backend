@@ -34,7 +34,6 @@ class LoginResponse(BaseModel):
     code: int = 200
     token: str = Field(..., description="JWT 访问令牌")
 
-
 # ==========================================
 # 3. 信息修改相关结构
 # ==========================================
@@ -88,3 +87,9 @@ class UserSearchResult(BaseModel):
 # 搜索用户响应 (继承 BaseResponse)
 class SearchUserResponse(BaseResponse):
     data: List[UserSearchResult] = Field(default_factory=list)
+
+# 忘记密码
+class UserForgetPWD(BaseModel):
+    password: str = Field(..., min_length=6, max_length=50, description="明文密码")
+    email: EmailStr = Field(..., description="用户邮箱")
+    verification_code: str = Field(..., description="邮箱验证码")

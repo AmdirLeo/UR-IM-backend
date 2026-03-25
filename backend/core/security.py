@@ -2,6 +2,15 @@ from datetime import datetime, timedelta, timezone
 import jwt
 import bcrypt
 from core.config import settings
+import secrets
+
+def generate_verification_code(length: int = 6) -> str:
+    """
+    生成指定长度的纯数字随机验证码。
+    使用 secrets 模块保证密码学安全，防止随机数种子被暴力破解。
+    """
+    # 从 0-9 中安全地随机挑选字符，循环 6 次并拼接成字符串
+    return "".join(secrets.choice("0123456789") for _ in range(length))
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """

@@ -1,10 +1,23 @@
 from fastapi import APIRouter, Depends, UploadFile, File
-from api.dependencies import get_current_user_id
+from api.dependencies import CurrentUserId, DBConnection
+from core.ws_manager import manager
+from core.security import (
+    get_password_hash, verify_password, create_access_token,
+    generate_verification_code
+)
 from schemas.user import (
     UserRegister, RegisterResponse, UserLogin, LoginResponse, 
-    EmailRequest, UserEdit, EmailEdit, BaseResponse
+    EmailRequest, UserEdit, EmailEdit, BaseResponse, UserForgetPWD
 )
 from core.exceptions import BusinessException
+from db.repositories.user_repo import (
+    db_get_user_by_email, db_create_user, db_get_user_by_email,
+    db_get_user_by_email, db_update_user_login_time, db_update_user_password,
+    db_update_user_profile, db_delete_user, db_get_password_by_id,
+    db_get_user_by_id
+)
+from db.redis_client import db_save_verification_code, db_verify_code
+# from core.smtp import smtp_send_email
 
 router = APIRouter()
 
@@ -13,52 +26,89 @@ router = APIRouter()
 # ==========================================
 @router.post("/register/email", response_model=BaseResponse, summary="发送注册验证码")
 async def send_register_email(request: EmailRequest):
-    # TODO: 接入 SMTP 生成并发送验证码，存入 Redis
+    verification_code = generate_verification_code(6)
+    # await smtp_send_email(request.email, verification_code)
+    await db_save_verification_code(request.email, verification_code)
     return BaseResponse(code=200, msg="验证码已发送至邮箱")
 
 @router.post("/register", response_model=RegisterResponse, summary="用户注册")
-async def register(user_data: UserRegister):
-    # TODO: 校验 Redis 中的验证码
-    if user_data.verification_code != "123456": # Mock
+async def register(user_data: UserRegister, conn: DBConnection):
+    if not await db_verify_code(user_data.email, user_data.verification_code):
         raise BusinessException(status_code=400, detail="验证码错误")
         
-    # TODO: 校验邮箱/用户名是否重复
-    # TODO: 哈希密码 -> INSERT INTO user_account -> db.refresh(new_user) 拿自增 ID
+    # 2. 检查邮箱是否已被注册
+    existing_user = await db_get_user_by_email(conn, user_data.email)
+    if existing_user:
+        raise BusinessException(status_code=400, detail="该邮箱已被注册")
+        
+    # 3. 密码哈希与入库
+    hashed_pw = get_password_hash(user_data.password)
+    user_id = await db_create_user(conn, user_data.username, hashed_pw, user_data.email)
     
-    # 模拟数据库生成的自增 ID (如：第一位用户是 1，第二位是 2...)
-    mock_db_generated_id = 1 
-    return RegisterResponse(code=200, id=mock_db_generated_id)
+    return RegisterResponse(code=200, id=user_id)
 
-@router.post("/register/forgetpswd", response_model=BaseResponse, summary="忘记密码")
-async def forget_password(request: EmailRequest):
-    # TODO: 校验邮箱，发送重置邮件
+@router.post("/register/forgetpswdsend", response_model=BaseResponse, summary="忘记密码申请")
+async def forget_password_send(request: EmailRequest, conn: DBConnection):
+    # 1. 检查用户是否存在
+    user = await db_get_user_by_email(conn, request.email)
+    if not user:
+        raise BusinessException(status_code=404, detail="未找到绑定该邮箱的账号")
+    verification_code = generate_verification_code(6)
+    # await smtp_send_email(request.email, verification_code)
+    await db_save_verification_code(request.email, verification_code)  
     return BaseResponse(code=200, msg="密码找回邮件已发送")
+
+@router.post("/register/forgetpswdset", response_model=BaseResponse, summary="忘记密码修改")
+async def forget_password_set(request: UserForgetPWD, conn: DBConnection):
+    if not await db_verify_code(request.email, request.verification_code):
+        raise BusinessException(status_code=400, detail="验证码错误")
+    new_password_hash = get_password_hash(request.password)
+    user = await db_get_user_by_email(conn, request.email)
+    await db_update_user_password(conn, user["user_id"], new_password_hash)
+    return BaseResponse(code=200, msg="密码修改完毕，请重新登陆")
 
 # ==========================================
 # 2. 登录、登出与注销
 # ==========================================
 @router.post("/login", response_model=LoginResponse, summary="用户登录")
-async def login(login_data: UserLogin):
-    # TODO: SELECT * FROM user_account WHERE id = login_data.id
-    # TODO: 校验密码 verify_password(login_data.password, db_user.password)
-    # TODO: 触发拉取未读消息逻辑
-    
-    if login_data.password == "wrong": # Mock 错误
-        raise BusinessException(status_code=400, detail="密码不一致或id不存在")
+async def login(login_data: UserLogin, conn: DBConnection):
+    user = None
+    if "@" in login_data.id:
+        user = await db_get_user_by_email(conn, login_data.id)
+    else:
+        user_id = int(login_data.id)
+        user = await db_get_user_by_id(conn, user_id)
+        if user:
+            user["password"] = await db_get_password_by_id(conn, user_id)
+
+    if not user:
+        raise BusinessException(status_code=400, detail="账号不存在")
+
+    if not verify_password(login_data.password, user["password"]):
+        raise BusinessException(status_code=400, detail="密码错误")
         
-    # TODO: 签发真实 JWT Token
-    mock_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-    return LoginResponse(code=200, token=mock_token)
+    await db_update_user_login_time(conn, user["user_id"])
+    access_token = create_access_token(data={"sub": str(user["user_id"])})
+    
+    return LoginResponse(code=200, token=access_token)
 
 @router.post("/logout", response_model=BaseResponse, summary="用户登出")
-async def logout(current_user_id: int = Depends(get_current_user_id)):
-    # 业务逻辑：前端清除 Token，后端可选加入 Redis 黑名单
-    return BaseResponse(code=200, msg=f"用户 {current_user_id} 登出成功")
+async def logout(current_user_id: CurrentUserId):
+    # JWT 无状态，前端应自行清除 Token。
+    await manager.disconnect(current_user_id)
+    return BaseResponse(code=200, msg="登出成功")
 
 @router.post("/delete", response_model=BaseResponse, summary="用户注销")
-async def delete_account(current_user_id: int = Depends(get_current_user_id)):
-    # TODO: 执行 DELETE 或 UPDATE is_deleted=1，级联清理聊天记录
-    return BaseResponse(code=200, msg=f"账号 {current_user_id} 已彻底注销")
+async def delete_account(
+    current_user_id: CurrentUserId,
+    conn: DBConnection
+):
+    # 执行数据库删除
+    success = await db_delete_user(conn, current_user_id)
+    if not success:
+        raise BusinessException(status_code=404, detail="账号不存在")
+        
+    return BaseResponse(code=200, msg="账号已彻底注销")
 
 # ==========================================
 # 3. 个人信息修改 (必须携带 Token)
@@ -66,32 +116,57 @@ async def delete_account(current_user_id: int = Depends(get_current_user_id)):
 @router.put("/edit", response_model=BaseResponse, summary="修改基本信息")
 async def edit_profile(
     edit_data: UserEdit, 
-    current_user_id: int = Depends(get_current_user_id)
+    current_user_id: CurrentUserId,
+    conn: DBConnection
 ):
-    # TODO: 校验旧密码 (如果有)
-    # TODO: UPDATE user_account SET ...
+    # 如果用户想修改密码
+    if edit_data.old_password and edit_data.new_password:
+        hashed_pwd = await db_get_password_by_id(conn, current_user_id)
+        if not verify_password(edit_data.old_password, hashed_pwd):
+            raise BusinessException(status_code=400, detail="密码错误")
+        hashed_new = get_password_hash(edit_data.new_password)
+        await db_update_user_password(conn, current_user_id, hashed_new)
+        
+    # 如果用户修改了用户名或邮箱
+    if edit_data.user_name or edit_data.email:
+        await db_update_user_profile(
+            conn, 
+            current_user_id, 
+            username=edit_data.user_name, 
+            email=edit_data.email
+        )
+        
     return BaseResponse(code=200, msg="信息修改成功")
 
 @router.put("/edit/email", response_model=BaseResponse, summary="修改邮箱")
 async def edit_email(
     edit_data: EmailEdit, 
-    current_user_id: int = Depends(get_current_user_id)
+    current_user_id: CurrentUserId,
+    conn: DBConnection
 ):
-    # TODO: 校验 edit_data.password
-    # TODO: UPDATE user_account SET email = edit_data.new_email
+    success = await db_update_user_profile(conn, current_user_id, email=edit_data.new_email)
+    if not success:
+        raise BusinessException(status_code=400, detail="邮箱更新失败")
+        
     return BaseResponse(code=200, msg="邮箱修改成功")
 
+'''
 @router.put("/edit/portrait", summary="修改头像")
 async def edit_portrait(
     file: UploadFile = File(...),
-    current_user_id: int = Depends(get_current_user_id)
+    current_user_id: CurrentUserId,
+    conn: DBConnection
 ):
-    # TODO: 校验图片格式，上传至对象存储 (OSS/S3)
-    # TODO: 获取 URL/filekey 和宽高尺寸，写入数据库
+    # TODO: 接入图片对象存储 (OSS/S3)
+    mock_avatar_url = f"https://mock-oss.com/avatars/{current_user_id}_{file.filename}"
+    
+    # 写入数据库
+    await db_update_user_profile(conn, current_user_id, avatar_url=mock_avatar_url)
     
     return {
         "code": 200, 
-        "filekey": f"avatar_{current_user_id}_{file.filename}",
+        "filekey": mock_avatar_url,
         "width": 1024,
         "height": 1024
     }
+'''
