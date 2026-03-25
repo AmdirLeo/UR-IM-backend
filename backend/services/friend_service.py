@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List, Dict
 from db.repositories import friend_repo
 from core.exceptions import BusinessException
 import asyncpg
@@ -79,3 +79,14 @@ async def remove_friend(
     if not success:
         # 如果删除失败（如不是好友关系），返回友好错误
         raise BusinessException(status_code=404, detail="好友不存在或已删除")
+
+
+async def get_friend_list(
+    db_session: asyncpg.Connection, current_user_id: int
+) -> List[Dict]:
+    """
+    获取当前用户的好友列表。
+    """
+    # 调用 repo 层已实现的好友列表查询
+    friends = await friend_repo.db_get_friend_list(db_session, current_user_id)
+    return friends
