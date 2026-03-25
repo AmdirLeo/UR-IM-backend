@@ -1,9 +1,14 @@
 from fastapi import APIRouter, Depends, Query
 from api.dependencies import get_current_user_id
 from services.user_service import search_users
-from services.friend_service import apply_friend
+from services.friend_service import apply_friend, handle_friend_request
 from schemas.user import SearchUserResponse
-from schemas.friend import FriendApplyRequest, FriendApplyResponse
+from schemas.friend import (
+    FriendApplyRequest,
+    FriendApplyResponse,
+    FriendHandleRequest,
+    FriendHandleResponse,
+)
 from db.database import get_db_conn  # 假设你的数据库连接依赖注入函数
 from core.exceptions import BusinessException
 
@@ -55,3 +60,24 @@ async def send_friend_apply(
         message=request.message,
     )
     return FriendApplyResponse(code=200, msg="好友申请已发送")
+
+
+@router.put("/handle", response_model=FriendHandleResponse, summary="处理好友申请")
+async def friend_handle(
+    request: FriendHandleRequest,
+    current_user_id: int = Depends(get_current_user_id),
+    db_session=Depends(get_db_conn),
+):
+    """
+    同意或拒绝好友申请。
+    - **request_id**: 申请ID
+    - **action**: `accepted`（同意）或 `rejected`（拒绝）
+    """
+    await handle_friend_request(
+        db_session=db_session,
+        current_user_id=current_user_id,
+        request_id=request.request_id,
+        action=request.action,
+    )
+    msg = "已同意好友申请" if request.action == "accepted" else "已拒绝好友申请"
+    return FriendHandleResponse(code=200, msg=msg)
