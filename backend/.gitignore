@@ -9,4 +9,5 @@ __pycache__/
 .vscode/
 .idea/
 
-db/repositories/dbfunction.md
+pytest.ini
+tests/
