@@ -2,6 +2,7 @@ import pytest
 import os
 import asyncpg
 from fastapi.testclient import TestClient
+import asyncio
 
 TEST_DB_NAME = "test_im_db"
 TEST_DB_URL = f"postgresql://postgres:123456@localhost:5432/{TEST_DB_NAME}"
@@ -12,6 +13,18 @@ os.environ["DATABASE_URL"] = TEST_DB_URL
 
 from main import app
 from db.database import init_db_pool, close_db_pool
+
+# === 新增：强制全局单例事件循环 ===
+@pytest.fixture(scope="session")
+def event_loop():
+    """
+    强制整个测试会话（Session）共用同一个 Event Loop！
+    彻底解决 asyncpg 连接池与测试用例跨循环抛出 RuntimeError 的世纪难题。
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    yield loop
+    loop.close()
 
 @pytest.fixture(scope="session", autouse=True)
 async def setup_test_database():
