@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: im_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 123456
+      POSTGRES_DB: im_db
+    ports:
+      - "5432:5432"
+    volumes:
+      # 将本地的建表脚本挂载到 PostgreSQL 的自动初始化目录
+      # 注意：左侧路径需根据 docker-compose.yml 所在的相对路径进行调整
+      - ./db/migrations/_init_tables.sql:/docker-entrypoint-initdb.d/01_init_tables.sql
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: im_redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
