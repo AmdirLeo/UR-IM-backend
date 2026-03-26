@@ -1,123 +1,121 @@
 import pytest
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
-from api.routes.user import router
-from api.dependencies import get_current_user_id, get_db_conn
-from core.exceptions import setup_exception_handlers
-
-# ==========================================
-# 1. Setup & Mocks
-# ==========================================
-app = FastAPI()
-setup_exception_handlers(app)
-app.include_router(router, prefix="/api/users")
-
-class MockDBConnection:
-    pass
-
-async def override_get_db_conn():
-    yield MockDBConnection()
-
-async def override_get_current_user_id():
-    return 1 
-
-app.dependency_overrides[get_db_conn] = override_get_db_conn
-app.dependency_overrides[get_current_user_id] = override_get_current_user_id
+# 1. 导入真实的 app！
+# 此时 conftest.py 会自动接管它，将其数据库连接重定向到 test_im_db
+from main import app
 
 client = TestClient(app)
 
 # ==========================================
-# 2. Registration Tests
+# 真实的端到端 (E2E) 集成测试
+# 不 Mock 数据库，完全测试真实的数据流转与 JWT 签发
 # ==========================================
 
+# 仅仅 Mock 随机数生成器，让真实的 Redis 存入固定的 "123456"
 @patch("api.routes.user.generate_verification_code", return_value="123456")
-@patch("api.routes.user.db_save_verification_code", new_callable=AsyncMock)
-def test_send_register_email(mock_save_redis, mock_gen_code):
-    response = client.post(
-        "/api/users/register/email",
-        json={"email": "test@tsinghua.edu.cn"}
-    )
-    assert response.status_code == 200
-    mock_save_redis.assert_called_once_with("test@tsinghua.edu.cn", "123456")
-
-@patch("api.routes.user.db_verify_code", new_callable=AsyncMock)
-def test_register_invalid_code(mock_verify):
-    # 模拟验证码错误的情况，返回 False
-    mock_verify.return_value = False 
+def test_full_user_lifecycle(mock_gen_code):
+    """
+    用户全生命周期连贯测试 (User Journey)
+    """
+    email = "real_e2e@tsinghua.edu.cn"
+    password = "strong_password_123"
+    new_password = "new_password_456"
     
-    response = client.post(
+    # ------------------------------------------------
+    # 1. 发送验证码 (真实写入本地 Redis)
+    # ------------------------------------------------
+    res_email = client.post("/api/users/register/email", json={"email": email})
+    assert res_email.status_code == 200
+    
+    # ------------------------------------------------
+    # 2. 测试注册验证码错误 (读取真实 Redis 进行对比)
+    # ------------------------------------------------
+    res_reg_fail = client.post(
         "/api/users/register",
         json={
-            "username": "tester",
-            "password": "password123",
-            "email": "test@tsinghua.edu.cn",
-            "verification_code": "wrong"
+            "username": "e2e_tester",
+            "password": password,
+            "email": email,
+            "verification_code": "wrong_code"
         }
     )
-    assert response.status_code == 400
-    response_data = response.json()
-    assert response_data.get("msg") == "验证码错误"
-
-@patch("api.routes.user.db_verify_code", new_callable=AsyncMock)
-@patch("api.routes.user.db_get_user_by_email", new_callable=AsyncMock)
-@patch("api.routes.user.db_create_user", new_callable=AsyncMock)
-def test_register_success(mock_create, mock_get_user, mock_verify):
-    # 模拟验证码正确的情况，返回 True
-    mock_verify.return_value = True  
-    mock_get_user.return_value = None 
-    mock_create.return_value = 101    
-
-    response = client.post(
+    assert res_reg_fail.status_code == 400
+    assert res_reg_fail.json().get("msg") == "验证码错误" or res_reg_fail.json().get("detail") == "验证码错误"
+    
+    # ------------------------------------------------
+    # 3. 真实注册成功 (真实执行 INSERT 写入 PostgreSQL)
+    # ------------------------------------------------
+    res_reg_ok = client.post(
         "/api/users/register",
         json={
-            "username": "tester",
-            "password": "password123",
-            "email": "test@tsinghua.edu.cn",
+            "username": "e2e_tester",
+            "password": password,
+            "email": email,
             "verification_code": "123456"
         }
     )
-    assert response.status_code == 200
-    assert response.json()["id"] == 101
-
-# ==========================================
-# 3. Login & Profile Tests
-# ==========================================
-
-@patch("api.routes.user.db_get_user_by_email", new_callable=AsyncMock)
-@patch("api.routes.user.verify_password", return_value=True)
-@patch("api.routes.user.db_update_user_login_time", new_callable=AsyncMock)
-def test_login_email_success(mock_time, mock_verify_pwd, mock_get_user):
-    mock_get_user.return_value = {"user_id": 1, "password": "hashed_string"}
+    assert res_reg_ok.status_code == 200
+    assert "id" in res_reg_ok.json()
     
-    response = client.post(
+    # ------------------------------------------------
+    # 4. 真实登录 (真实执行 SELECT 校验哈希并签发 JWT)
+    # ------------------------------------------------
+    res_login = client.post(
         "/api/users/login",
-        json={"id": "test@tsinghua.edu.cn", "password": "real_password"}
+        json={"id": email, "password": password}
     )
-    assert response.status_code == 200
-    assert "token" in response.json()
-
-@patch("api.routes.user.db_get_password_by_id", new_callable=AsyncMock)
-@patch("api.routes.user.verify_password", return_value=True)
-@patch("api.routes.user.db_update_user_password", new_callable=AsyncMock)
-def test_edit_password(mock_update, mock_verify, mock_get_pwd):
-    mock_get_pwd.return_value = "old_hash"
+    assert res_login.status_code == 200
+    token = res_login.json()["token"]
+    assert token is not None
     
-    response = client.put(
+    # ------------------------------------------------
+    # 5. 真实修改资料 (真实解析 Token 并执行 UPDATE)
+    # ------------------------------------------------
+    headers = {"Authorization": f"Bearer {token}"}
+    res_edit = client.put(
         "/api/users/edit",
         json={
-            "old_password": "123456", 
-            "new_password": "456789",
-            "user_name": None, 
-            "email": None
-        }
+            "old_password": password,
+            "new_password": new_password,
+            "user_name": "updated_e2e_tester",
+            "email": email
+        },
+        headers=headers
     )
-    assert response.status_code == 200
-    mock_update.assert_called_once()
-
-@patch("api.routes.user.db_delete_user", new_callable=AsyncMock)
-def test_delete_account(mock_delete):
-    mock_delete.return_value = True
-    response = client.post("/api/users/delete")
-    assert response.status_code == 200
+    assert res_edit.status_code == 200
+    
+    # ------------------------------------------------
+    # 6. 验证密码修改是否生效 (用旧密码登录应失败)
+    # ------------------------------------------------
+    res_login_fail = client.post(
+        "/api/users/login",
+        json={"id": email, "password": password}
+    )
+    assert res_login_fail.status_code == 400
+    
+    # ------------------------------------------------
+    # 7. 真实注销账号 (真实执行 DELETE CASCADE)
+    # ------------------------------------------------
+    # 先用新密码重新登录，获取最新有效 Token
+    res_login_new = client.post(
+        "/api/users/login",
+        json={"id": email, "password": new_password}
+    )
+    new_token = res_login_new.json()["token"]
+    
+    res_delete = client.post(
+        "/api/users/delete",
+        headers={"Authorization": f"Bearer {new_token}"}
+    )
+    assert res_delete.status_code == 200
+    
+    # ------------------------------------------------
+    # 8. 确认账号已被彻底删除
+    # ------------------------------------------------
+    res_login_deleted = client.post(
+        "/api/users/login",
+        json={"id": email, "password": new_password}
+    )
+    assert res_login_deleted.status_code == 400
