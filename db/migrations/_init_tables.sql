@@ -9,16 +9,15 @@ CREATE TABLE user_account (
     login_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
--- 2. 好友关系表 (补充了 API 要求的 tag 分组功能)
+-- 2. 好友关系表
 CREATE TABLE friend_relationship (
     user_id BIGINT NOT NULL REFERENCES user_account(user_id) ON DELETE CASCADE,
     friend_user_id BIGINT NOT NULL REFERENCES user_account(user_id) ON DELETE CASCADE,
-    tag VARCHAR(100),                      -- 好友分组标签
     create_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, friend_user_id)
 );
 
--- 3. 好友申请表 (API 中提到“需要经过对方同意”，所以需要一个中间表存状态)
+-- 3. 好友申请表
 CREATE TABLE friend_request (
     request_id BIGSERIAL PRIMARY KEY,
     sender_id BIGINT NOT NULL REFERENCES user_account(user_id) ON DELETE CASCADE,
@@ -28,7 +27,7 @@ CREATE TABLE friend_request (
     create_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
--- 4. 会话基础表 (补充了类型和群公告)
+-- 4. 会话基础表
 CREATE TABLE conversation (
     conversation_id BIGSERIAL PRIMARY KEY,
     type VARCHAR(20) NOT NULL,             -- 会话类型：'private' (单聊) 或 'group' (群聊)
@@ -37,7 +36,7 @@ CREATE TABLE conversation (
     create_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
--- 5. 会话成员表 (补充了 API 要求的群主/管理员权限、免打扰、置顶)
+-- 5. 会话成员表
 CREATE TABLE conversation_member (
     conversation_id BIGINT NOT NULL REFERENCES conversation(conversation_id) ON DELETE CASCADE,
     member_user_id BIGINT NOT NULL REFERENCES user_account(user_id) ON DELETE CASCADE,
@@ -75,5 +74,22 @@ CREATE TABLE user_inbox (
     is_read BOOLEAN DEFAULT false,         -- 可选：单条消息级别的已读状态
     create_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, conversation_id, msg_id)
+);
+
+-- 9. 好友分组表
+CREATE TABLE user_friend_tag (
+    user_id INT REFERENCES user_account(user_id) ON DELETE CASCADE,
+    tag_name VARCHAR(50) NOT NULL,
+    PRIMARY KEY (user_id, tag_name)
+);
+
+CREATE TABLE friend_tag_mapping (
+    user_id INT,
+    friend_user_id INT,
+    tag_name VARCHAR(50),
+    PRIMARY KEY (user_id, friend_user_id, tag_name),
+    -- 级联删除魔术：如果好友被删了，或者这个分组被删了，这里的记录会自动消失！
+    FOREIGN KEY (user_id, friend_user_id) REFERENCES friend_relationship(user_id, friend_user_id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id, tag_name) REFERENCES user_friend_tag(user_id, tag_name) ON DELETE CASCADE
 );
 

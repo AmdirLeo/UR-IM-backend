@@ -62,7 +62,7 @@ async def db_update_user_login_time(conn: asyncpg.Connection, user_id: int):
     """
     await conn.execute(query, user_id)
 
-async def db_delete_user(conn: asyncpg.Connection, user_id: int) -> bool:
+async def db_delete_user(conn: asyncpg.Connection, user_id: int):
     """
     注销用户账号。
     得益于建表时的 ON DELETE CASCADE 机制，
@@ -76,7 +76,7 @@ async def db_delete_user(conn: asyncpg.Connection, user_id: int) -> bool:
     if status != 'DELETE 1':
         raise UserErrors.NotFound()
 
-async def db_update_user_password(conn: asyncpg.Connection, user_id: int, new_password_hash: str) -> bool:
+async def db_update_user_password(conn: asyncpg.Connection, user_id: int, new_password_hash: str):
     """
     专门用于修改密码（对应忘记密码或主动修改密码接口）
     """
