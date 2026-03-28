@@ -1,4 +1,5 @@
 import asyncpg
+from core.exceptions import UserErrors
 
 async def db_create_user(conn: asyncpg.Connection, username: str, password_hash: str, email: str) -> int:
     """
@@ -11,9 +12,12 @@ async def db_create_user(conn: asyncpg.Connection, username: str, password_hash:
         VALUES ($1, $2, $3)
         RETURNING user_id;
     """
-    # fetchval 用于执行 INSERT 并直接拿回 RETURNING 返回的那个单值（即 user_id）
-    user_id = await conn.fetchval(query, username, password_hash, email)
-    return user_id
+    try:
+        user_id = await conn.fetchval(query, username, password_hash, email)
+        return user_id
+    except asyncpg.exceptions.UniqueViolationError:
+        # 捕获数据库层面的唯一性冲突（邮箱重复注册）
+        raise UserErrors.AlreadyExists()
 
 async def db_get_user_by_email(conn: asyncpg.Connection, email: str) -> dict | None:
     """
@@ -35,8 +39,9 @@ async def db_get_user_by_id(conn: asyncpg.Connection, user_id: int) -> dict | No
         WHERE user_id = $1;
     """
     row = await conn.fetchrow(query, user_id)
-    return dict(row) if row else None
-
+    if not row:
+        raise UserErrors.NotFound()
+    return dict(row)
 async def db_get_password_by_id(conn: asyncpg.Connection, user_id: int) -> str | None:
     """
     通过 ID 获取用户的密码哈希（仅用于登录时验证密码）
@@ -68,8 +73,8 @@ async def db_delete_user(conn: asyncpg.Connection, user_id: int) -> bool:
     # execute 返回的是命令状态字符串，例如成功删除了1行会返回 'DELETE 1'
     status = await conn.execute(query, user_id)
     
-    # 如果状态字符串包含 'DELETE 1'，说明真的删掉了一个用户
-    return status == 'DELETE 1'
+    if status != 'DELETE 1':
+        raise UserErrors.NotFound()
 
 async def db_update_user_password(conn: asyncpg.Connection, user_id: int, new_password_hash: str) -> bool:
     """
@@ -77,7 +82,8 @@ async def db_update_user_password(conn: asyncpg.Connection, user_id: int, new_pa
     """
     query = "UPDATE user_account SET password = $1 WHERE user_id = $2;"
     status = await conn.execute(query, new_password_hash, user_id)
-    return status == 'UPDATE 1'
+    if status != 'DELETE 1':
+        raise UserErrors.NotFound()
 async def db_update_user_profile(
     conn: asyncpg.Connection, 
     user_id: int, 

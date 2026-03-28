@@ -15,7 +15,31 @@ class BusinessException(Exception):
     def __init__(self, status_code: int, detail: str):
         self.status_code = status_code
         self.detail = detail
+class UserErrors:
+    @staticmethod
+    def NotFound(): return BusinessException(status_code=404, detail="用户不存在")
+        
+    @staticmethod
+    def AlreadyExists(): return BusinessException(status_code=409, detail="该邮箱已被注册")
+        
+    @staticmethod
+    def AuthFailed(): return BusinessException(status_code=401, detail="邮箱或密码错误")
 
+    @staticmethod
+    def InvalidVerifyCode(): return BusinessException(status_code=400, detail="验证码错误或已失效")
+
+class FriendErrors:
+    @staticmethod
+    def CantAddSelf(): return BusinessException(status_code=400, detail="不能添加自己为好友")
+        
+    @staticmethod
+    def AlreadyFriends(): return BusinessException(status_code=409, detail="你们已经是好友了，无需重复添加")
+        
+    @staticmethod
+    def RequestPending(): return BusinessException(status_code=409, detail="已有待处理的好友申请，请耐心等待或前往处理")
+        
+    @staticmethod
+    def RequestNotFound(): return BusinessException(status_code=404, detail="好友申请不存在或已被处理")
 # ==========================================
 # 2. 全局异常注册函数
 # ==========================================

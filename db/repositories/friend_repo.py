@@ -1,29 +1,47 @@
 import asyncpg
+from core.exceptions import FriendErrors, BusinessException
 
 async def db_create_friend_request(conn: asyncpg.Connection, sender_id: int, receiver_id: int, message: str) -> bool:
     """
     发起好友申请 (对应 POST /api/friend/apply)
     """
-    # 防止自己加自己
+    # 1. 防止自己加自己
     if sender_id == receiver_id:
-        return False
+        raise FriendErrors.CantAddSelf()
         
+    # 2. 校验是否已经是好友
+    is_already_friend = await conn.fetchval(
+        "SELECT EXISTS(SELECT 1 FROM friend_relationship WHERE user_id = $1 AND friend_user_id = $2)",
+        sender_id, receiver_id
+    )
+    if is_already_friend:
+        raise FriendErrors.AlreadyFriends()
+        
+    # 3. 校验是否有待处理的申请 (双向拦截)
+    has_pending = await conn.fetchval(
+        "SELECT EXISTS(SELECT 1 FROM friend_request WHERE status = 'pending' AND ((sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1)))",
+        sender_id, receiver_id
+    )
+    if has_pending:
+        raise FriendErrors.RequestPending()
+    
     query = """
         INSERT INTO friend_request (sender_id, receiver_id, message)
         VALUES ($1, $2, $3)
         RETURNING request_id;
     """
     request_id = await conn.fetchval(query, sender_id, receiver_id, message)
-    return bool(request_id)
+    if not request_id:
+        raise BusinessException(status_code=500, detail="系统异常，申请发送失败")
+    return request_id
 
 async def db_handle_friend_request(conn: asyncpg.Connection, request_id: int, action: str) -> bool:
     """
     处理好友申请 (对应 PUT /api/friend/handle)
     action 必须是 'accepted' 或 'rejected'
-    这是你接触的第一个核心【事务】！
     """
     if action not in ('accepted', 'rejected'):
-        return False
+        raise BusinessException(status_code=400, detail="无效的操作类型")
 
     # asyncpg 开启事务的语法
     async with conn.transaction():
@@ -38,7 +56,7 @@ async def db_handle_friend_request(conn: asyncpg.Connection, request_id: int, ac
         
         # 如果申请不存在或已经被处理过
         if not row:
-            return False
+            raise FriendErrors.RequestNotFound()
             
         # 2. 如果是同意，则插入双向好友记录
         if action == 'accepted':
@@ -50,8 +68,6 @@ async def db_handle_friend_request(conn: asyncpg.Connection, request_id: int, ac
                 ON CONFLICT (user_id, friend_user_id) DO NOTHING;
             """
             await conn.execute(insert_query, sender_id, receiver_id)
-            
-    return True
 
 async def db_get_friend_list(conn: asyncpg.Connection, user_id: int) -> list[dict]:
     """
@@ -80,4 +96,5 @@ async def db_remove_friend(conn: asyncpg.Connection, user_id: int, friend_user_i
            OR (user_id = $2 AND friend_user_id = $1);
     """
     status = await conn.execute(query, user_id, friend_user_id)
-    return status in ('DELETE 1', 'DELETE 2')
+    if status not in ('DELETE 1', 'DELETE 2'):
+        raise BusinessException(status_code=404, detail="好友关系不存在")
