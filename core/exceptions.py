@@ -1,6 +1,7 @@
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from enum import Enum
 import logging
 
 # ==========================================
@@ -16,10 +17,47 @@ class BusinessException(Exception):
         self.status_code = status_code
         self.detail = detail
 
+class FriendErrors(Enum):
+    CantAddSelf = "CantAddSelf"
+    AlreadyFriends = "AlreadyFriends"
+    RequestPending = "RequestPending"
+    InvalidAction = "InvalidAction"
+    RequestNotFound = "RequestNotFound"
+    Unauthorized = "Unauthorized"
+
+class FriendException(Exception):
+    """
+    好友相关的业务异常。
+    由数据库层抛出，在这里被拦截并处理为 HTTP 响应。
+    """
+    def __init__(self, error_code: FriendErrors):
+        self.error_code = error_code
+
 # ==========================================
 # 2. 全局异常注册函数
 # ==========================================
 def setup_exception_handlers(app):
+    
+    # 捕获好友相关的业务异常
+    @app.exception_handler(FriendException)
+    async def friend_exception_handler(request: Request, exc: FriendException):
+        error_mapping = {
+            FriendErrors.CantAddSelf: (400, "不能添加自己为好友"),
+            FriendErrors.AlreadyFriends: (409, "你们已经是好友了，无需重复添加"),
+            FriendErrors.RequestPending: (409, "已有待处理的好友申请（无论谁先发起的），请耐心等待或前往处理"),
+            FriendErrors.InvalidAction: (400, "无效的操作类型"),
+            FriendErrors.RequestNotFound: (404, "好友申请不存在或已被处理"),
+            FriendErrors.Unauthorized: (403, "越权操作：无权处理他人的好友申请"),
+        }
+        status_code, detail = error_mapping.get(exc.error_code, (500, "系统异常，申请发送失败"))
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "code": status_code,
+                "msg": detail,
+                "data": None
+            }
+        )
     
     # 捕获我们自定义的业务异常
     @app.exception_handler(BusinessException)
