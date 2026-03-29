@@ -1,5 +1,10 @@
 from typing import Optional, List, Dict
-from db.repositories import friend_repo
+from db.repositories.friend_repo import (
+    db_create_friend_request,
+    db_handle_friend_request,
+    db_remove_friend,
+    db_get_friend_list,
+)
 from core.exceptions import BusinessException
 import asyncpg
 
@@ -18,7 +23,7 @@ async def apply_friend(
         raise BusinessException(status_code=400, detail="不能添加自己为好友")
 
     # 2. 创建申请记录（调用 repo 层提供的函数）
-    success = await friend_repo.db_create_friend_request(
+    success = await db_create_friend_request(
         db_session,
         sender_id=from_user_id,
         receiver_id=target_user_id,
@@ -39,8 +44,11 @@ async def handle_friend_request(
     """
 
     # 调用 repo 层的事务函数执行更新（同意或拒绝）
-    success = await friend_repo.db_handle_friend_request(
-        db_session, request_id=request_id, current_user_id=current_user_id, action=action
+    success = await db_handle_friend_request(
+        db_session,
+        request_id=request_id,
+        current_user_id=current_user_id,
+        action=action,
     )
     if not success:
         # 如果失败（例如申请状态已变更或不存在），抛出异常
@@ -60,9 +68,7 @@ async def remove_friend(
         raise BusinessException(status_code=400, detail="不能删除自己")
 
     # 2. 调用 repo 层删除好友（同时删除双向记录）
-    success = await friend_repo.db_remove_friend(
-        db_session, current_user_id, friend_user_id
-    )
+    success = await db_remove_friend(db_session, current_user_id, friend_user_id)
 
     if not success:
         # 如果删除失败（如不是好友关系），返回友好错误
@@ -76,5 +82,5 @@ async def get_friend_list(
     获取当前用户的好友列表。
     """
     # 调用 repo 层已实现的好友列表查询
-    friends = await friend_repo.db_get_friend_list(db_session, current_user_id)
+    friends = await db_get_friend_list(db_session, current_user_id)
     return friends

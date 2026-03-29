@@ -38,7 +38,6 @@ async def search_user(
     users = await search_users(
         db_session=db_session,
         keyword=keyword,
-        current_user_id=current_user_id,
         limit=size,
         offset=offset,
     )

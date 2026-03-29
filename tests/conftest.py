@@ -53,17 +53,19 @@ async def setup_test_database():
     
     try:
         conn = await asyncpg.connect(TEST_DB_URL)
+        
+        # --- 新增这行：彻底清空 public schema 并重建 ---
+        # 这一步能保证不管上次留下了什么垃圾数据或表结构，都会被一扫而空
+        await conn.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
+        
         with open(sql_file_path, 'r', encoding='utf-8') as f:
             sql_content = f.read()
         await conn.execute(sql_content)
+        print("测试数据库初始化建表完成。")
     except Exception as e:
         print(f"测试数据库建表失败: {e}")
     finally:
         await conn.close()
-        
-    yield  
-    
-    await close_db_pool()
 
 # ... 后面的 clear_database_data 和 test_client 保持不变 ...
 
