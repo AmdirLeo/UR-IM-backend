@@ -58,4 +58,24 @@ async def handle_friend_request(
         # 如果失败（例如申请状态已变更或不存在），抛出异常
         raise BusinessException(status_code=400, detail="处理失败，请稍后重试")
 
-    # 成功无返回（由路由层返回统一响应）
+
+async def remove_friend(
+    db_session: asyncpg.Connection, current_user_id: int, friend_user_id: int
+) -> None:
+    """
+    删除好友的业务逻辑。
+    - 不能删除自己
+    - 检查是否为好友关系（可选，repo 层会返回删除行数，可据此判断）
+    """
+    # 1. 不能删除自己
+    if current_user_id == friend_user_id:
+        raise BusinessException(status_code=400, detail="不能删除自己")
+
+    # 2. 调用 repo 层删除好友（同时删除双向记录）
+    success = await friend_repo.db_remove_friend(
+        db_session, current_user_id, friend_user_id
+    )
+
+    if not success:
+        # 如果删除失败（如不是好友关系），返回友好错误
+        raise BusinessException(status_code=404, detail="好友不存在或已删除")

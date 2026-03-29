@@ -1,13 +1,11 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Path
 from api.dependencies import get_current_user_id
 from services.user_service import search_users
-from services.friend_service import apply_friend, handle_friend_request
-from schemas.user import SearchUserResponse
+from services.friend_service import apply_friend, handle_friend_request, remove_friend
+from schemas.user import SearchUserResponse, BaseResponse
 from schemas.friend import (
     FriendApplyRequest,
-    FriendApplyResponse,
     FriendHandleRequest,
-    FriendHandleResponse,
 )
 from db.database import get_db_conn  # 假设你的数据库连接依赖注入函数
 from core.exceptions import BusinessException
@@ -42,7 +40,7 @@ async def search_user(
     return SearchUserResponse(code=200, msg="查询成功", data=users)
 
 
-@router.post("/apply", response_model=FriendApplyResponse, summary="发送好友申请")
+@router.post("/apply", response_model=BaseResponse, summary="发送好友申请")
 async def send_friend_apply(
     request: FriendApplyRequest,
     current_user_id: int = Depends(get_current_user_id),
@@ -59,10 +57,10 @@ async def send_friend_apply(
         target_user_id=request.target_user_id,
         message=request.message,
     )
-    return FriendApplyResponse(code=200, msg="好友申请已发送")
+    return BaseResponse(code=200, msg="好友申请已发送")
 
 
-@router.put("/handle", response_model=FriendHandleResponse, summary="处理好友申请")
+@router.put("/handle", response_model=BaseResponse, summary="处理好友申请")
 async def friend_handle(
     request: FriendHandleRequest,
     current_user_id: int = Depends(get_current_user_id),
@@ -80,4 +78,23 @@ async def friend_handle(
         action=request.action,
     )
     msg = "已同意好友申请" if request.action == "accepted" else "已拒绝好友申请"
-    return FriendHandleResponse(code=200, msg=msg)
+    return BaseResponse(code=200, msg=msg)
+
+
+@router.delete(
+    "/remove/{friend_user_id}", response_model=BaseResponse, summary="删除好友"
+)
+async def delete_friend(
+    friend_user_id: int = Path(..., description="要删除的好友用户ID"),
+    current_user_id: int = Depends(get_current_user_id),
+    db_session=Depends(get_db_conn),
+):
+    """
+    删除好友，同时解除双向关系。
+    """
+    await remove_friend(
+        db_session=db_session,
+        current_user_id=current_user_id,
+        friend_user_id=friend_user_id,
+    )
+    return BaseResponse(code=200, msg="好友删除成功")
