@@ -44,7 +44,7 @@ def setup_exception_handlers(app):
         error_mapping = {
             FriendErrors.CantAddSelf: (400, "不能添加自己为好友"),
             FriendErrors.AlreadyFriends: (409, "你们已经是好友了，无需重复添加"),
-            FriendErrors.RequestPending: (409, "已有待处理的好友申请（无论谁先发起的），请耐心等待或前往处理"),
+            FriendErrors.RequestPending: (409, "已有待处理的好友申请..."),
             FriendErrors.InvalidAction: (400, "无效的操作类型"),
             FriendErrors.RequestNotFound: (404, "好友申请不存在或已被处理"),
             FriendErrors.Unauthorized: (403, "越权操作：无权处理他人的好友申请"),

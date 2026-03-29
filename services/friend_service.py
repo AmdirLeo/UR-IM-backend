@@ -37,22 +37,10 @@ async def handle_friend_request(
     """
     处理好友申请的业务逻辑。
     """
-    # # 查询申请详情，获取 receiver_id，检查当前用户是否有权处理（只有接收者可以
-    # query = """
-    #     SELECT receiver_id, status
-    #     FROM friend_request
-    #     WHERE request_id = $1
-    # """
-    # row = await db_session.fetchrow(query, request_id)
-    # if not row:
-    #     raise BusinessException(status_code=404, detail="好友申请不存在")
-    # receiver_id = row["receiver_id"]
-    # if current_user_id != receiver_id:
-    #     raise BusinessException(status_code=403, detail="无权处理此申请")
 
     # 调用 repo 层的事务函数执行更新（同意或拒绝）
     success = await friend_repo.db_handle_friend_request(
-        db_session, request_id=request_id, action=action
+        db_session, request_id=request_id, current_user_id=current_user_id, action=action
     )
     if not success:
         # 如果失败（例如申请状态已变更或不存在），抛出异常

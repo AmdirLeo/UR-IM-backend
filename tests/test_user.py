@@ -42,7 +42,7 @@ async def test_search_users_repository():
 
 # 强制将测试函数绑定到 session 级别的事件循环
 @pytest.mark.asyncio(loop_scope="session")
-@patch("api.routes.user.generate_verification_code", return_value="123456")
+@patch("services.user_service.generate_verification_code", return_value="123456")
 async def test_user_journey_and_edge_cases(mock_generate_code):
     """
     全量用户的 E2E 测试。必须使用 AsyncClient。
