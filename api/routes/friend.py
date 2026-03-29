@@ -1,11 +1,18 @@
 from fastapi import APIRouter, Depends, Query, Path
 from api.dependencies import get_current_user_id
 from services.user_service import search_users
-from services.friend_service import apply_friend, handle_friend_request, remove_friend
+from services.friend_service import (
+    apply_friend,
+    handle_friend_request,
+    remove_friend,
+    get_friend_list,
+)
 from schemas.user import SearchUserResponse, BaseResponse
 from schemas.friend import (
     FriendApplyRequest,
     FriendHandleRequest,
+    FriendListResponse,
+    FriendInfo,
 )
 from db.database import get_db_conn  # 假设你的数据库连接依赖注入函数
 from core.exceptions import BusinessException
@@ -98,3 +105,18 @@ async def delete_friend(
         friend_user_id=friend_user_id,
     )
     return BaseResponse(code=200, msg="好友删除成功")
+
+
+@router.get("", response_model=FriendListResponse, summary="获取好友列表")
+async def list_friends(
+    current_user_id: int = Depends(get_current_user_id), db_session=Depends(get_db_conn)
+):
+    """
+    获取当前用户的所有好友列表。
+    包含好友基本信息、分组标签、成为好友的时间。
+    """
+    friends = await get_friend_list(db_session, current_user_id)
+
+    # 将数据库返回的字典转换为 Pydantic 模型
+    data = [FriendInfo(**f) for f in friends]
+    return FriendListResponse(code=200, msg="获取成功", data=data)
