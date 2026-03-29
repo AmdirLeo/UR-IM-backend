@@ -1,5 +1,5 @@
 import asyncpg
-from core.exceptions import FriendErrors, BusinessException
+from core.exceptions import FriendErrors, BusinessException, FriendException
 
 async def db_create_friend_request(conn: asyncpg.Connection, sender_id: int, receiver_id: int, message: str) -> int:
     """
@@ -7,7 +7,7 @@ async def db_create_friend_request(conn: asyncpg.Connection, sender_id: int, rec
     """
     # 1. 防止自己加自己
     if sender_id == receiver_id:
-        raise FriendErrors.CantAddSelf()
+        raise FriendException(FriendErrors.CantAddSelf)
         
     # 2. 校验是否已经是好友
     is_already_friend = await conn.fetchval(
@@ -15,7 +15,7 @@ async def db_create_friend_request(conn: asyncpg.Connection, sender_id: int, rec
         sender_id, receiver_id
     )
     if is_already_friend:
-        raise FriendErrors.AlreadyFriends()
+        raise FriendException(FriendErrors.AlreadyFriends)
         
     # 3. 校验是否有待处理的申请 (双向拦截)
     has_pending = await conn.fetchval(
@@ -23,7 +23,7 @@ async def db_create_friend_request(conn: asyncpg.Connection, sender_id: int, rec
         sender_id, receiver_id
     )
     if has_pending:
-        raise FriendErrors.RequestPending()
+        raise FriendException(FriendErrors.RequestPending)
     
     query = """
         INSERT INTO friend_request (sender_id, receiver_id, message)
@@ -56,7 +56,7 @@ async def db_handle_friend_request(conn: asyncpg.Connection, request_id: int, cu
         
         # 如果申请不存在或已经被处理过
         if not row or row['status'] != 'pending':
-            raise FriendErrors.RequestNotFound()
+            raise FriendException(FriendErrors.RequestNotFound)
         
 
         if row['receiver_id'] != current_user_id:

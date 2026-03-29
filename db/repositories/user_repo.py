@@ -1,5 +1,5 @@
 import asyncpg
-from core.exceptions import UserErrors
+from core.exceptions import UserErrors, UserException
 
 async def db_create_user(conn: asyncpg.Connection, username: str, password_hash: str, email: str) -> int:
     """
@@ -17,7 +17,7 @@ async def db_create_user(conn: asyncpg.Connection, username: str, password_hash:
         return user_id
     except asyncpg.exceptions.UniqueViolationError:
         # 捕获数据库层面的唯一性冲突（邮箱重复注册）
-        raise UserErrors.AlreadyExists()
+        raise UserException(UserErrors.AlreadyExists)
 
 async def db_get_user_by_email(conn: asyncpg.Connection, email: str) -> dict | None:
     """
@@ -40,7 +40,7 @@ async def db_get_user_by_id(conn: asyncpg.Connection, user_id: int) -> dict | No
     """
     row = await conn.fetchrow(query, user_id)
     if not row:
-        raise UserErrors.NotFound()
+        raise UserException(UserErrors.NotFound)
     return dict(row)
 async def db_get_password_by_id(conn: asyncpg.Connection, user_id: int) -> str | None:
     """
@@ -74,7 +74,7 @@ async def db_delete_user(conn: asyncpg.Connection, user_id: int):
     status = await conn.execute(query, user_id)
     
     if status != 'DELETE 1':
-        raise UserErrors.NotFound()
+        raise UserException(UserErrors.NotFound)
 
 async def db_update_user_password(conn: asyncpg.Connection, user_id: int, new_password_hash: str):
     """
@@ -83,7 +83,7 @@ async def db_update_user_password(conn: asyncpg.Connection, user_id: int, new_pa
     query = "UPDATE user_account SET password = $1 WHERE user_id = $2;"
     status = await conn.execute(query, new_password_hash, user_id)
     if status != 'DELETE 1':
-        raise UserErrors.NotFound()
+        raise UserException(UserErrors.NotFound)
 async def db_update_user_profile(
     conn: asyncpg.Connection, 
     user_id: int, 

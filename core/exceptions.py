@@ -1,3 +1,4 @@
+from enum import Enum
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -15,31 +16,35 @@ class BusinessException(Exception):
     def __init__(self, status_code: int, detail: str):
         self.status_code = status_code
         self.detail = detail
-class UserErrors:
-    @staticmethod
-    def NotFound(): return BusinessException(status_code=404, detail="用户不存在")
-        
-    @staticmethod
-    def AlreadyExists(): return BusinessException(status_code=409, detail="该邮箱已被注册")
-        
-    @staticmethod
-    def AuthFailed(): return BusinessException(status_code=401, detail="邮箱或密码错误")
+class UserErrors(Enum):
+    NotFound = "NotFound"
+    AlreadyExists = "AlreadyExists"
+    AuthFailed = "AuthFailed"
+    InvalidVerifyCode = "InvalidVerifyCode"
+    NoUpdateFields = "NoUpdateFields"
 
-    @staticmethod
-    def InvalidVerifyCode(): return BusinessException(status_code=400, detail="验证码错误或已失效")
+class FriendErrors(Enum):
+    CantAddSelf = "CantAddSelf"
+    AlreadyFriends = "AlreadyFriends"
+    RequestPending = "RequestPending"
+    InvalidAction = "InvalidAction"
+    RequestNotFound = "RequestNotFound"
+    Unauthorized = "Unauthorized"
+    FriendNotFound = "FriendNotFound"
+    TagAlreadyExists = "TagAlreadyExists"
+    TagNotFound = "TagNotFound"
+    NotInTag = "NotInTag"
 
-class FriendErrors:
-    @staticmethod
-    def CantAddSelf(): return BusinessException(status_code=400, detail="不能添加自己为好友")
-        
-    @staticmethod
-    def AlreadyFriends(): return BusinessException(status_code=409, detail="你们已经是好友了，无需重复添加")
-        
-    @staticmethod
-    def RequestPending(): return BusinessException(status_code=409, detail="已有待处理的好友申请，请耐心等待或前往处理")
-        
-    @staticmethod
-    def RequestNotFound(): return BusinessException(status_code=404, detail="好友申请不存在或已被处理")
+# ==========================================
+# 2. 定义业务异常类
+# ==========================================
+class UserException(Exception):
+    def __init__(self, error_code: UserErrors):
+        self.error_code = error_code
+
+class FriendException(Exception):
+    def __init__(self, error_code: FriendErrors):
+        self.error_code = error_code
 # ==========================================
 # 2. 全局异常注册函数
 # ==========================================
@@ -47,16 +52,36 @@ def setup_exception_handlers(app):
     
     # 捕获我们自定义的业务异常
     @app.exception_handler(BusinessException)
-    async def business_exception_handler(request: Request, exc: BusinessException):
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={
-                "code": exc.status_code, 
-                "msg": exc.detail, 
-                "data": None
-            }
-        )
+    @app.exception_handler(UserException)
+    async def user_exception_handler(request: Request, exc: UserException):
+        error_mapping = {
+            UserErrors.NotFound: (404, "用户不存在"),
+            UserErrors.AlreadyExists: (409, "该邮箱已被注册"),
+            UserErrors.AuthFailed: (401, "邮箱或密码错误"),
+            UserErrors.InvalidVerifyCode: (400, "验证码错误或已失效"),
+            UserErrors.NoUpdateFields: (400, "没有任何字段需要更新"),
+        }
+        status_code, detail = error_mapping.get(exc.error_code, (500, "用户模块未知错误"))
+        return JSONResponse(status_code=status_code, content={"code": status_code, "msg": detail, "data": None})
 
+    # 捕获好友模块异常
+    @app.exception_handler(FriendException)
+    async def friend_exception_handler(request: Request, exc: FriendException):
+        error_mapping = {
+            FriendErrors.CantAddSelf: (400, "不能添加自己为好友"),
+            FriendErrors.AlreadyFriends: (409, "你们已经是好友了，无需重复添加"),
+            FriendErrors.RequestPending: (409, "已有待处理的好友申请，请耐心等待或前往处理"),
+            FriendErrors.InvalidAction: (400, "无效的操作类型"),
+            FriendErrors.RequestNotFound: (404, "好友申请不存在或已被处理"),
+            FriendErrors.Unauthorized: (403, "越权操作：无权处理他人的好友申请"),
+            FriendErrors.FriendNotFound: (404, "好友关系不存在"),
+            FriendErrors.TagAlreadyExists: (409, "该分组已存在"),
+            FriendErrors.TagNotFound: (404, "分组不存在"),
+            FriendErrors.NotInTag: (404, "该好友不在当前分组中"),
+        }
+        status_code, detail = error_mapping.get(exc.error_code, (500, "好友模块未知错误"))
+        return JSONResponse(status_code=status_code, content={"code": status_code, "msg": detail, "data": None})
+    
     # 捕获 FastAPI 原生的参数校验异常 (Pydantic 报错)
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
