@@ -9,8 +9,8 @@ from main import app
 from api.routes.user import router
 from core.exceptions import setup_exception_handlers
 from core.config import settings
-from db.repositories.user_repo import db_search_users
 from db.database import get_db_conn
+from services.user_service import search_users
 
 # ==========================================
 # 1. Setup FastAPI App
@@ -33,10 +33,10 @@ def get_auth_headers(token: str) -> Dict[str, str]:
 # 强制将测试函数绑定到 session 级别的事件循环
 @pytest.mark.asyncio(loop_scope="session")
 async def test_search_users_repository():
-    """直接测试底层的 Repository 函数"""
+    """测试 service 层的函数"""
     # 使用 async for 动态获取，完美避开导包陷阱
     async for conn in get_db_conn():
-        results = await db_search_users(conn, "tester")
+        results = await search_users(conn, "tester")
         assert isinstance(results, list)
         break # 测完立刻退出
 
