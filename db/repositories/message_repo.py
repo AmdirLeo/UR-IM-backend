@@ -1,0 +1,127 @@
+import asyncpg
+import json
+from core.exceptions import BusinessException # 假设你们在 exceptions.py 中添加了 MessageErrors
+
+async def db_send_message(
+    conn: asyncpg.Connection, 
+    sender_id: int, 
+    conversation_id: int, 
+    msg_body: dict, 
+    quote_id: int = None
+) -> int:
+    """
+    核心发送消息逻辑 (采用写扩散模型)
+    返回: 新生成的消息 msg_id
+    """
+    
+    # 1. 权限校验：你必须在这个会话里才能发消息
+    check_member_query = """
+        SELECT EXISTS(
+            SELECT 1 FROM conversation_member 
+            WHERE conversation_id = $1 AND member_user_id = $2
+        );
+    """
+    is_member = await conn.fetchval(check_member_query, conversation_id, sender_id)
+    if not is_member:
+        # 对应 MessageErrors.NotInConversation
+        raise BusinessException(status_code=403, detail="您不在该会话中，无法发送消息")
+
+    # 开启强事务，保证发消息的一致性
+    async with conn.transaction():
+        
+        # 2. 插入消息本体 
+        insert_msg_query = """
+            INSERT INTO message (msg_body) 
+            VALUES ($1::jsonb) 
+            RETURNING msg_id;
+        """
+        msg_id = await conn.fetchval(insert_msg_query, json.dumps(msg_body))
+        
+        if not msg_id:
+            raise BusinessException(status_code=500, detail="消息落库失败")
+
+        # 3. 插入会话消息映射表，并处理引用逻辑
+        insert_conv_msg_query = """
+            INSERT INTO conversation_message (conversation_id, msg_id, sender_id, quote_id)
+            VALUES ($1, $2, $3, $4);
+        """
+        await conn.execute(insert_conv_msg_query, conversation_id, msg_id, sender_id, quote_id)
+        
+        # 如果有引用，将被引用消息的 quote_count + 1
+        if quote_id:
+            update_quote_query = """
+                UPDATE conversation_message 
+                SET quote_count = quote_count + 1 
+                WHERE conversation_id = $1 AND msg_id = $2;
+            """
+            await conn.execute(update_quote_query, conversation_id, quote_id)
+
+        # 4.获取会话所有成员，并批量写入收件箱
+        get_members_query = "SELECT member_user_id FROM conversation_member WHERE conversation_id = $1;"
+        members = await conn.fetch(get_members_query, conversation_id)
+        
+        if members:
+            # 构建批量插入的数据结构: [(user1, conv, msg), (user2, conv, msg), ...]
+            inbox_records = [
+                (member['member_user_id'], conversation_id, msg_id) 
+                for member in members
+            ]
+            
+            insert_inbox_query = """
+                INSERT INTO user_inbox (user_id, conversation_id, msg_id) 
+                VALUES ($1, $2, $3);
+            """
+            await conn.executemany(insert_inbox_query, inbox_records)
+
+    return msg_id
+
+async def db_get_all_unread_counts(conn: asyncpg.Connection, user_id: int) -> dict:
+    """
+    获取当前用户所有会话的未读消息数 (对应 GET /api/conversation/unread)
+    返回格式: {conversation_id: unread_count, ...} 比如 {101: 5, 102: 12}
+    """
+    # 利用写扩散的收件箱，直接按会话分组统计 is_read = false 的数量
+    query = """
+        SELECT conversation_id, COUNT(msg_id) as unread_count
+        FROM user_inbox
+        WHERE user_id = $1 AND is_read = false
+        GROUP BY conversation_id;
+    """
+    rows = await conn.fetch(query, user_id)
+    
+    # 转换成易于前端解析的字典格式
+    # 如果没有任何未读消息，会直接返回一个空字典 {}
+    return {row['conversation_id']: row['unread_count'] for row in rows}
+
+
+async def db_mark_conversation_as_read(conn: asyncpg.Connection, user_id: int, conversation_id: int) -> None:
+    """
+    清除特定会话的未读红点（已读上报）
+    需要同时更新 inbox 的状态和 member 表的 read_index 水位线
+    """
+    # 确保用户在这个会话里
+    check_query = "SELECT 1 FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;"
+    if not await conn.fetchval(check_query, conversation_id, user_id):
+        raise BusinessException(status_code=403, detail="您不在该会话中")
+
+    async with conn.transaction():
+        # 1. 把收件箱里的该会话的所有未读消息标记为已读
+        update_inbox_query = """
+            UPDATE user_inbox 
+            SET is_read = true 
+            WHERE user_id = $1 AND conversation_id = $2 AND is_read = false;
+        """
+        await conn.execute(update_inbox_query, user_id, conversation_id)
+        
+        # 2. 【核心精髓】更新水位线 read_index
+        # 找到这个会话目前最大的 msg_id，更新给这个用户
+        update_watermark_query = """
+            UPDATE conversation_member
+            SET read_index = (
+                SELECT COALESCE(MAX(msg_id), 0) 
+                FROM conversation_message 
+                WHERE conversation_id = $2
+            )
+            WHERE conversation_id = $2 AND member_user_id = $1;
+        """
+        await conn.execute(update_watermark_query, user_id, conversation_id)
