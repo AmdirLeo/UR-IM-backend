@@ -76,25 +76,3 @@ async def edit_email(
     edit_data: EmailEdit, current_user_id: CurrentUserId, conn: DBConnection
 ):
     return await user_service.edit_email_service(conn, current_user_id, edit_data)
-
-
-"""
-@router.put("/edit/portrait", summary="修改头像")
-async def edit_portrait(
-    file: UploadFile = File(...),
-    current_user_id: CurrentUserId,
-    conn: DBConnection
-):
-    # TODO: 接入图片对象存储 (OSS/S3)
-    mock_avatar_url = f"https://mock-oss.com/avatars/{current_user_id}_{file.filename}"
-    
-    # 写入数据库
-    await db_update_user_profile(conn, current_user_id, avatar_url=mock_avatar_url)
-    
-    return {
-        "code": 200, 
-        "filekey": mock_avatar_url,
-        "width": 1024,
-        "height": 1024
-    }
-"""
