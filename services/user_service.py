@@ -120,7 +120,7 @@ async def logout_service(current_user_id: int) -> BaseResponse:
 
 
 async def delete_account_service(conn, current_user_id: int) -> BaseResponse:
-    success = await db_delete_user(conn, current_user_id)
+    await db_delete_user(conn, current_user_id)
     return BaseResponse(code=200, msg="账号已彻底注销")
 
 

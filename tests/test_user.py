@@ -246,8 +246,22 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
             json={"id": str(user_id), "password": "recoveredpassword"},
         )
         assert response.status_code == 200
-        new_token = response.json()["token"]
-        new_auth_headers = get_auth_headers(new_token)
+        token_for_logout = response.json()["token"]
+        
+        response = await client.post(
+            "/api/users/logout", 
+            headers=get_auth_headers(token_for_logout)
+        )
+        assert response.status_code == 200
 
-        response = await client.post("/api/users/delete", headers=new_auth_headers)
+        # 为了防止登出导致旧 Token 失效，重新登录拿一个新 Token 去执行终极删号操作
+        response = await client.post(
+            "/api/users/login",
+            json={"id": str(user_id), "password": "recoveredpassword"},
+        )
+        new_token_for_delete = response.json()["token"]
+        delete_headers = get_auth_headers(new_token_for_delete)
+
+        # 彻底注销账号
+        response = await client.post("/api/users/delete", headers=delete_headers)
         assert response.status_code == 200
