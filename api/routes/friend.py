@@ -6,6 +6,7 @@ from services.friend_service import (
     handle_friend_request,
     remove_friend,
     get_friend_list,
+    create_friend_tag,
 )
 from schemas.user import SearchUserResponse, BaseResponse
 from schemas.friend import (
@@ -13,6 +14,7 @@ from schemas.friend import (
     FriendHandleRequest,
     FriendListResponse,
     FriendInfo,
+    TagCreateRequest,
 )
 from db.database import get_db_conn  # 假设你的数据库连接依赖注入函数
 from core.exceptions import BusinessException
@@ -119,3 +121,17 @@ async def list_friends(
     # 将数据库返回的字典转换为 Pydantic 模型
     data = [FriendInfo(**f) for f in friends]
     return FriendListResponse(code=200, msg="获取成功", data=data)
+
+
+@router.post("/tag/new", response_model=BaseResponse, summary="新建好友标签")
+async def create_friend_tag(
+    request: TagCreateRequest,
+    current_user_id: int = Depends(get_current_user_id),
+    db_session=Depends(get_db_conn),
+):
+    await create_friend_tag(
+        db_session=db_session,
+        user_id=current_user_id,
+        tag_name=request.tag_name,
+    )
+    return BaseResponse(code=200, msg="新建标签成功")

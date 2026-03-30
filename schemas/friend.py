@@ -26,3 +26,7 @@ class FriendInfo(BaseModel):
 
 class FriendListResponse(BaseResponse):
     data: list[FriendInfo] = Field(default_factory=list)
+
+
+class TagCreateRequest(BaseModel):
+    tag_name: str = Field(..., description="标签名称")

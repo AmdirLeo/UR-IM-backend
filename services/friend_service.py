@@ -4,6 +4,7 @@ from db.repositories.friend_repo import (
     db_handle_friend_request,
     db_remove_friend,
     db_get_friend_list,
+    db_create_friend_tag,
 )
 from core.exceptions import BusinessException
 import asyncpg
@@ -84,3 +85,17 @@ async def get_friend_list(
     # 调用 repo 层已实现的好友列表查询
     friends = await db_get_friend_list(db_session, current_user_id)
     return friends
+
+
+async def create_friend_tag(
+    db_session: asyncpg.Connection, user_id: int, tag_name: str
+) -> None:
+    """
+    新建好友分组
+    """
+    try:
+        await db_create_friend_tag(db_session, user_id, tag_name)
+    except Exception as e:
+        # Assuming the database exception string contains some clue, or we rely on the specific exception class
+        # According to the prompt: 409-该分组已存在
+        raise BusinessException(status_code=409, detail="该分组已存在") from e
