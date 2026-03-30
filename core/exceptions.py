@@ -34,7 +34,11 @@ class FriendErrors(Enum):
     TagAlreadyExists = "TagAlreadyExists"
     TagNotFound = "TagNotFound"
     NotInTag = "NotInTag"
-
+class MessageErrors(Enum):
+    ConversationNotFound = "ConversationNotFound"
+    NotInConversation = "NotInConversation"
+    MessageNotFound = "MessageNotFound"
+    QuoteNotFound = "QuoteNotFound"
 # ==========================================
 # 2. 定义业务异常类
 # ==========================================
@@ -44,6 +48,9 @@ class UserException(Exception):
 
 class FriendException(Exception):
     def __init__(self, error_code: FriendErrors):
+        self.error_code = error_code
+class MessageException(Exception):
+    def __init__(self, error_code: MessageErrors):
         self.error_code = error_code
 # ==========================================
 # 2. 全局异常注册函数

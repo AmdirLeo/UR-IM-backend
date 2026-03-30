@@ -1,6 +1,6 @@
 import asyncpg
 import json
-from core.exceptions import BusinessException # 假设你们在 exceptions.py 中添加了 MessageErrors
+from core.exceptions import BusinessException, MessageException, MessageErrors
 
 async def db_send_message(
     conn: asyncpg.Connection, 
@@ -105,7 +105,7 @@ async def db_mark_conversation_as_read(conn: asyncpg.Connection, user_id: int, c
         raise BusinessException(status_code=403, detail="您不在该会话中")
 
     async with conn.transaction():
-        # 1. 把收件箱里的该会话的所有未读消息标记为已读
+        # 把收件箱里的该会话的所有未读消息标记为已读
         update_inbox_query = """
             UPDATE user_inbox 
             SET is_read = true 
@@ -113,7 +113,6 @@ async def db_mark_conversation_as_read(conn: asyncpg.Connection, user_id: int, c
         """
         await conn.execute(update_inbox_query, user_id, conversation_id)
         
-        # 2. 【核心精髓】更新水位线 read_index
         # 找到这个会话目前最大的 msg_id，更新给这个用户
         update_watermark_query = """
             UPDATE conversation_member
@@ -125,3 +124,49 @@ async def db_mark_conversation_as_read(conn: asyncpg.Connection, user_id: int, c
             WHERE conversation_id = $2 AND member_user_id = $1;
         """
         await conn.execute(update_watermark_query, user_id, conversation_id)
+
+async def db_quote_message(
+    conn: asyncpg.Connection, 
+    sender_id: int, 
+    conversation_id: int, 
+    msg_body: dict, 
+    quote_message_id: int
+) -> int:
+    """
+    引用特定消息并发送 (对应 POST /api/message/quote)
+    """
+    # 校验是否在群里
+    is_member = await conn.fetchval("SELECT EXISTS(SELECT 1 FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2)", conversation_id, sender_id)
+    if not is_member:
+        raise MessageException(MessageErrors.NotInConversation)
+
+    # 校验被引用的消息是否存在于该会话中
+    quote_exists = await conn.fetchval("SELECT EXISTS(SELECT 1 FROM conversation_message WHERE conversation_id = $1 AND msg_id = $2)", conversation_id, quote_message_id)
+    if not quote_exists:
+        raise MessageException(MessageErrors.QuoteNotFound)
+
+    # 复用之前的发送逻辑 (开启事务，插入 message，更新 quote_count，写扩散)
+    return await db_send_message(conn, sender_id, conversation_id, msg_body, quote_id=quote_message_id)
+
+async def db_get_full_history(conn: asyncpg.Connection, user_id: int, conversation_id: int) -> list[dict]:
+    """
+    获取会话完整历史记录，按时间升序排列 (对应 POST /api/message/history)
+    注意：在真实生产环境中，极不推荐一次性拉取“全部”记录，通常还是会加上 LIMIT。
+    但为了满足作业需求，这里我们一次性返回。
+    """
+    check_query = "SELECT 1 FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;"
+    if not await conn.fetchval(check_query, conversation_id, user_id):
+        raise MessageException(MessageErrors.NotInConversation)
+
+    query = """
+        SELECT 
+            cm.msg_id, cm.sender_id, u.username AS sender_name, u.avatar_url,
+            m.msg_body, cm.quote_id, cm.quote_count, cm.create_time
+        FROM conversation_message cm
+        JOIN message m ON cm.msg_id = m.msg_id
+        JOIN user_account u ON cm.sender_id = u.user_id
+        WHERE cm.conversation_id = $1
+        ORDER BY cm.create_time ASC; -- 升序，旧的在上，新的在下
+    """
+    rows = await conn.fetch(query, conversation_id)
+    return [dict(row) for row in rows]
