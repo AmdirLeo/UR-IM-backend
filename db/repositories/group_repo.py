@@ -88,3 +88,125 @@ async def db_disband_group(conn: asyncpg.Connection, user_id: int, conversation_
         raise GroupException(GroupErrors.PermissionDenied)
     await conn.execute("DELETE FROM conversation WHERE conversation_id = $1;", conversation_id)
 
+async def db_remove_group_member(
+    conn: asyncpg.Connection, 
+    operator_id: int, 
+    conversation_id: int, 
+    target_user_id: int
+) -> None:
+    """
+    移除群员 (对应 DELETE /api/group/member)
+    包含严格的阶级等级压制校验。
+    """
+    # 1. 不能自己踢自己 (自己退群应该调 quit 接口)
+    if operator_id == target_user_id:
+        raise GroupException(GroupErrors.PermissionDenied)
+
+    # 2. 同时查出操作者和被踢者的角色
+    query = """
+        SELECT member_user_id, role 
+        FROM conversation_member 
+        WHERE conversation_id = $1 AND member_user_id IN ($2, $3);
+    """
+    rows = await conn.fetch(query, conversation_id, operator_id, target_user_id)
+    
+    role_map = {row['member_user_id']: row['role'] for row in rows}
+    
+    operator_role = role_map.get(operator_id)
+    target_role = role_map.get(target_user_id)
+
+    # 如果其中有人不在群里
+    if not operator_role or not target_role:
+        raise GroupException(GroupErrors.NotInGroup)
+
+    # 3. 核心鉴权逻辑 (等级压制)
+    if operator_role == 'member':
+        # 普通人谁也踢不了
+        raise GroupException(GroupErrors.PermissionDenied)
+    elif operator_role == 'admin':
+        # 管理员只能踢普通人，不能踢群主，也不能互踢
+        if target_role in ('owner', 'admin'):
+            raise GroupException(GroupErrors.CannotKickHigherRole)
+    # 如果是 owner，则畅通无阻，可以直接往下走
+
+    # 4. 执行踢人操作
+    delete_query = "DELETE FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;"
+    await conn.execute(delete_query, conversation_id, target_user_id)
+
+async def db_manage_group_role(
+    conn: asyncpg.Connection, 
+    operator_id: int, 
+    conversation_id: int, 
+    target_user_id: int, 
+    new_role: str
+) -> None:
+    """
+    群权限管理 (对应 PUT /api/group/admin)
+    new_role 必须是 'admin', 'member' (取消管理员), 或 'owner' (转让群主)
+    """
+    if new_role not in ('admin', 'member', 'owner'):
+        raise GroupException(GroupErrors.InvalidRole)
+
+    # 1. 只有现任群主才有资格分配权限
+    operator_role = await conn.fetchval(
+        "SELECT role FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;", 
+        conversation_id, operator_id
+    )
+    if operator_role != 'owner':
+        raise GroupException(GroupErrors.PermissionDenied)
+
+    # 2. 确认目标在群里
+    target_role = await conn.fetchval(
+        "SELECT role FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;", 
+        conversation_id, target_user_id
+    )
+    if not target_role:
+        raise GroupException(GroupErrors.NotInGroup)
+
+    async with conn.transaction():
+        if new_role == 'owner':
+            # 转让群主
+            # a. 先把自己降级为管理员 (或 member)
+            await conn.execute(
+                "UPDATE conversation_member SET role = 'admin' WHERE conversation_id = $1 AND member_user_id = $2;",
+                conversation_id, operator_id
+            )
+            # b. 把对方提拔为群主
+            await conn.execute(
+                "UPDATE conversation_member SET role = 'owner' WHERE conversation_id = $1 AND member_user_id = $2;",
+                conversation_id, target_user_id
+            )
+        else:
+            # 普通的提拔管理员 / 撤销管理员
+            await conn.execute(
+                "UPDATE conversation_member SET role = $1 WHERE conversation_id = $2 AND member_user_id = $3;",
+                new_role, conversation_id, target_user_id
+            )
+
+async def db_post_group_announcement(
+    conn: asyncpg.Connection, 
+    operator_id: int, 
+    conversation_id: int, 
+    content: str, 
+    is_pinned: bool = False
+) -> int:
+    """
+    发布群公告 (对应 POST /api/group/announcement)
+    返回新生成的公告 ID
+    """
+    # 1. 鉴权：必须是 owner 或 admin
+    operator_role = await conn.fetchval(
+        "SELECT role FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;", 
+        conversation_id, operator_id
+    )
+    if operator_role not in ('owner', 'admin'):
+        raise GroupException(GroupErrors.PermissionDenied)
+
+    # 2. 插入公告记录
+    query = """
+        INSERT INTO group_announcement (conversation_id, sender_id, content, is_pinned)
+        VALUES ($1, $2, $3, $4)
+        RETURNING announcement_id;
+    """
+    announcement_id = await conn.fetchval(query, conversation_id, operator_id, content, is_pinned)    
+    return announcement_id

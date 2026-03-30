@@ -47,6 +47,7 @@ class GroupErrors(Enum):
     OwnerCannotQuit = "OwnerCannotQuit"        # 群主不能直接退出
     AlreadyInGroup = "AlreadyInGroup"
     CannotKickHigherRole = "CannotKickHigherRole" # 不能踢权限比自己高或同级的人
+    InvalidRole = "InvalidRole"                # 无效的角色类型
 # ==========================================
 # 2. 定义业务异常类
 # ==========================================
@@ -59,6 +60,9 @@ class FriendException(Exception):
         self.error_code = error_code
 class MessageException(Exception):
     def __init__(self, error_code: MessageErrors):
+        self.error_code = error_code
+class GroupException(Exception):
+    def __init__(self, error_code: GroupErrors):
         self.error_code = error_code
 # ==========================================
 # 2. 全局异常注册函数
@@ -95,6 +99,33 @@ def setup_exception_handlers(app):
             FriendErrors.NotInTag: (404, "该好友不在当前分组中"),
         }
         status_code, detail = error_mapping.get(exc.error_code, (500, "好友模块未知错误"))
+        return JSONResponse(status_code=status_code, content={"code": status_code, "msg": detail, "data": None})
+    
+    # 捕获消息模块异常
+    @app.exception_handler(MessageException)
+    async def message_exception_handler(request: Request, exc: MessageException):
+        error_mapping = {
+            MessageErrors.ConversationNotFound: (404, "会话不存在"),
+            MessageErrors.NotInConversation: (403, "你不在这个会话中"),
+            MessageErrors.MessageNotFound: (404, "消息不存在"),
+            MessageErrors.QuoteNotFound: (404, "引用的消息不存在"),
+        }
+        status_code, detail = error_mapping.get(exc.error_code, (500, "消息模块未知错误"))
+        return JSONResponse(status_code=status_code, content={"code": status_code, "msg": detail, "data": None})
+    
+    # 捕获群模块异常
+    @app.exception_handler(GroupException)
+    async def group_exception_handler(request: Request, exc: GroupException):
+        error_mapping = {
+            GroupErrors.GroupNotFound: (404, "群聊不存在"),
+            GroupErrors.NotInGroup: (403, "你不在这个群里"),
+            GroupErrors.PermissionDenied: (403, "权限不足，无法执行此操作"),
+            GroupErrors.OwnerCannotQuit: (400, "群主不能直接退出，请先转让群主"),
+            GroupErrors.AlreadyInGroup: (409, "你已经在这个群里了"),
+            GroupErrors.CannotKickHigherRole: (403, "无法踢出权限比自己高或同级的成员"),
+            GroupErrors.InvalidRole: (400, "无效的角色类型"),
+        }
+        status_code, detail = error_mapping.get(exc.error_code, (500, "群模块未知错误"))
         return JSONResponse(status_code=status_code, content={"code": status_code, "msg": detail, "data": None})
     
     # 捕获 FastAPI 原生的参数校验异常 (Pydantic 报错)
