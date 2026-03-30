@@ -4,6 +4,11 @@ from datetime import datetime
 from schemas.user import BaseResponse
 
 
+class FriendGenericResponse(BaseModel):
+    code: int = 200
+    msg: str = "操作成功"
+
+
 class FriendApplyRequest(BaseModel):
     target_user_id: int = Field(..., description="目标用户ID")
     message: Optional[str] = Field(None, max_length=200, description="申请附言")
@@ -34,3 +39,8 @@ class TagCreateRequest(BaseModel):
 
 class TagDeleteRequest(BaseModel):
     tag_name: str = Field(..., description="标签名称")
+
+
+class TagAddFriendRequest(BaseModel):
+    tag_name: str = Field(..., description="标签名称")
+    friend_ids: list[int] = Field(..., description="好友ID列表")

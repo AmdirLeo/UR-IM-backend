@@ -6,6 +6,7 @@ from db.repositories.friend_repo import (
     db_get_friend_list,
     db_create_friend_tag,
     db_delete_friend_tag,
+    db_add_friends_to_tag,
 )
 from core.exceptions import BusinessException
 import asyncpg
@@ -112,4 +113,16 @@ async def delete_friend_tag(
         await db_delete_friend_tag(db_session, user_id, tag_name)
     except Exception as e:
         # According to the prompt: 404-分组不存在
+        raise BusinessException(status_code=404, detail="分组不存在") from e
+
+
+async def add_friends_to_tag(
+    db_session: asyncpg.Connection, user_id: int, tag_name: str, friend_ids: list[int]
+) -> None:
+    """
+    将好友移入分组
+    """
+    try:
+        await db_add_friends_to_tag(db_session, user_id, tag_name, friend_ids)
+    except Exception as e:
         raise BusinessException(status_code=404, detail="分组不存在") from e

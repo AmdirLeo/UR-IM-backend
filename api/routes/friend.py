@@ -1,22 +1,17 @@
 from fastapi import APIRouter, Depends, Query, Path
 from api.dependencies import get_current_user_id
 from services.user_service import search_users
-from services.friend_service import (
-    apply_friend,
-    handle_friend_request,
-    remove_friend,
-    get_friend_list,
-    create_friend_tag,
-    delete_friend_tag,
-)
-from schemas.user import SearchUserResponse, BaseResponse
+from services import friend_service
+from schemas.user import SearchUserResponse
 from schemas.friend import (
+    FriendGenericResponse,
     FriendApplyRequest,
     FriendHandleRequest,
     FriendListResponse,
     FriendInfo,
     TagCreateRequest,
     TagDeleteRequest,
+    TagAddFriendRequest,
 )
 from db.database import get_db_conn  # 假设你的数据库连接依赖注入函数
 from core.exceptions import BusinessException
@@ -50,7 +45,7 @@ async def search_user(
     return SearchUserResponse(code=200, msg="查询成功", data=users)
 
 
-@router.post("/apply", response_model=BaseResponse, summary="发送好友申请")
+@router.post("/apply", response_model=FriendGenericResponse, summary="发送好友申请")
 async def send_friend_apply(
     request: FriendApplyRequest,
     current_user_id: int = Depends(get_current_user_id),
@@ -61,16 +56,16 @@ async def send_friend_apply(
     - **target_user_id**: 目标用户ID
     - **message**: 可选附言，最多200字符
     """
-    await apply_friend(
+    await friend_service.apply_friend(
         db_session=db_session,
         from_user_id=current_user_id,
         target_user_id=request.target_user_id,
         message=request.message,
     )
-    return BaseResponse(code=200, msg="好友申请已发送")
+    return FriendGenericResponse(code=200, msg="好友申请已发送")
 
 
-@router.put("/handle", response_model=BaseResponse, summary="处理好友申请")
+@router.put("/handle", response_model=FriendGenericResponse, summary="处理好友申请")
 async def friend_handle(
     request: FriendHandleRequest,
     current_user_id: int = Depends(get_current_user_id),
@@ -81,18 +76,18 @@ async def friend_handle(
     - **request_id**: 申请ID
     - **action**: `accepted`（同意）或 `rejected`（拒绝）
     """
-    await handle_friend_request(
+    await friend_service.handle_friend_request(
         db_session=db_session,
         current_user_id=current_user_id,
         request_id=request.request_id,
         action=request.action,
     )
     msg = "已同意好友申请" if request.action == "accepted" else "已拒绝好友申请"
-    return BaseResponse(code=200, msg=msg)
+    return FriendGenericResponse(code=200, msg=msg)
 
 
 @router.delete(
-    "/remove/{friend_user_id}", response_model=BaseResponse, summary="删除好友"
+    "/remove/{friend_user_id}", response_model=FriendGenericResponse, summary="删除好友"
 )
 async def delete_friend(
     friend_user_id: int = Path(..., description="要删除的好友用户ID"),
@@ -102,12 +97,12 @@ async def delete_friend(
     """
     删除好友，同时解除双向关系。
     """
-    await remove_friend(
+    await friend_service.remove_friend(
         db_session=db_session,
         current_user_id=current_user_id,
         friend_user_id=friend_user_id,
     )
-    return BaseResponse(code=200, msg="好友删除成功")
+    return FriendGenericResponse(code=200, msg="好友删除成功")
 
 
 @router.get("", response_model=FriendListResponse, summary="获取好友列表")
@@ -118,36 +113,51 @@ async def list_friends(
     获取当前用户的所有好友列表。
     包含好友基本信息、分组标签、成为好友的时间。
     """
-    friends = await get_friend_list(db_session, current_user_id)
+    friends = await friend_service.get_friend_list(db_session, current_user_id)
 
     # 将数据库返回的字典转换为 Pydantic 模型
     data = [FriendInfo(**f) for f in friends]
     return FriendListResponse(code=200, msg="获取成功", data=data)
 
 
-@router.post("/tag/new", response_model=BaseResponse, summary="新建好友标签")
+@router.post("/tag/new", response_model=FriendGenericResponse, summary="新建好友标签")
 async def create_friend_tag(
     request: TagCreateRequest,
     current_user_id: int = Depends(get_current_user_id),
     db_session=Depends(get_db_conn),
 ):
-    await create_friend_tag(
+    await friend_service.create_friend_tag(
         db_session=db_session,
         user_id=current_user_id,
         tag_name=request.tag_name,
     )
-    return BaseResponse(code=200, msg="新建标签成功")
+    return FriendGenericResponse(code=200, msg="新建标签成功")
 
 
-@router.post("/tag/delete", response_model=BaseResponse, summary="删除好友标签")
+@router.post("/tag/delete", response_model=FriendGenericResponse, summary="删除好友标签")
 async def delete_friend_tag(
     request: TagDeleteRequest,
     current_user_id: int = Depends(get_current_user_id),
     db_session=Depends(get_db_conn),
 ):
-    await delete_friend_tag(
+    await friend_service.delete_friend_tag(
         db_session=db_session,
         user_id=current_user_id,
         tag_name=request.tag_name,
     )
-    return BaseResponse(code=200, msg="删除标签成功")
+    return FriendGenericResponse(code=200, msg="删除标签成功")
+
+
+@router.post("/tag/add", response_model=FriendGenericResponse, summary="将好友加入标签")
+async def add_friends_to_tag(
+    request: TagAddFriendRequest,
+    current_user_id: int = Depends(get_current_user_id),
+    db_session=Depends(get_db_conn),
+):
+    await friend_service.add_friends_to_tag(
+        db_session=db_session,
+        user_id=current_user_id,
+        tag_name=request.tag_name,
+        friend_ids=request.friend_ids,
+    )
+    return FriendGenericResponse(code=200, msg="添加好友到标签成功")
