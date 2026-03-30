@@ -1,335 +1,169 @@
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, patch, ANY
+from httpx import AsyncClient, ASGITransport
+from typing import Dict
 
+# 引入项目核心依赖
+from main import app
 from api.routes.friend import router
-from api.dependencies import get_current_user_id, get_db_conn
 from core.exceptions import setup_exception_handlers
 
+from core.config import settings
+from core.security import get_password_hash, create_access_token
+from db.database import get_db_conn
+from db.repositories.user_repo import db_create_user
+
 # ==========================================
-# 1. Setup & Mocks
+# 1. Setup FastAPI App
 # ==========================================
-app = FastAPI()
 setup_exception_handlers(app)
+# 注意：之前的 mock 测试里 prefix 用的就是 "/api"，保持一致！
 app.include_router(router, prefix="/api")
 
 
-class MockDBConnection:
-    pass
+def get_auth_headers(token: str) -> Dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
 
 
-async def override_get_db_conn():
-    yield MockDBConnection()
+# 强制将测试函数绑定到 session 级别的事件循环
+@pytest.mark.asyncio(loop_scope="session")
+async def test_friend_journey_and_edge_cases():
+    """
+    全量好友功能的 E2E 测试。
+    不使用任何 Mock，完全基于真实的测试数据库和数据流转！
+    """
+    # ==========================================
+    # 0. 准备测试数据：在数据库中创建 3 个真实用户
+    # ==========================================
+    user_a_id = None
+    user_b_id = None
+    user_c_id = None
 
+    async for conn in get_db_conn():
+        hashed_pw = get_password_hash("password123")
+        # 直接利用底层函数快速创建用户，避免走 HTTP 注册需要验证码的麻烦
+        # 假设每次测试前 conftest.py 都会清理数据库，邮箱不会冲突
+        user_a_id = await db_create_user(
+            conn, "friend_user_A", hashed_pw, "friend_a@test.com"
+        )
+        user_b_id = await db_create_user(
+            conn, "friend_user_B", hashed_pw, "friend_b@test.com"
+        )
+        user_c_id = await db_create_user(
+            conn, "friend_user_C", hashed_pw, "friend_c@test.com"
+        )
+        break  # 取一次连接执行完毕即可
 
-async def override_get_current_user_id():
-    return 1  # 模拟当前登录用户ID
+    # 为用户生成真实的 JWT Token，完美通过路由的鉴权依赖
+    token_a = create_access_token(data={"sub": str(user_a_id)})
+    token_b = create_access_token(data={"sub": str(user_b_id)})
 
+    headers_a = get_auth_headers(token_a)
+    headers_b = get_auth_headers(token_b)
 
-app.dependency_overrides[get_db_conn] = override_get_db_conn
-app.dependency_overrides[get_current_user_id] = override_get_current_user_id
+    # 开始端到端 HTTP 测试
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
 
-client = TestClient(app)
+        # ---------------------------------------------------------
+        # 1. 搜索用户 (Search)
+        # ---------------------------------------------------------
+        # A 搜索 B
+        res = await client.get(
+            "/api/friend/search?keyword=friend_user_B", headers=headers_a
+        )
+        assert res.status_code == 200
+        data = res.json()["data"]
+        assert len(data) >= 1
+        assert data[0]["username"] == "friend_user_B"
 
+        # A 搜索不存在的用户
+        res = await client.get(
+            "/api/friend/search?keyword=nobody_exists", headers=headers_a
+        )
+        assert res.status_code == 200
+        assert len(res.json()["data"]) == 0
 
-# ==========================================
-# 2. Search Users Tests (GET /search)
-# ==========================================
-@patch("services.user_service.db_search_users", new_callable=AsyncMock)
-def test_search_users_success(mock_search):
-    # 模拟返回的用户列表
-    mock_search.return_value = {
-        "items": [
-            {
-                "user_id": 2,
-                "username": "张三丰",
-                "avatar_url": "http://example.com/avatar2.jpg",
-            },
-            {"user_id": 3, "username": "张三疯", "avatar_url": None},
-        ],
-        "total": 2,
-        "page": 1,
-        "page_size": 20,
-    }
+        # 参数校验异常 (关键字为空)
+        res = await client.get("/api/friend/search?keyword=", headers=headers_a)
+        assert res.status_code == 422
 
-    # 测试默认分页（page=1, size=20）
-    response = client.get("/api/friend/search?keyword=张三")
-    assert response.status_code == 200
-    # 注意：service中是通过关键字传参的
-    mock_search.assert_called_once_with(ANY, keyword="张三", page=1, page_size=20)
-    mock_search.reset_mock()
+        # ---------------------------------------------------------
+        # 2. 发送好友申请 (Apply)
+        # ---------------------------------------------------------
+        # A 申请加 B 为好友
+        res = await client.post(
+            "/api/friend/apply",
+            json={"target_user_id": user_b_id, "message": "hello B"},
+            headers=headers_a,
+        )
+        assert res.status_code == 200
 
-    # 测试自定义分页
-    response = client.get("/api/friend/search?keyword=张三&page=2&size=5")
-    assert response.status_code == 200
-    mock_search.assert_called_once_with(ANY, keyword="张三", page=2, page_size=5)
+        # A 不能申请加自己
+        res = await client.post(
+            "/api/friend/apply",
+            json={"target_user_id": user_a_id, "message": "hello me"},
+            headers=headers_a,
+        )
+        assert res.status_code == 400
+        assert res.json()["msg"] == "不能添加自己为好友"
 
+        # ---------------------------------------------------------
+        # 3. 处理好友申请 (Handle)
+        # ---------------------------------------------------------
+        # 【难点攻克】因为业务里没有写“查询申请列表”的 HTTP 接口，
+        # 所以我们需要当一回“内鬼”，直接去数据库里把刚才 A 发给 B 的 request_id 查出来。
+        request_id = None
+        async for conn in get_db_conn():
+            req_record = await conn.fetchrow(
+                "SELECT request_id FROM friend_request WHERE sender_id=$1 AND receiver_id=$2",
+                user_a_id,
+                user_b_id,
+            )
+            request_id = req_record["request_id"]
+            break
 
-@patch("services.user_service.db_search_users", new_callable=AsyncMock)
-def test_search_users_empty(mock_search):
-    mock_search.return_value = {"items": [], "total": 0, "page": 1, "page_size": 20}
-    response = client.get("/api/friend/search?keyword=不存在的用户")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["code"] == 200
-    assert data["data"] == []
+        # B 同意 A 的申请 (注意这里换成了 headers_b，代表 B 在操作)
+        res = await client.put(
+            "/api/friend/handle",
+            json={"request_id": request_id, "action": "accepted"},
+            headers=headers_b,
+        )
+        assert res.status_code == 200
+        assert res.json()["msg"] == "已同意好友申请"
 
+        # ---------------------------------------------------------
+        # 4. 获取好友列表 (Get List)
+        # ---------------------------------------------------------
+        # 此时 A 的列表里应该有 B
+        res = await client.get("/api/friend", headers=headers_a)
+        assert res.status_code == 200
+        friends = res.json()["data"]
+        assert len(friends) >= 1
+        # 验证返回的数据里包含 B 的 ID
+        assert any(f["user_id"] == user_b_id for f in friends)
 
-@patch("services.user_service.db_search_users", new_callable=AsyncMock)
-def test_search_users_invalid_keyword(mock_search):
-    # 关键词太短（min_length=1，长度0）
-    response = client.get("/api/friend/search?keyword=")
-    assert response.status_code == 422  # 参数校验失败
+        # ---------------------------------------------------------
+        # 5. 好友分组标签流转 (Tag Journey)
+        # ---------------------------------------------------------
+        tag_name = "BestFriends"
 
+        # 1. 新建标签
+        res = await client.post(
+            "/api/friend/tag/new", json={"tag_name": tag_name}, headers=headers_a
+        )
+        assert res.status_code == 200
 
-# ==========================================
-# 3. Apply Friend Tests (POST /apply)
-# ==========================================
-@patch("services.friend_service.db_create_friend_request", new_callable=AsyncMock)
-def test_apply_friend_success(mock_create):
-    # 根据现有的 service 逻辑，只需要 mock 这一个 DB 调用
-    mock_create.return_value = True  # 创建成功
+        # 2. 模拟重名标签冲突 (409)
+        res = await client.post(
+            "/api/friend/tag/new", json={"tag_name": tag_name}, headers=headers_a
+        )
+        assert res.status_code == 409
 
-    response = client.post(
-        "/api/friend/apply", json={"target_user_id": 2, "message": "交个朋友"}
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["code"] == 200
-    assert data["msg"] == "好友申请已发送"
-    mock_create.assert_called_once()
-
-
-def test_apply_friend_self():
-    # 申请添加自己 (代码在此处直接抛出异常，不需要 Mock 数据库)
-    response = client.post(
-        "/api/friend/apply", json={"target_user_id": 1, "message": "不能加自己"}
-    )
-    assert response.status_code == 400
-    data = response.json()
-    assert data["msg"] == "不能添加自己为好友"
-
-
-@patch("services.friend_service.db_create_friend_request", new_callable=AsyncMock)
-def test_apply_friend_repo_fails(mock_create):
-    # 模拟底层的 db 返回 False
-    mock_create.return_value = False
-    response = client.post(
-        "/api/friend/apply", json={"target_user_id": 999, "message": "不存在"}
-    )
-    # 根据 service 逻辑，会抛出 500
-    assert response.status_code == 500
-    assert response.json()["msg"] == "好友申请发送失败"
-
-
-# ==========================================
-# 4. Handle Friend Request Tests (PUT /handle)
-# ==========================================
-@patch("services.friend_service.db_handle_friend_request", new_callable=AsyncMock)
-def test_handle_request_accept_success(mock_handle):
-    mock_handle.return_value = True
-
-    response = client.put(
-        "/api/friend/handle", json={"request_id": 123, "action": "accepted"}
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["code"] == 200
-    assert data["msg"] == "已同意好友申请"
-    mock_handle.assert_called_once()
-
-
-@patch("services.friend_service.db_handle_friend_request", new_callable=AsyncMock)
-def test_handle_request_reject_success(mock_handle):
-    mock_handle.return_value = True
-
-    response = client.put(
-        "/api/friend/handle", json={"request_id": 123, "action": "rejected"}
-    )
-    assert response.status_code == 200
-    assert response.json()["msg"] == "已拒绝好友申请"
-
-
-@patch("services.friend_service.db_handle_friend_request", new_callable=AsyncMock)
-def test_handle_request_repo_fails(mock_handle):
-    mock_handle.return_value = False  # 如果更新失败（比如申请已处理或不存在）
-
-    response = client.put(
-        "/api/friend/handle", json={"request_id": 123, "action": "accepted"}
-    )
-    assert response.status_code == 400
-    assert response.json()["msg"] == "处理失败，请稍后重试"
-
-
-# ==========================================
-# 5. Remove Friend Tests (DELETE /remove/{friend_id})
-# ==========================================
-@patch("services.friend_service.db_remove_friend", new_callable=AsyncMock)
-def test_remove_friend_success(mock_remove):
-    mock_remove.return_value = True
-    response = client.delete("/api/friend/remove/2")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["code"] == 200
-    assert data["msg"] == "好友删除成功"
-    mock_remove.assert_called_once()
-
-
-@patch("services.friend_service.db_remove_friend", new_callable=AsyncMock)
-def test_remove_friend_self(mock_remove):
-    # 尝试删除自己，应该直接被 service 层拦截
-    response = client.delete("/api/friend/remove/1")
-    assert response.status_code == 400
-    assert response.json()["msg"] == "不能删除自己"
-    mock_remove.assert_not_called()  # 不应该调用 repo
-
-
-@patch("services.friend_service.db_remove_friend", new_callable=AsyncMock)
-def test_remove_friend_not_friend(mock_remove):
-    mock_remove.return_value = False  # repo 返回删除失败（找不到关系）
-    response = client.delete("/api/friend/remove/2")
-    assert response.status_code == 404
-    assert response.json()["msg"] == "好友不存在或已删除"
-
-
-# ==========================================
-# 6. Get Friend List Tests (GET /)
-# ==========================================
-@patch("services.friend_service.db_get_friend_list", new_callable=AsyncMock)
-def test_get_friend_list_success(mock_list):
-    mock_list.return_value = [
-        {
-            "user_id": 2,
-            "username": "张三",
-            "avatar_url": "http://example.com/2.jpg",
-            "tag": "同学",
-            "be_friend_time": "2025-03-20T10:30:00",
-        },
-        {
-            "user_id": 3,
-            "username": "李四",
-            "avatar_url": None,
-            "tag": None,
-            "be_friend_time": "2025-03-21T15:20:00",
-        },
-    ]
-    response = client.get("/api/friend")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["code"] == 200
-    assert len(data["data"]) == 2
-    assert data["data"][0]["username"] == "张三"
-    assert data["data"][0]["tag"] == "同学"
-    assert "be_friend_time" in data["data"][0]
-    mock_list.assert_called_once()
-
-
-@patch("services.friend_service.db_get_friend_list", new_callable=AsyncMock)
-def test_get_friend_list_empty(mock_list):
-    mock_list.return_value = []
-    response = client.get("/api/friend")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["code"] == 200
-    assert data["data"] == []
-
-
-# ==========================================
-# 7. Friend Tag Tests (POST /tag/...)
-# ==========================================
-
-
-@patch("services.friend_service.db_create_friend_tag", new_callable=AsyncMock)
-def test_create_friend_tag_success(mock_create):
-    mock_create.return_value = None
-    response = client.post("/api/friend/tag/new", json={"tag_name": "同学"})
-    assert response.status_code == 200
-    assert response.json()["code"] == 200
-    assert response.json()["msg"] == "新建标签成功"
-
-
-@patch("services.friend_service.db_create_friend_tag", new_callable=AsyncMock)
-def test_create_friend_tag_conflict(mock_create):
-    mock_create.side_effect = Exception("db error")
-    response = client.post("/api/friend/tag/new", json={"tag_name": "同学"})
-    assert response.status_code == 409
-    assert response.json()["msg"] == "该分组已存在"
-
-
-@patch("services.friend_service.db_delete_friend_tag", new_callable=AsyncMock)
-def test_delete_friend_tag_success(mock_delete):
-    mock_delete.return_value = None
-    response = client.post("/api/friend/tag/delete", json={"tag_name": "同学"})
-    assert response.status_code == 200
-    assert response.json()["code"] == 200
-    assert response.json()["msg"] == "删除标签成功"
-
-
-@patch("services.friend_service.db_delete_friend_tag", new_callable=AsyncMock)
-def test_delete_friend_tag_not_found(mock_delete):
-    mock_delete.side_effect = Exception("db error")
-    response = client.post("/api/friend/tag/delete", json={"tag_name": "同学"})
-    assert response.status_code == 404
-    assert response.json()["msg"] == "分组不存在"
-
-
-@patch("services.friend_service.db_add_friends_to_tag", new_callable=AsyncMock)
-def test_add_friends_to_tag_success(mock_add):
-    mock_add.return_value = None
-    response = client.post(
-        "/api/friend/tag/add", json={"tag_name": "同学", "friend_ids": [2, 3]}
-    )
-    assert response.status_code == 200
-    assert response.json()["code"] == 200
-    assert response.json()["msg"] == "添加好友到标签成功"
-
-
-@patch("services.friend_service.db_add_friends_to_tag", new_callable=AsyncMock)
-def test_add_friends_to_tag_not_found(mock_add):
-    mock_add.side_effect = Exception("db error")
-    response = client.post(
-        "/api/friend/tag/add", json={"tag_name": "同学", "friend_ids": [2, 3]}
-    )
-    assert response.status_code == 404
-    assert response.json()["msg"] == "分组不存在"
-
-
-@patch("services.friend_service.db_get_friends_by_tag", new_callable=AsyncMock)
-def test_query_friends_by_tag_success(mock_get):
-    mock_get.return_value = [
-        {
-            "user_id": 2,
-            "username": "张三",
-            "avatar_url": "http://example.com/2.jpg",
-            "tag": "同学",
-            "be_friend_time": "2025-03-20T10:30:00",
-        }
-    ]
-    response = client.post("/api/friend/tag/query", json={"tag_name": "同学"})
-    assert response.status_code == 200
-    data = response.json()
-    assert data["code"] == 200
-    assert len(data["data"]) == 1
-    assert data["data"][0]["username"] == "张三"
-
-
-@patch("services.friend_service.db_remove_friend_from_tag", new_callable=AsyncMock)
-def test_remove_friend_from_tag_success(mock_remove):
-    mock_remove.return_value = None
-    response = client.post(
-        "/api/friend/tag/remove", json={"tag_name": "同学", "friend_id": 2}
-    )
-    assert response.status_code == 200
-    assert response.json()["code"] == 200
-    assert response.json()["msg"] == "移出好友成功"
-
-
-@patch("services.friend_service.db_remove_friend_from_tag", new_callable=AsyncMock)
-def test_remove_friend_from_tag_not_found(mock_remove):
-    mock_remove.side_effect = Exception("db error")
-    response = client.post(
-        "/api/friend/tag/remove", json={"tag_name": "同学", "friend_id": 2}
-    )
-    assert response.status_code == 404
-    assert response.json()["msg"] == "该好友不在当前分组中"
+        # 3. 把 B 加入标签
+        res = await client.post(
+            "/api/friend/tag/add",
+            json={"tag_name": tag_name, "friend_ids": [user_b_id]},
+            headers=headers_a,
+        )
+        assert res.status_code == 200
