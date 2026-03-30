@@ -54,3 +54,8 @@ class FriendTagQueryResponse(BaseModel):
     code: int = 200
     msg: str = "查询成功"
     data: list[dict] = Field(..., description="好友信息列表")
+
+
+class TagRemoveFriendRequest(BaseModel):
+    tag_name: str = Field(..., description="标签名称")
+    friend_id: int = Field(..., description="好友ID")

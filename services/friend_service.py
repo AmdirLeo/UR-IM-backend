@@ -8,6 +8,7 @@ from db.repositories.friend_repo import (
     db_delete_friend_tag,
     db_add_friends_to_tag,
     db_get_friends_by_tag,
+    db_remove_friend_from_tag,
 )
 from core.exceptions import BusinessException
 import asyncpg
@@ -136,3 +137,17 @@ async def get_friends_by_tag(
     获取某分组下的所有好友
     """
     return await db_get_friends_by_tag(db_session, user_id, tag_name)
+
+
+async def remove_friend_from_tag(
+    db_session: asyncpg.Connection, user_id: int, friend_user_id: int, tag_name: str
+) -> None:
+    """
+    将特定好友移出分组
+    """
+    try:
+        await db_remove_friend_from_tag(
+            db_session, user_id, friend_user_id, tag_name
+        )
+    except Exception as e:
+        raise BusinessException(status_code=404, detail="该好友不在当前分组中") from e

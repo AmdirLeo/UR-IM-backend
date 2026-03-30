@@ -14,6 +14,7 @@ from schemas.friend import (
     TagAddFriendRequest,
     TagQueryRequest,
     FriendTagQueryResponse,
+    TagRemoveFriendRequest,
 )
 from db.database import get_db_conn  # 假设你的数据库连接依赖注入函数
 from core.exceptions import BusinessException
@@ -181,3 +182,20 @@ async def query_friends_by_tag(
         tag_name=request.tag_name,
     )
     return FriendTagQueryResponse(code=200, msg="查询成功", data=friends)
+
+
+@router.post(
+    "/tag/remove", response_model=FriendGenericResponse, summary="删除tag中的好友"
+)
+async def remove_friend_from_tag(
+    request: TagRemoveFriendRequest,
+    current_user_id: int = Depends(get_current_user_id),
+    db_session=Depends(get_db_conn),
+):
+    await friend_service.remove_friend_from_tag(
+        db_session=db_session,
+        user_id=current_user_id,
+        friend_user_id=request.friend_id,
+        tag_name=request.tag_name,
+    )
+    return FriendGenericResponse(code=200, msg="移出好友成功")
