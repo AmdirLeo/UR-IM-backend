@@ -82,8 +82,9 @@ async def db_update_user_password(conn: asyncpg.Connection, user_id: int, new_pa
     """
     query = "UPDATE user_account SET password = $1 WHERE user_id = $2;"
     status = await conn.execute(query, new_password_hash, user_id)
-    if status != 'DELETE 1':
+    if status != 'UPDATE 1':
         raise UserException(UserErrors.NotFound)
+    
 async def db_update_user_profile(
     conn: asyncpg.Connection, 
     user_id: int, 

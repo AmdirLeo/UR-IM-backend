@@ -35,13 +35,12 @@ async def search_user(
     根据用户名模糊搜索其他用户，返回用户ID、用户名、头像URL。
     自动排除当前登录用户。
     """
-    offset = (page - 1) * size
 
     users = await search_users(
         db_session=db_session,
         keyword=keyword,
-        limit=size,
-        offset=offset,
+        page=page,
+        page_size=size,
     )
 
     # 返回统一格式

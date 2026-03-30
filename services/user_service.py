@@ -34,21 +34,21 @@ from core.ws_manager import manager
 
 
 async def search_users(
-    db_session, keyword: str, limit: int = 20, offset: int = 0
+    db_session, keyword: str, page: int = 1, page_size: int = 20
 ) -> List[UserSearchResult]:
     # 直接调用 repository 层已实现的函数
     users = await db_search_users(
         db_session,
         keyword=keyword,
-        limit=limit,
-        offset=offset,
+        page=page,
+        page_size=page_size,
     )
     # 如果 repository 返回的是字典列表，直接转换
     return [
         UserSearchResult(
             user_id=u["user_id"], username=u["username"], avatar_url=u.get("avatar_url")
         )
-        for u in users
+        for u in users["items"]  # <--- 重点：加上 ["items"]
     ]
 
 
@@ -121,8 +121,6 @@ async def logout_service(current_user_id: int) -> BaseResponse:
 
 async def delete_account_service(conn, current_user_id: int) -> BaseResponse:
     success = await db_delete_user(conn, current_user_id)
-    if not success:
-        raise BusinessException(status_code=404, detail="账号不存在")
     return BaseResponse(code=200, msg="账号已彻底注销")
 
 
