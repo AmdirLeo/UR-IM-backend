@@ -41,6 +41,16 @@ async def close_db_pool():
         await db_pool.close()
         print("数据库连接池关闭。")
 
+def get_db_pool() -> asyncpg.Pool:
+    """
+    获取全局数据库连接池实例。
+    在执行 CRUD 操作或测试环境的数据清理时调用此函数。
+    """
+    global db_pool
+    if db_pool is None:
+        raise RuntimeError("数据库连接池尚未初始化！请确保在 FastAPI 的 lifespan 或测试 setup 中调用了 init_db_pool()")
+    return db_pool
+
 async def get_db_conn() -> AsyncGenerator[asyncpg.Connection, None]:
     """
     当 API 路由被访问时，这个函数会从连接池中借出一个连接，

@@ -1,6 +1,6 @@
 import asyncpg
 import json
-from core.exceptions import BusinessException, MessageException, MessageErrors
+from core.exceptions import MessageException, MessageErrors
 
 async def db_send_message(
     conn: asyncpg.Connection, 
@@ -24,7 +24,7 @@ async def db_send_message(
     is_member = await conn.fetchval(check_member_query, conversation_id, sender_id)
     if not is_member:
         # 对应 MessageErrors.NotInConversation
-        raise BusinessException(status_code=403, detail="您不在该会话中，无法发送消息")
+        raise MessageException(MessageErrors.NotInConversation)
 
     # 开启强事务，保证发消息的一致性
     async with conn.transaction():
@@ -38,7 +38,7 @@ async def db_send_message(
         msg_id = await conn.fetchval(insert_msg_query, json.dumps(msg_body))
         
         if not msg_id:
-            raise BusinessException(status_code=500, detail="消息落库失败")
+            raise MessageException(MessageErrors.MessageNotFound)
 
         # 3. 插入会话消息映射表，并处理引用逻辑
         insert_conv_msg_query = """
@@ -102,7 +102,7 @@ async def db_mark_conversation_as_read(conn: asyncpg.Connection, user_id: int, c
     # 确保用户在这个会话里
     check_query = "SELECT 1 FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;"
     if not await conn.fetchval(check_query, conversation_id, user_id):
-        raise BusinessException(status_code=403, detail="您不在该会话中")
+        raise MessageException(MessageErrors.NotInConversation)
 
     async with conn.transaction():
         # 把收件箱里的该会话的所有未读消息标记为已读
@@ -147,6 +147,64 @@ async def db_quote_message(
 
     # 复用之前的发送逻辑 (开启事务，插入 message，更新 quote_count，写扩散)
     return await db_send_message(conn, sender_id, conversation_id, msg_body, quote_id=quote_message_id)
+async def db_get_message_history(
+    conn: asyncpg.Connection, 
+    user_id: int, 
+    conversation_id: int, 
+    cursor_msg_id: int = None, 
+    limit: int = 20
+) -> list[dict]:
+    """
+    基于游标拉取历史消息 / 离线消息 (对应 POST /api/message/offlinemsg 和 /history)
+    
+    参数:
+        cursor_msg_id: 前端当前列表中最老（最上面）的一条消息的 msg_id。
+                       如果不传 (None)，代表用户刚点开聊天框，拉取最新的一批。
+        limit: 每次拉取的条数
+    """
+    
+    # 1. 安全防线：必须是该会话的成员才能看聊天记录
+    check_query = "SELECT 1 FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;"
+    if not await conn.fetchval(check_query, conversation_id, user_id):
+        raise MessageException(MessageErrors.NotInConversation)
+
+    # 2. 核心 SQL：联表查询拿到消息本体、发送者信息、引用信息
+    base_query = """
+        SELECT 
+            cm.msg_id, 
+            cm.sender_id, 
+            u.username AS sender_name, 
+            u.avatar_url AS sender_avatar, 
+            m.msg_body, 
+            cm.quote_id, 
+            cm.quote_count, 
+            cm.create_time
+        FROM conversation_message cm
+        JOIN message m ON cm.msg_id = m.msg_id
+        JOIN user_account u ON cm.sender_id = u.user_id
+    """
+    
+    # 3. 动态拼接游标条件
+    if cursor_msg_id:
+        # 向上滑动拉取更老的历史消息 (找比游标更小的 ID)
+        query = base_query + """
+            WHERE cm.conversation_id = $1 AND cm.msg_id < $3
+            ORDER BY cm.msg_id DESC 
+            LIMIT $2;
+        """
+        rows = await conn.fetch(query, conversation_id, limit, cursor_msg_id)
+    else:
+        # 第一次打开，没有游标，直接拉取最新的 limit 条
+        query = base_query + """
+            WHERE cm.conversation_id = $1
+            ORDER BY cm.msg_id DESC 
+            LIMIT $2;
+        """
+        rows = await conn.fetch(query, conversation_id, limit)
+
+    # 4. 格式化返回
+    # 注意：因为使用了 DESC 排序，拿到的列表是时间倒序的（最新的一条在 [0]）。
+    return [dict(row) for row in rows]
 
 async def db_get_full_history(conn: asyncpg.Connection, user_id: int, conversation_id: int) -> list[dict]:
     """
@@ -169,4 +227,51 @@ async def db_get_full_history(conn: asyncpg.Connection, user_id: int, conversati
         ORDER BY cm.create_time ASC; -- 升序，旧的在上，新的在下
     """
     rows = await conn.fetch(query, conversation_id)
+    return [dict(row) for row in rows]
+
+async def db_delete_local_messages(conn: asyncpg.Connection, user_id: int, conversation_id: int, msg_ids: list[int]) -> None:
+    """
+    删除用户的本地聊天记录 (对应 DELETE /api/message/delete)
+    注意：这只是从当前用户的收件箱中抹去记录，不影响真正的 message 实体和其他群成员。
+    """
+    if not msg_ids:
+        return
+
+    query = """
+        DELETE FROM user_inbox 
+        WHERE user_id = $1 AND conversation_id = $2 AND msg_id = ANY($3::bigint[]);
+    """
+    await conn.execute(query, user_id, conversation_id, msg_ids)
+
+async def db_set_conversation_mute(conn: asyncpg.Connection, user_id: int, conversation_id: int, is_muted: bool) -> None:
+    """设置消息免打扰 (对应 PUT /api/conversation/mute)"""
+    query = "UPDATE conversation_member SET is_muted = $1 WHERE conversation_id = $2 AND member_user_id = $3;"
+    status = await conn.execute(query, is_muted, conversation_id, user_id)
+    if status != 'UPDATE 1':
+        raise MessageException(MessageErrors.NotInConversation)
+
+async def db_set_conversation_pin(conn: asyncpg.Connection, user_id: int, conversation_id: int, is_pinned: bool) -> None:
+    """设置置顶会话 (对应 PUT /api/conversation/pin)"""
+    query = "UPDATE conversation_member SET is_pinned = $1 WHERE conversation_id = $2 AND member_user_id = $3;"
+    status = await conn.execute(query, is_pinned, conversation_id, user_id)
+    if status != 'UPDATE 1':
+        raise MessageException(MessageErrors.NotInConversation)
+
+
+async def db_get_all_unread_counts_with_mute(conn: asyncpg.Connection, user_id: int) -> list[dict]:
+    """
+    获取用户的未读数列表（带上该群是否免打扰的标记，前端靠这个区分红点和灰点）
+    """
+    query = """
+        SELECT 
+            i.conversation_id, 
+            COUNT(i.msg_id) as unread_count,
+            m.is_muted,
+            m.is_pinned
+        FROM user_inbox i
+        JOIN conversation_member m ON i.conversation_id = m.conversation_id AND i.user_id = m.member_user_id
+        WHERE i.user_id = $1 AND i.is_read = false
+        GROUP BY i.conversation_id, m.is_muted, m.is_pinned;
+    """
+    rows = await conn.fetch(query, user_id)
     return [dict(row) for row in rows]
