@@ -115,7 +115,7 @@ def test_friend_exception_handler_pending():
     assert response.status_code == 409
     data = response.json()
     assert data["code"] == 409
-    assert data["msg"] == "已有待处理的好友申请（无论谁先发起的），请耐心等待或前往处理"
+    assert data["msg"] == "已有待处理的好友申请，请耐心等待或前往处理"
     assert data["data"] is None
 
 def test_friend_exception_handler_invalid_action():
