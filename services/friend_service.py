@@ -73,11 +73,7 @@ async def remove_friend(
         raise BusinessException(status_code=400, detail="不能删除自己")
 
     # 2. 调用 repo 层删除好友（同时删除双向记录）
-    success = await db_remove_friend(db_session, current_user_id, friend_user_id)
-
-    if not success:
-        # 如果删除失败（如不是好友关系），返回友好错误
-        raise BusinessException(status_code=404, detail="好友不存在或已删除")
+    await db_remove_friend(db_session, current_user_id, friend_user_id)
 
 
 async def get_friend_list(

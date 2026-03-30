@@ -167,3 +167,41 @@ async def test_friend_journey_and_edge_cases():
             headers=headers_a,
         )
         assert res.status_code == 200
+
+        # 4. 查询标签里的好友，应该只有 B
+        res = await client.post(
+            "/api/friend/tag/query", json={"tag_name": tag_name}, headers=headers_a
+        )
+        assert res.status_code == 200
+        assert len(res.json()["data"]) == 1
+        assert res.json()["data"][0]["user_id"] == user_b_id
+
+        # 5. 把 B 移出标签
+        res = await client.post(
+            "/api/friend/tag/remove",
+            json={"tag_name": tag_name, "friend_id": user_b_id},
+            headers=headers_a,
+        )
+        assert res.status_code == 200
+
+        # 6. 彻底删除标签
+        res = await client.post(
+            "/api/friend/tag/delete", json={"tag_name": tag_name}, headers=headers_a
+        )
+        assert res.status_code == 200
+
+        # ---------------------------------------------------------
+        # 6. 删除好友 (Remove)
+        # ---------------------------------------------------------
+        # A 翻脸无情，删除了 B
+        res = await client.delete(f"/api/friend/remove/{user_b_id}", headers=headers_a)
+        assert res.status_code == 200
+
+        # 再次查 A 的列表，应该已经没有 B 了
+        res = await client.get("/api/friend", headers=headers_a)
+        friends = res.json()["data"]
+        assert not any(f["user_id"] == user_b_id for f in friends)
+
+        # 尝试删除一个根本不是好友的 C (404)
+        res = await client.delete(f"/api/friend/remove/{user_c_id}", headers=headers_a)
+        assert res.status_code == 404
