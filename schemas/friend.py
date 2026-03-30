@@ -44,3 +44,13 @@ class TagDeleteRequest(BaseModel):
 class TagAddFriendRequest(BaseModel):
     tag_name: str = Field(..., description="标签名称")
     friend_ids: list[int] = Field(..., description="好友ID列表")
+
+
+class TagQueryRequest(BaseModel):
+    tag_name: str = Field(..., description="标签名称")
+
+
+class FriendTagQueryResponse(BaseModel):
+    code: int = 200
+    msg: str = "查询成功"
+    data: list[dict] = Field(..., description="好友信息列表")
