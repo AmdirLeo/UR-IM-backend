@@ -1,4 +1,5 @@
 import asyncpg
+from core.exceptions import UserErrors, UserException
 
 async def db_create_user(conn: asyncpg.Connection, username: str, password_hash: str, email: str) -> int:
     """
@@ -11,9 +12,12 @@ async def db_create_user(conn: asyncpg.Connection, username: str, password_hash:
         VALUES ($1, $2, $3)
         RETURNING user_id;
     """
-    # fetchval 用于执行 INSERT 并直接拿回 RETURNING 返回的那个单值（即 user_id）
-    user_id = await conn.fetchval(query, username, password_hash, email)
-    return user_id
+    try:
+        user_id = await conn.fetchval(query, username, password_hash, email)
+        return user_id
+    except asyncpg.exceptions.UniqueViolationError:
+        # 捕获数据库层面的唯一性冲突（邮箱重复注册）
+        raise UserException(UserErrors.AlreadyExists)
 
 async def db_get_user_by_email(conn: asyncpg.Connection, email: str) -> dict | None:
     """
@@ -35,8 +39,9 @@ async def db_get_user_by_id(conn: asyncpg.Connection, user_id: int) -> dict | No
         WHERE user_id = $1;
     """
     row = await conn.fetchrow(query, user_id)
-    return dict(row) if row else None
-
+    if not row:
+        raise UserException(UserErrors.NotFound)
+    return dict(row)
 async def db_get_password_by_id(conn: asyncpg.Connection, user_id: int) -> str | None:
     """
     通过 ID 获取用户的密码哈希（仅用于登录时验证密码）
@@ -57,7 +62,7 @@ async def db_update_user_login_time(conn: asyncpg.Connection, user_id: int):
     """
     await conn.execute(query, user_id)
 
-async def db_delete_user(conn: asyncpg.Connection, user_id: int) -> bool:
+async def db_delete_user(conn: asyncpg.Connection, user_id: int):
     """
     注销用户账号。
     得益于建表时的 ON DELETE CASCADE 机制，
@@ -68,16 +73,17 @@ async def db_delete_user(conn: asyncpg.Connection, user_id: int) -> bool:
     # execute 返回的是命令状态字符串，例如成功删除了1行会返回 'DELETE 1'
     status = await conn.execute(query, user_id)
     
-    # 如果状态字符串包含 'DELETE 1'，说明真的删掉了一个用户
-    return status == 'DELETE 1'
+    if status != 'DELETE 1':
+        raise UserException(UserErrors.NotFound)
 
-async def db_update_user_password(conn: asyncpg.Connection, user_id: int, new_password_hash: str) -> bool:
+async def db_update_user_password(conn: asyncpg.Connection, user_id: int, new_password_hash: str):
     """
     专门用于修改密码（对应忘记密码或主动修改密码接口）
     """
     query = "UPDATE user_account SET password = $1 WHERE user_id = $2;"
     status = await conn.execute(query, new_password_hash, user_id)
-    return status == 'UPDATE 1'
+    if status != 'DELETE 1':
+        raise UserException(UserErrors.NotFound)
 async def db_update_user_profile(
     conn: asyncpg.Connection, 
     user_id: int, 
@@ -115,17 +121,52 @@ async def db_update_user_profile(
     status = await conn.execute(query, *values)
     return status == 'UPDATE 1'
 
-async def db_search_users(conn: asyncpg.Connection, keyword: str) -> list[dict]:###分页待实现
+async def db_search_users(
+    conn: asyncpg.Connection, 
+    keyword: str, 
+    page: int = 1, 
+    page_size: int = 20
+) -> dict:
     """
-    通过用户名模糊查找用户
-    返回脱敏后的信息列表（用户名，id，头像url）
+    通过用户名模糊查找用户 (支持分页)
+    
+    参数:
+        keyword: 搜索关键字
+        page: 当前页码 (从 1 开始)
+        page_size: 每页显示的条数
+        
+    返回:
+        包含当前页数据 (items) 和总匹配人数 (total) 的字典
     """
-    query = """
+    # 1. 计算需要跳过的记录数 (OFFSET)
+    # 比如：第 1 页跳过 0 条，第 2 页跳过 20 条
+    offset = (page - 1) * page_size
+    search_pattern = f"%{keyword}%"
+    
+    # 2. 查询当前页的详细数据
+    # 注意：必须加 ORDER BY，通常用主键 user_id 排序，保证分页结果稳定不乱序
+    query_items = """
         SELECT user_id, username, avatar_url 
         FROM user_account 
         WHERE username ILIKE $1
-        LIMIT 20;
+        ORDER BY user_id ASC
+        LIMIT $2 OFFSET $3;
     """
-    search_pattern = f"%{keyword}%"
-    rows = await conn.fetch(query, search_pattern)
-    return [dict(row) for row in rows]
+    rows = await conn.fetch(query_items, search_pattern, page_size, offset)
+    items = [dict(row) for row in rows]
+    
+    # 3. 查询符合搜索条件的总人数 (前端分页器强依赖这个数据)
+    query_total = """
+        SELECT COUNT(*) 
+        FROM user_account 
+        WHERE username ILIKE $1;
+    """
+    total_count = await conn.fetchval(query_total, search_pattern)
+    
+    # 4. 组装成标准的分页返回格式
+    return {
+        "items": items,          # 当前页的用户列表
+        "total": total_count,    # 满足条件的总条数
+        "page": page,            # 当前页码
+        "page_size": page_size   # 每页大小
+    }
