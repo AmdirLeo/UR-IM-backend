@@ -48,6 +48,10 @@ class GroupErrors(Enum):
     AlreadyInGroup = "AlreadyInGroup"
     CannotKickHigherRole = "CannotKickHigherRole" # 不能踢权限比自己高或同级的人
     InvalidRole = "InvalidRole"                # 无效的角色类型
+    InviteNotFound = "InviteNotFound"      # 邀请记录不存在或已处理
+    InvitePending = "InvitePending"       # 已有待处理的邀请记录
+    CannotInviteSelf = "CannotInviteSelf"          # 不能邀请自己加群
+    InvalidReviewAction = "InvalidReviewAction"
 # ==========================================
 # 2. 定义业务异常类
 # ==========================================
@@ -124,6 +128,10 @@ def setup_exception_handlers(app):
             GroupErrors.AlreadyInGroup: (409, "你已经在这个群里了"),
             GroupErrors.CannotKickHigherRole: (403, "无法踢出权限比自己高或同级的成员"),
             GroupErrors.InvalidRole: (400, "无效的角色类型"),
+            GroupErrors.InviteNotFound: (404, "邀请记录不存在或已处理"),
+            GroupErrors.InvitePending: (409, "已有待处理的邀请记录，请耐心等待或前往处理"),
+            GroupErrors.CannotInviteSelf: (400, "不能邀请自己加入群聊"),
+            GroupErrors.InvalidReviewAction: (400, "无效的审核操作"),
         }
         status_code, detail = error_mapping.get(exc.error_code, (500, "群模块未知错误"))
         return JSONResponse(status_code=status_code, content={"code": status_code, "msg": detail, "data": None})

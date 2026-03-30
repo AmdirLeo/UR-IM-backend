@@ -210,3 +210,101 @@ async def db_post_group_announcement(
     """
     announcement_id = await conn.fetchval(query, conversation_id, operator_id, content, is_pinned)    
     return announcement_id
+
+async def db_invite_to_group(
+    conn: asyncpg.Connection, 
+    inviter_id: int, 
+    conversation_id: int, 
+    invitee_id: int
+) -> int:
+    """
+    邀请好友加入群聊 (对应 POST /api/group/invite)
+    产生一条 pending 状态的邀请记录，等待审核
+    返回新生成的 invite_id
+    """
+    # 1. 不能邀请自己
+    if inviter_id == invitee_id:
+        raise GroupException(GroupErrors.CannotInviteSelf)
+
+    # 2. 校验邀请人必须在群里
+    inviter_role = await conn.fetchval(
+        "SELECT role FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;", 
+        conversation_id, inviter_id
+    )
+    if not inviter_role:
+        raise GroupException(GroupErrors.NotInGroup)
+
+    # 3. 校验被邀请人是否已经在群里了
+    is_invitee_in_group = await conn.fetchval(
+        "SELECT EXISTS(SELECT 1 FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2);", 
+        conversation_id, invitee_id
+    )
+    if is_invitee_in_group:
+        raise GroupException(GroupErrors.AlreadyInGroup)
+
+    # 4. 防轰炸：校验是否已经有关于该用户的待审核邀请
+    has_pending = await conn.fetchval(
+        "SELECT EXISTS(SELECT 1 FROM group_invite WHERE conversation_id = $1 AND invitee_id = $2 AND status = 'pending');",
+        conversation_id, invitee_id
+    )
+    if has_pending:
+        raise GroupException(GroupErrors.InvitePending)
+
+    # 5. 插入邀请记录
+    query = """
+        INSERT INTO group_invite (conversation_id, inviter_id, invitee_id)
+        VALUES ($1, $2, $3)
+        RETURNING invite_id;
+    """
+    invite_id = await conn.fetchval(query, conversation_id, inviter_id, invitee_id)
+    return invite_id
+
+
+async def db_review_group_invite(
+    conn: asyncpg.Connection, 
+    reviewer_id: int, 
+    invite_id: int, 
+    action: str
+) -> None:
+    """
+    审核群邀请 (对应 PUT /api/group/invite/review)
+    action 必须是 'approved' 或 'rejected'
+    """
+    if action not in ('approved', 'rejected'):
+        raise GroupException(GroupErrors.InvalidReviewAction)
+
+    # 1. 查找这条邀请记录
+    query_invite = "SELECT conversation_id, invitee_id, status FROM group_invite WHERE invite_id = $1;"
+    invite_record = await conn.fetchrow(query_invite, invite_id)
+    
+    if not invite_record or invite_record['status'] != 'pending':
+        raise GroupException(GroupErrors.InviteNotFound)
+
+    conversation_id = invite_record['conversation_id']
+    invitee_id = invite_record['invitee_id']
+
+    # 2. 核心鉴权：审核人必须是这个群的 owner 或 admin
+    reviewer_role = await conn.fetchval(
+        "SELECT role FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;", 
+        conversation_id, reviewer_id
+    )
+    if reviewer_role not in ('owner', 'admin'):
+        raise GroupException(GroupErrors.PermissionDenied)
+
+    # 3. 开启强事务处理审核结果
+    async with conn.transaction():
+        # a. 更新邀请状态
+        await conn.execute(
+            "UPDATE group_invite SET status = $1 WHERE invite_id = $2;",
+            action, invite_id
+        )
+
+        # b. 如果通过了，就把人拉进群
+        if action == 'approved':
+            # ON CONFLICT DO NOTHING 防止极端并发下重复拉人报错
+            insert_member = """
+                INSERT INTO conversation_member (conversation_id, member_user_id, role)
+                VALUES ($1, $2, 'member')
+                ON CONFLICT (conversation_id, member_user_id) DO NOTHING;
+            """
+            await conn.execute(insert_member, conversation_id, invitee_id)
