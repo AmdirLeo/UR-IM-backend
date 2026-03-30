@@ -1,9 +1,9 @@
--- 1. 用户表 (补充了 API 要求的 email 和 avatar)
+-- 1. 用户表
 CREATE TABLE user_account (
     user_id BIGSERIAL PRIMARY KEY,
     username VARCHAR(255) NOT NULL,
     password VARCHAR(255) NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,    -- 邮箱，登录/找回密码需要，需保证唯一
+    email VARCHAR(255) UNIQUE NOT NULL,
     avatar_url TEXT,                       -- 头像链接/filekey
     register_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     login_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
@@ -51,7 +51,6 @@ CREATE TABLE conversation_member (
 -- 6. 消息内容本体表
 CREATE TABLE message (
     msg_id BIGSERIAL PRIMARY KEY,
-    -- 使用 JSONB 支持富文本扩展，例如: {"type": "text", "content": "你好"} 或 {"type": "image", "url": "..."}
     msg_body JSONB NOT NULL 
 );
 
@@ -88,8 +87,27 @@ CREATE TABLE friend_tag_mapping (
     friend_user_id INT,
     tag_name VARCHAR(50),
     PRIMARY KEY (user_id, friend_user_id, tag_name),
-    -- 级联删除魔术：如果好友被删了，或者这个分组被删了，这里的记录会自动消失！
+    -- 级联删除
     FOREIGN KEY (user_id, friend_user_id) REFERENCES friend_relationship(user_id, friend_user_id) ON DELETE CASCADE,
     FOREIGN KEY (user_id, tag_name) REFERENCES user_friend_tag(user_id, tag_name) ON DELETE CASCADE
 );
 
+-- 10. 独立的群公告表
+CREATE TABLE group_announcement (
+    announcement_id BIGSERIAL PRIMARY KEY,
+    conversation_id BIGINT NOT NULL REFERENCES conversation(conversation_id) ON DELETE CASCADE,
+    sender_id BIGINT NOT NULL REFERENCES user_account(user_id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    is_pinned BOOLEAN DEFAULT false,       -- 是否置顶
+    create_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 新增：群成员邀请审核表
+CREATE TABLE group_invite (
+    invite_id BIGSERIAL PRIMARY KEY,
+    conversation_id BIGINT NOT NULL REFERENCES conversation(conversation_id) ON DELETE CASCADE,
+    inviter_id BIGINT NOT NULL REFERENCES user_account(user_id) ON DELETE CASCADE, 
+    invitee_id BIGINT NOT NULL REFERENCES user_account(user_id) ON DELETE CASCADE,
+    status VARCHAR(20) DEFAULT 'pending',  -- 状态: pending, approved, rejected
+    create_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);

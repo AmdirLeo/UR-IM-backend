@@ -39,6 +39,14 @@ class MessageErrors(Enum):
     NotInConversation = "NotInConversation"
     MessageNotFound = "MessageNotFound"
     QuoteNotFound = "QuoteNotFound"
+
+class GroupErrors(Enum):
+    GroupNotFound = "GroupNotFound"
+    NotInGroup = "NotInGroup"
+    PermissionDenied = "PermissionDenied"      # 权限不足（非群主/管理员操作）
+    OwnerCannotQuit = "OwnerCannotQuit"        # 群主不能直接退出
+    AlreadyInGroup = "AlreadyInGroup"
+    CannotKickHigherRole = "CannotKickHigherRole" # 不能踢权限比自己高或同级的人
 # ==========================================
 # 2. 定义业务异常类
 # ==========================================
