@@ -30,3 +30,7 @@ class FriendListResponse(BaseResponse):
 
 class TagCreateRequest(BaseModel):
     tag_name: str = Field(..., description="标签名称")
+
+
+class TagDeleteRequest(BaseModel):
+    tag_name: str = Field(..., description="标签名称")

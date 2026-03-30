@@ -7,6 +7,7 @@ from services.friend_service import (
     remove_friend,
     get_friend_list,
     create_friend_tag,
+    delete_friend_tag,
 )
 from schemas.user import SearchUserResponse, BaseResponse
 from schemas.friend import (
@@ -15,6 +16,7 @@ from schemas.friend import (
     FriendListResponse,
     FriendInfo,
     TagCreateRequest,
+    TagDeleteRequest,
 )
 from db.database import get_db_conn  # 假设你的数据库连接依赖注入函数
 from core.exceptions import BusinessException
@@ -135,3 +137,17 @@ async def create_friend_tag(
         tag_name=request.tag_name,
     )
     return BaseResponse(code=200, msg="新建标签成功")
+
+
+@router.post("/tag/delete", response_model=BaseResponse, summary="删除好友标签")
+async def delete_friend_tag(
+    request: TagDeleteRequest,
+    current_user_id: int = Depends(get_current_user_id),
+    db_session=Depends(get_db_conn),
+):
+    await delete_friend_tag(
+        db_session=db_session,
+        user_id=current_user_id,
+        tag_name=request.tag_name,
+    )
+    return BaseResponse(code=200, msg="删除标签成功")
