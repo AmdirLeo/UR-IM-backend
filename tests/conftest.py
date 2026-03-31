@@ -5,9 +5,9 @@ from fastapi.testclient import TestClient
 import asyncio
 
 TEST_DB_NAME = "test_im_db"
-TEST_DB_URL = f"postgresql://postgres:123456@localhost:5432/{TEST_DB_NAME}"
+TEST_DB_URL = f"postgresql://postgres:123456@127.0.0.1:5432/{TEST_DB_NAME}"
 # 连接默认库的 URL，专门用来执行 CREATE DATABASE
-DEFAULT_DB_URL = "postgresql://postgres:123456@localhost:5432/postgres"
+DEFAULT_DB_URL = "postgresql://postgres:123456@127.0.0.1:5432/postgres"
 
 os.environ["DATABASE_URL"] = TEST_DB_URL
 

@@ -4,7 +4,7 @@ import os
 
 async def init_db():
     # 格式: postgresql://用户名:密码@localhost:5432/数据库名
-    db_url = "postgresql://postgres:123456@localhost:5432/im_db"
+    db_url = "postgresql://postgres:123456@127.0.0.1:5432/im_db"
     
     print("正在连接数据库...")
     conn = await asyncpg.connect(db_url)

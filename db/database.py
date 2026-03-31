@@ -16,7 +16,7 @@ async def init_db_pool():
     # 先写死
     db_url = os.getenv(
         "DATABASE_URL", 
-        "postgresql://postgres:123456@localhost:5432/im_db"
+        "postgresql://postgres:123456@127.0.0.1:5432/im_db"
     )
     
     try:

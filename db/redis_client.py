@@ -1,7 +1,7 @@
 import redis.asyncio as redis
 
 # 初始化连接客户端
-redis_client = redis.from_url("redis://localhost:6379/0", decode_responses=True)
+redis_client = redis.from_url("redis://127.0.0.1:6379/0", decode_responses=True)
 
 async def db_save_verification_code(email: str, code: str, expire_minutes: int = 5) -> None:
     """
