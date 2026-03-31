@@ -1,13 +1,63 @@
-# 暂时用一个最通用的镜像，避开那个报错的 deployer
-image: alpine:latest 
+# 修正后的镜像地址，加入了特殊的 spring26b 前缀
+image: registry.spring26b.secoder.net/tool/deployer
 
 stages:
-  - debug
+  - build
+  - test
+  - deploy
 
-check-registry-path:
-  stage: debug
+# ---------------- 阶段 1：构建镜像 ----------------
+build:
+  stage: build
   script:
-    - echo "系统内置的仓库地址是：$CI_REGISTRY"
-    - echo "本项目的镜像全路径是：$CI_REGISTRY_IMAGE"
+    - export BUILD_IMAGE_NAME=$CI_REGISTRY_IMAGE
+    - export BUILD_IMAGE_TAG=$CI_COMMIT_REF_SLUG
+    - export BUILD_IMAGE_USERNAME=$CI_REGISTRY_USER
+    - export BUILD_IMAGE_PASSWORD=$CI_REGISTRY_PASSWORD
+    - deployer build
+
+# ---------------- 阶段 2：自动化测试配置 ----------------
+.test:
+  image: python:3.12-slim
+  stage: test
+  before_script:
+    # 安装依赖和测试工具
+    - pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt coverage pytest pycodestyle pylint
+
+unit-test:
+  extends: .test
+  script:
+    # 运行 pytest 并生成覆盖率报告
+    - coverage run -m pytest --junit-xml=xunit-reports/xunit-result.xml
+    - ret=$?
+    - coverage xml -o coverage-reports/coverage.xml
+    - coverage report
+    - exit $ret
+  after_script:
+    # 运行 SonarQube 代码质量扫描（Secoder 平台特色）
+    - SUFFIX=$RANDOM
+    - curl "http://api.secoder.net/static/sonar-scanner.tar.gz" -s -o "/tmp/sonar-$SUFFIX.tar.gz"
+    - tar -xf "/tmp/sonar-$SUFFIX.tar.gz" -C /opt
+    - /opt/sonar-scanner/bin/sonar-scanner
+
+style-test:
+  extends: .test
+  allow_failure: true
+  script:
+    # 代码风格检查
+    - pycodestyle .
+    - PYCODESTYLE_RET=$?
+    - pylint .
+    - PYLINT_RET=$?
+    - if [ $PYCODESTYLE_RET \> 0 ]; then exit $PYCODESTYLE_RET; fi;
+    - exit $PYLINT_RET
+
+# ---------------- 阶段 3：自动化部署到 Secoder 容器 ----------------
+deploy:
+  stage: deploy
+  script:
+    # 使用 deployer 指令替换容器镜像
+    - deployer dyno replace $CI_PROJECT_NAME "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" "$REGISTRY_USER" "$REGISTRY_PWD"
   only:
+    # 暂时保持为 feat/cicd，方便你现在直接测试
     - feat/cicd
