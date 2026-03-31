@@ -28,7 +28,16 @@ async def db_create_friend_request(
 
     # 3. 校验是否有待处理的申请 (双向拦截)
     has_pending = await conn.fetchval(
-        "SELECT EXISTS(SELECT 1 FROM friend_request WHERE status = 'pending' AND ((sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1)))",
+        """
+        SELECT EXISTS(
+            SELECT 1 FROM friend_request 
+            WHERE status = 'pending' 
+            AND (
+                (sender_id = $1 AND receiver_id = $2) 
+                OR (sender_id = $2 AND receiver_id = $1)
+            )
+        )
+        """,
         sender_id,
         receiver_id,
     )
@@ -60,8 +69,8 @@ async def db_handle_friend_request(
     async with conn.transaction():
         # 1. 更新申请状态，并把申请人和接收人的 ID 拿出来
         update_query = """
-            UPDATE friend_request 
-            SET status = $1 
+            UPDATE friend_request
+            SET status = $1
             WHERE request_id = $2 AND status = 'pending'
             RETURNING sender_id, receiver_id;
         """
@@ -99,7 +108,7 @@ async def db_get_friend_list(conn: asyncpg.Connection, user_id: int) -> list[dic
     需要联表查询 (JOIN) 拿到好友的具体信息（头像、昵称等）
     """
     query = """
-        SELECT 
+        SELECT
             u.user_id, u.username, u.avatar_url, f.create_time as be_friend_time,
             COALESCE(array_agg(m.tag_name) FILTER (WHERE m.tag_name IS NOT NULL), '{}') as tags
         FROM friend_relationship f
@@ -120,7 +129,7 @@ async def db_remove_friend(
     需要同时斩断双向联系
     """
     query = """
-        DELETE FROM friend_relationship 
+        DELETE FROM friend_relationship
         WHERE (user_id = $1 AND friend_user_id = $2)
            OR (user_id = $2 AND friend_user_id = $1);
     """
@@ -134,7 +143,7 @@ async def db_create_friend_tag(
 ) -> None:
     """新建好友分组 (对应 POST /api/friend/tag/new)"""
     query = """
-        INSERT INTO user_friend_tag (user_id, tag_name) 
+        INSERT INTO user_friend_tag (user_id, tag_name)
         VALUES ($1, $2)
         ON CONFLICT (user_id, tag_name) DO NOTHING;
     """
@@ -170,7 +179,7 @@ async def db_add_friends_to_tag(
     records = [(user_id, fid, tag_name) for fid in friend_ids]
 
     query = """
-        INSERT INTO friend_tag_mapping (user_id, friend_user_id, tag_name) 
+        INSERT INTO friend_tag_mapping (user_id, friend_user_id, tag_name)
         VALUES ($1, $2, $3)
         ON CONFLICT DO NOTHING; -- 如果已经在这个分组里了，就忽略
     """
@@ -201,7 +210,7 @@ async def db_remove_friend_from_tag(
     将某个好友移出该分组 (对应 POST /api/friend/tag/remove)
     """
     query = """
-        DELETE FROM friend_tag_mapping 
+        DELETE FROM friend_tag_mapping
         WHERE user_id = $1 AND friend_user_id = $2 AND tag_name = $3;
     """
     status = await conn.execute(query, user_id, friend_user_id, tag_name)
