@@ -5,9 +5,13 @@ from fastapi.testclient import TestClient
 import asyncio
 
 TEST_DB_NAME = "test_im_db"
-TEST_DB_URL = f"postgresql://postgres:123456@127.0.0.1:5432/{TEST_DB_NAME}"
+# 优先读取 CI 注入的环境变量 DATABASE_URL，读不到再用你原来的本地地址作为备胎
+TEST_DB_URL = os.getenv(
+    "DATABASE_URL", 
+    f"postgresql://postgres:123456@127.0.0.1:5432/{TEST_DB_NAME}"
+)
 # 连接默认库的 URL，专门用来执行 CREATE DATABASE
-DEFAULT_DB_URL = "postgresql://postgres:123456@127.0.0.1:5432/postgres"
+DEFAULT_DB_URL = os.environ["DATABASE_URL"]
 
 os.environ["DATABASE_URL"] = TEST_DB_URL
 
