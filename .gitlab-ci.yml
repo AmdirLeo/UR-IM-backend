@@ -36,8 +36,12 @@ unit-test:
     - coverage report
   after_script:
     - SUFFIX=$RANDOM
-    - curl "http://api.secoder.net/static/sonar-scanner.tar.gz" -s -o "/tmp/sonar-$SUFFIX.tar.gz"
+    - echo "开始下载 Sonar Scanner..."
+    # 去掉 -s 静默模式，加上 spring26b 专属前缀，加上 -L 允许重定向
+    - curl "http://api.spring26b.secoder.net/static/sonar-scanner.tar.gz" -L -o "/tmp/sonar-$SUFFIX.tar.gz"
+    - echo "下载完成，开始解压..."
     - tar -xf "/tmp/sonar-$SUFFIX.tar.gz" -C /opt
+    - echo "开始执行代码扫描..."
     - /opt/sonar-scanner/bin/sonar-scanner
 
 style-test:
