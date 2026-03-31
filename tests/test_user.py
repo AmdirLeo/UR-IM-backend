@@ -54,7 +54,7 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
 
     # 核心：使用 AsyncClient 替代 TestClient
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app), base_url="https://test"
     ) as client:
 
         # ---------------------------------------------------------

@@ -62,7 +62,7 @@ async def test_friend_journey_and_edge_cases():
 
     # 开始端到端 HTTP 测试
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app), base_url="https://test"
     ) as client:
 
         # ---------------------------------------------------------
