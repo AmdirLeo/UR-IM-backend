@@ -1,13 +1,13 @@
-# 尝试直接使用这个镜像，不带前面的 registry 前缀（有些平台内部会自动映射）
-image: registry.secoder.net/tool/deployer
+# 暂时用一个最通用的镜像，避开那个报错的 deployer
+image: alpine:latest 
 
 stages:
-  - diagnostic
+  - debug
 
-check-env:
-  stage: diagnostic
+check-registry-path:
+  stage: debug
   script:
-    - echo "Project Name is $CI_PROJECT_NAME"
-    - ls -R  # 列出所有文件，确认 Dockerfile 在不在
+    - echo "系统内置的仓库地址是：$CI_REGISTRY"
+    - echo "本项目的镜像全路径是：$CI_REGISTRY_IMAGE"
   only:
     - feat/cicd
