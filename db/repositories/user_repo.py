@@ -62,8 +62,8 @@ async def db_update_user_login_time(conn: asyncpg.Connection, user_id: int):
     更新用户的最后登录时间
     """
     query = """
-        UPDATE user_account 
-        SET login_time = CURRENT_TIMESTAMP 
+        UPDATE user_account
+        SET login_time = CURRENT_TIMESTAMP
         WHERE user_id = $1;
     """
     await conn.execute(query, user_id)
@@ -124,8 +124,8 @@ async def db_update_user_profile(
 
     values.append(user_id)
     query = f"""
-        UPDATE user_account 
-        SET {', '.join(updates)} 
+        UPDATE user_account
+        SET {', '.join(updates)}
         WHERE user_id = ${len(values)};
     """
     status = await conn.execute(query, *values)
@@ -157,8 +157,8 @@ async def db_search_users(
     # 2. 查询当前页的详细数据
     # 注意：必须加 ORDER BY，通常用主键 user_id 排序，保证分页结果稳定不乱序
     query_items = """
-        SELECT user_id, username, avatar_url 
-        FROM user_account 
+        SELECT user_id, username, avatar_url
+        FROM user_account
         WHERE username ILIKE $1
         ORDER BY user_id ASC
         LIMIT $2 OFFSET $3;
@@ -168,8 +168,8 @@ async def db_search_users(
 
     # 3. 查询符合搜索条件的总人数 (前端分页器强依赖这个数据)
     query_total = """
-        SELECT COUNT(*) 
-        FROM user_account 
+        SELECT COUNT(*)
+        FROM user_account
         WHERE username ILIKE $1;
     """
     total_count = await conn.fetchval(query_total, search_pattern)

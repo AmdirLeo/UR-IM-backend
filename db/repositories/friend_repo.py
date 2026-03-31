@@ -30,10 +30,10 @@ async def db_create_friend_request(
     has_pending = await conn.fetchval(
         """
         SELECT EXISTS(
-            SELECT 1 FROM friend_request 
-            WHERE status = 'pending' 
+            SELECT 1 FROM friend_request
+            WHERE status = 'pending'
             AND (
-                (sender_id = $1 AND receiver_id = $2) 
+                (sender_id = $1 AND receiver_id = $2)
                 OR (sender_id = $2 AND receiver_id = $1)
             )
         )

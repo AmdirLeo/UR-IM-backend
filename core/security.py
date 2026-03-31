@@ -20,7 +20,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
     调用示例:
         # 从数据库中取出已加密的密码
-        db_hashed_password = user.password 
+        db_hashed_password = user.password
 
         # 验证前端传来的明文密码
         is_valid = verify_password("user_input_123", db_hashed_password)

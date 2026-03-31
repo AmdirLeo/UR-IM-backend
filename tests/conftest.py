@@ -85,15 +85,15 @@ async def clear_database_data():
     try:
         # 使用 CASCADE 级联清空所有相关表
         await conn.execute("""
-            TRUNCATE TABLE 
-                user_account, 
-                friend_relationship, 
-                friend_request, 
-                conversation, 
-                conversation_member, 
-                message, 
-                conversation_message, 
-                user_inbox 
+            TRUNCATE TABLE
+                user_account,
+                friend_relationship,
+                friend_request,
+                conversation,
+                conversation_member,
+                message,
+                conversation_message,
+                user_inbox
             CASCADE;
         """)
     except Exception as e:
