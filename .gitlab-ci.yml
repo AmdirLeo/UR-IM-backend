@@ -58,4 +58,4 @@ deploy:
     - deployer dyno replace $CI_PROJECT_NAME "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" "$REGISTRY_USER" "$REGISTRY_PWD"
   only:
     # ⚠️ 修改点 4：你们之前用的 dev 分支，所以这里改成了 dev
-    - dev
+    - feat/cicd
