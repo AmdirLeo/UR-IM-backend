@@ -18,16 +18,16 @@ async def lifespan(app: FastAPI):
     # ---------- 启动阶段 ----------
     # 1. 初始化数据库连接池（若失败则应用无法启动）
     await init_db_pool()
-    
+
     # 2. 启动 WebSocket 心跳巡检后台任务
     heartbeat_task = asyncio.create_task(manager.check_heartbeats())
-    
+
     yield  # 应用运行中
-    
+
     # ---------- 关闭阶段 ----------
     # 1. 取消心跳巡检任务
     heartbeat_task.cancel()
-    
+
     # 2. 平滑关闭数据库连接池
     await close_db_pool()
 

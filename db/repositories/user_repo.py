@@ -1,6 +1,7 @@
 import asyncpg
 from core.exceptions import UserErrors, UserException
 
+
 async def db_create_user(conn: asyncpg.Connection, username: str, password_hash: str, email: str) -> int:
     """
     创建一个新用户
@@ -19,6 +20,7 @@ async def db_create_user(conn: asyncpg.Connection, username: str, password_hash:
         # 捕获数据库层面的唯一性冲突（邮箱重复注册）
         raise UserException(UserErrors.AlreadyExists)
 
+
 async def db_get_user_by_email(conn: asyncpg.Connection, email: str) -> dict | None:
     """
     通过邮箱查找用户（主要用于登录时校验密码，或注册时检查邮箱是否已存在）
@@ -27,6 +29,7 @@ async def db_get_user_by_email(conn: asyncpg.Connection, email: str) -> dict | N
     # fetchrow 用于获取单行记录
     row = await conn.fetchrow(query, email)
     return dict(row) if row else None
+
 
 async def db_get_user_by_id(conn: asyncpg.Connection, user_id: int) -> dict | None:
     """
@@ -42,6 +45,8 @@ async def db_get_user_by_id(conn: asyncpg.Connection, user_id: int) -> dict | No
     if not row:
         raise UserException(UserErrors.NotFound)
     return dict(row)
+
+
 async def db_get_password_by_id(conn: asyncpg.Connection, user_id: int) -> str | None:
     """
     通过 ID 获取用户的密码哈希（仅用于登录时验证密码）
@@ -50,6 +55,7 @@ async def db_get_password_by_id(conn: asyncpg.Connection, user_id: int) -> str |
     query = "SELECT password FROM user_account WHERE user_id = $1;"
     password_hash = await conn.fetchval(query, user_id)
     return password_hash
+
 
 async def db_update_user_login_time(conn: asyncpg.Connection, user_id: int):
     """
@@ -62,6 +68,7 @@ async def db_update_user_login_time(conn: asyncpg.Connection, user_id: int):
     """
     await conn.execute(query, user_id)
 
+
 async def db_delete_user(conn: asyncpg.Connection, user_id: int):
     """
     注销用户账号。
@@ -69,12 +76,13 @@ async def db_delete_user(conn: asyncpg.Connection, user_id: int):
     删除此行会自动清理 friend_relationship, conversation_member, user_inbox 等表中的关联数据。
     """
     query = "DELETE FROM user_account WHERE user_id = $1;"
-    
+
     # execute 返回的是命令状态字符串，例如成功删除了1行会返回 'DELETE 1'
     status = await conn.execute(query, user_id)
-    
+
     if status != 'DELETE 1':
         raise UserException(UserErrors.NotFound)
+
 
 async def db_update_user_password(conn: asyncpg.Connection, user_id: int, new_password_hash: str):
     """
@@ -84,12 +92,13 @@ async def db_update_user_password(conn: asyncpg.Connection, user_id: int, new_pa
     status = await conn.execute(query, new_password_hash, user_id)
     if status != 'UPDATE 1':
         raise UserException(UserErrors.NotFound)
-    
+
+
 async def db_update_user_profile(
-    conn: asyncpg.Connection, 
-    user_id: int, 
-    username: str = None, 
-    email: str = None, 
+    conn: asyncpg.Connection,
+    user_id: int,
+    username: str = None,
+    email: str = None,
     avatar_url: str = None
 ) -> bool:
     """
@@ -99,7 +108,7 @@ async def db_update_user_profile(
     # 动态构建 UPDATE 语句的技巧
     updates = []
     values = []
-    
+
     if username is not None:
         values.append(username)
         updates.append(f"username = ${len(values)}")
@@ -109,9 +118,9 @@ async def db_update_user_profile(
     if avatar_url is not None:
         values.append(avatar_url)
         updates.append(f"avatar_url = ${len(values)}")
-        
+
     if not updates:
-        return False # 没有任何字段需要更新
+        return False  # 没有任何字段需要更新
 
     values.append(user_id)
     query = f"""
@@ -122,20 +131,21 @@ async def db_update_user_profile(
     status = await conn.execute(query, *values)
     return status == 'UPDATE 1'
 
+
 async def db_search_users(
-    conn: asyncpg.Connection, 
-    keyword: str, 
-    page: int = 1, 
+    conn: asyncpg.Connection,
+    keyword: str,
+    page: int = 1,
     page_size: int = 20
 ) -> dict:
     """
     通过用户名模糊查找用户 (支持分页)
-    
+
     参数:
         keyword: 搜索关键字
         page: 当前页码 (从 1 开始)
         page_size: 每页显示的条数
-        
+
     返回:
         包含当前页数据 (items) 和总匹配人数 (total) 的字典
     """
@@ -143,7 +153,7 @@ async def db_search_users(
     # 比如：第 1 页跳过 0 条，第 2 页跳过 20 条
     offset = (page - 1) * page_size
     search_pattern = f"%{keyword}%"
-    
+
     # 2. 查询当前页的详细数据
     # 注意：必须加 ORDER BY，通常用主键 user_id 排序，保证分页结果稳定不乱序
     query_items = """
@@ -155,7 +165,7 @@ async def db_search_users(
     """
     rows = await conn.fetch(query_items, search_pattern, page_size, offset)
     items = [dict(row) for row in rows]
-    
+
     # 3. 查询符合搜索条件的总人数 (前端分页器强依赖这个数据)
     query_total = """
         SELECT COUNT(*) 
@@ -163,7 +173,7 @@ async def db_search_users(
         WHERE username ILIKE $1;
     """
     total_count = await conn.fetchval(query_total, search_pattern)
-    
+
     # 4. 组装成标准的分页返回格式
     return {
         "items": items,          # 当前页的用户列表

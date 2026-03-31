@@ -4,7 +4,8 @@ from email.message import EmailMessage
 
 # 注意：这里的导入路径可能需要根据你们项目的实际结构微调
 # 如果你的 config.py 在 backend/core/ 目录下，可能需要改成 from backend.core.config import settings
-from core.config import settings 
+from core.config import settings
+
 
 async def smtp_send_email(to_email: str, code: str) -> bool:
     """
@@ -17,7 +18,7 @@ async def smtp_send_email(to_email: str, code: str) -> bool:
     message["From"] = settings.MAIL_USERNAME
     message["To"] = to_email
     message["Subject"] = "UR-IM 注册验证码"
-    
+
     # 邮件正文内容
     message.set_content(
         f"欢迎注册 UR-IM!\n\n"
