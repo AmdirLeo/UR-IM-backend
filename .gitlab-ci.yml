@@ -17,18 +17,23 @@ build:
 .test:
   image: python:3.12-slim
   stage: test
-  # 🌟 核心修复：启动一个临时的 PostgreSQL 服务供测试使用
+  # 🌟 核心修复：启动临时的数据库服务供测试使用
   services:
     - name: postgres:15-alpine
       alias: test-db  # 我们给这个临时数据库起个内部域名叫 test-db
+    # 👇 新增：召唤一个临时的 Redis 服务器
+    - name: redis:7-alpine
+      alias: test-redis
   variables:
     # 🌟 初始化临时数据库的账号密码
     POSTGRES_USER: test_user
     POSTGRES_PASSWORD: test_password
     POSTGRES_DB: test_db
     JWT_SECRET_KEY: "test_secret_for_cicd_only"
-    # 🌟 强制将代码里的数据库地址指向这个临时容器
+    # 🌟 强制将代码里的地址指向这些临时容器
     DATABASE_URL: "postgresql://test_user:test_password@test-db:5432/test_db"
+    # 👇 新增：强制将代码里的 Redis 地址指向临时容器
+    REDIS_URL: "redis://test-redis:6379/0"
   before_script:
     - apt-get update && apt-get install -y curl tar
     - pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt coverage pytest pycodestyle pylint
