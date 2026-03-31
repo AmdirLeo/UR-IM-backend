@@ -1,4 +1,4 @@
-image: registry.secoder.net/tool/deployer
+image: tool/deployer
 
 stages:
   - build
