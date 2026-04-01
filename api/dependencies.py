@@ -11,6 +11,7 @@ from db.database import get_db_conn
 # 这里的 tokenUrl 只是给 Swagger UI 测试用的提示，告诉它去哪里换取 Token
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
+
 def get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
     """
     全局 Token 拦截与解析依赖。
@@ -19,26 +20,27 @@ def get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
     try:
         # 使用你在 security.py 中配置的同一个密钥和算法进行解密
         payload = jwt.decode(
-            token, 
-            settings.JWT_SECRET_KEY, 
+            token,
+            settings.JWT_SECRET_KEY,
             algorithms=[getattr(settings, "ALGORITHM", "HS256")]
         )
-        
+
         # 提取之前在 create_access_token 中存入的 "sub" 字段
         user_id_str = payload.get("sub")
-        
+
         if user_id_str is None:
             raise BusinessException(status_code=401, detail="无效的凭证载荷")
-            
+
         return int(user_id_str)
-        
+
     except jwt.ExpiredSignatureError:
         # 捕获 Token 过期异常
         raise BusinessException(status_code=401, detail="登录已过期，请重新登录")
     except jwt.InvalidTokenError:
         # 捕获 Token 签名错误、被篡改或格式错误等异常
         raise BusinessException(status_code=401, detail="无效的身份凭证")
-    
+
+
 CurrentUserId = Annotated[int, Depends(get_current_user_id)]
 
 DBConnection = Annotated[asyncpg.Connection, Depends(get_db_conn)]

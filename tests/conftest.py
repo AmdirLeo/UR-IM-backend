@@ -1,3 +1,5 @@
+from db.database import init_db_pool, close_db_pool
+from main import app
 import pytest
 import os
 import asyncpg
@@ -5,16 +7,19 @@ from fastapi.testclient import TestClient
 import asyncio
 
 TEST_DB_NAME = "test_im_db"
-TEST_DB_URL = f"postgresql://postgres:123456@localhost:5432/{TEST_DB_NAME}"
+# 优先读取 CI 注入的环境变量 DATABASE_URL，读不到再用你原来的本地地址作为备胎
+TEST_DB_URL = os.getenv(
+    "DATABASE_URL",
+    f"postgresql://postgres:123456@127.0.0.1:5432/{TEST_DB_NAME}"
+)
 # 连接默认库的 URL，专门用来执行 CREATE DATABASE
-DEFAULT_DB_URL = "postgresql://postgres:123456@localhost:5432/postgres"
+DEFAULT_DB_URL = os.environ["DATABASE_URL"]
 
 os.environ["DATABASE_URL"] = TEST_DB_URL
 
-from main import app
-from db.database import init_db_pool, close_db_pool
 
 # === 新增：强制全局单例事件循环 ===
+
 @pytest.fixture(scope="session")
 def event_loop():
     """
@@ -25,6 +30,7 @@ def event_loop():
     asyncio.set_event_loop(loop)
     yield loop
     loop.close()
+
 
 @pytest.fixture(scope="session", autouse=True)
 async def setup_test_database():
@@ -46,26 +52,29 @@ async def setup_test_database():
 
     # 2. 初始化连接池 (此时它会连上刚刚建好的 test_im_db)
     await init_db_pool()
-    
+
     # 3. 读取并执行建表 SQL
     current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     sql_file_path = os.path.join(current_dir, 'db', 'migrations', '_init_tables.sql')
-    
+
     try:
         conn = await asyncpg.connect(TEST_DB_URL)
+
+        # --- 新增这行：彻底清空 public schema 并重建 ---
+        # 这一步能保证不管上次留下了什么垃圾数据或表结构，都会被一扫而空
+        await conn.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
+
         with open(sql_file_path, 'r', encoding='utf-8') as f:
             sql_content = f.read()
         await conn.execute(sql_content)
+        print("测试数据库初始化建表完成。")
     except Exception as e:
         print(f"测试数据库建表失败: {e}")
     finally:
         await conn.close()
-        
-    yield  
-    
-    await close_db_pool()
 
 # ... 后面的 clear_database_data 和 test_client 保持不变 ...
+
 
 @pytest.fixture(autouse=True)
 async def clear_database_data():
@@ -76,21 +85,22 @@ async def clear_database_data():
     try:
         # 使用 CASCADE 级联清空所有相关表
         await conn.execute("""
-            TRUNCATE TABLE 
-                user_account, 
-                friend_relationship, 
-                friend_request, 
-                conversation, 
-                conversation_member, 
-                message, 
-                conversation_message, 
-                user_inbox 
+            TRUNCATE TABLE
+                user_account,
+                friend_relationship,
+                friend_request,
+                conversation,
+                conversation_member,
+                message,
+                conversation_message,
+                user_inbox
             CASCADE;
-        """) 
+        """)
     except Exception as e:
         print(f"清空测试数据失败: {e}")
     finally:
         await conn.close()
+
 
 @pytest.fixture
 def test_client():
