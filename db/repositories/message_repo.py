@@ -2,6 +2,8 @@ import asyncpg
 import json
 from core.exceptions import MessageException, MessageErrors
 
+#Sonar
+QUERY_CHECK_MEMBER_EXISTS = "SELECT 1 FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;"
 async def db_send_message(
     conn: asyncpg.Connection, 
     sender_id: int, 
@@ -100,7 +102,7 @@ async def db_mark_conversation_as_read(conn: asyncpg.Connection, user_id: int, c
     需要同时更新 inbox 的状态和 member 表的 read_index 水位线
     """
     # 确保用户在这个会话里
-    check_query = "SELECT 1 FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;"
+    check_query = QUERY_CHECK_MEMBER_EXISTS
     if not await conn.fetchval(check_query, conversation_id, user_id):
         raise MessageException(MessageErrors.NotInConversation)
 
@@ -164,7 +166,7 @@ async def db_get_message_history(
     """
     
     # 1. 安全防线：必须是该会话的成员才能看聊天记录
-    check_query = "SELECT 1 FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;"
+    check_query = QUERY_CHECK_MEMBER_EXISTS
     if not await conn.fetchval(check_query, conversation_id, user_id):
         raise MessageException(MessageErrors.NotInConversation)
 
@@ -212,7 +214,7 @@ async def db_get_full_history(conn: asyncpg.Connection, user_id: int, conversati
     注意：在真实生产环境中，极不推荐一次性拉取“全部”记录，通常还是会加上 LIMIT。
     但为了满足作业需求，这里我们一次性返回。
     """
-    check_query = "SELECT 1 FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;"
+    check_query = QUERY_CHECK_MEMBER_EXISTS
     if not await conn.fetchval(check_query, conversation_id, user_id):
         raise MessageException(MessageErrors.NotInConversation)
 

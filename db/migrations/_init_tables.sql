@@ -102,7 +102,7 @@ CREATE TABLE group_announcement (
     create_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
--- 新增：群成员邀请审核表
+-- 11. 群成员邀请审核表
 CREATE TABLE group_invite (
     invite_id BIGSERIAL PRIMARY KEY,
     conversation_id BIGINT NOT NULL REFERENCES conversation(conversation_id) ON DELETE CASCADE,

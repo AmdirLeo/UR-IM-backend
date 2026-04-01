@@ -1,6 +1,9 @@
 import asyncpg
 from core.exceptions import FriendErrors, BusinessException, FriendException
 
+#Sonar
+PG_DELETE_SUCCESS_TAG = 'DELETE 1'
+
 async def db_create_friend_request(conn: asyncpg.Connection, sender_id: int, receiver_id: int, message: str) -> int:
     """
     发起好友申请 (对应 POST /api/friend/apply)
@@ -128,7 +131,7 @@ async def db_delete_friend_tag(conn: asyncpg.Connection, user_id: int, tag_name:
     """
     query = "DELETE FROM user_friend_tag WHERE user_id = $1 AND tag_name = $2;"
     status = await conn.execute(query, user_id, tag_name)
-    if status != 'DELETE 1':
+    if status != PG_DELETE_SUCCESS_TAG:
         raise BusinessException(status_code=404, detail="分组不存在")
 
 async def db_add_friends_to_tag(conn: asyncpg.Connection, user_id: int, tag_name: str, friend_ids: list[int]) -> None:
@@ -172,5 +175,5 @@ async def db_remove_friend_from_tag(conn: asyncpg.Connection, user_id: int, frie
         WHERE user_id = $1 AND friend_user_id = $2 AND tag_name = $3;
     """
     status = await conn.execute(query, user_id, friend_user_id, tag_name)
-    if status != 'DELETE 1':
+    if status != PG_DELETE_SUCCESS_TAG:
         raise BusinessException(status_code=404, detail="该好友不在当前分组中")
