@@ -6,9 +6,10 @@ from api.dependencies import get_current_user_id
 
 router = APIRouter()
 
+
 @router.get(
-    "/history", 
-    response_model=List[MessageResponse], 
+    "/history",
+    response_model=List[MessageResponse],
     summary="获取历史漫游消息",
     description="（Mock阶段）前端通过此接口拉取最近的聊天记录。必须在 Header 中携带合法的 JWT Token。"
 )

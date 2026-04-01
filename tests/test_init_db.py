@@ -2,11 +2,12 @@ import pytest
 from unittest.mock import AsyncMock, patch, mock_open
 
 # 因为是 __init__.py，所以直接从 db 导入即可
-from db import init_db 
+from db import init_db
 
 # ==========================================
 # 覆盖 init_db 的测试
 # ==========================================
+
 
 @pytest.mark.asyncio(loop_scope="session")
 # ⬇️ 重点修改这里：路径改成 "db.asyncpg.connect"
@@ -19,7 +20,7 @@ async def test_init_db_success(mock_connect):
     mock_connect.return_value = mock_conn
 
     fake_sql = "CREATE TABLE mock_table (id INT);"
-    
+
     with patch("builtins.open", mock_open(read_data=fake_sql)):
         await init_db()
 
@@ -41,7 +42,7 @@ async def test_init_db_exception(mock_connect):
     mock_connect.return_value = mock_conn
 
     with patch("builtins.open", mock_open(read_data="BAD SQL;")):
-        await init_db() 
+        await init_db()
 
     # 核心断言
     mock_conn.execute.assert_called_once()

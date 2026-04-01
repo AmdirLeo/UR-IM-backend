@@ -2,7 +2,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query, Path
 
 from api.dependencies import get_current_user_id
-from db.database import get_db_conn  
+from db.database import get_db_conn
 from services.user_service import search_users
 from services import friend_service
 from schemas.user import SearchUserResponse
@@ -26,7 +26,7 @@ router = APIRouter(prefix="/friend", tags=["好友"])
 # 定义 Annotated 依赖别名 (最优雅的做法)
 # ==========================================
 CurrentUserId = Annotated[int, Depends(get_current_user_id)]
-DBSession = Annotated[Any, Depends(get_db_conn)] 
+DBSession = Annotated[Any, Depends(get_db_conn)]
 
 
 @router.get("/search", response_model=SearchUserResponse, summary="搜索用户")
@@ -115,7 +115,7 @@ async def delete_friend(
 
 @router.get("", response_model=FriendListResponse, summary="获取好友列表")
 async def list_friends(
-    current_user_id: CurrentUserId, 
+    current_user_id: CurrentUserId,
     db_session: DBSession,
 ):
     """

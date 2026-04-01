@@ -52,7 +52,7 @@ CREATE TABLE conversation_member (
 CREATE TABLE message (
     msg_id BIGSERIAL PRIMARY KEY,
     -- 使用 JSONB 支持富文本扩展，例如: {"type": "text", "content": "你好"} 或 {"type": "image", "url": "..."}
-    msg_body JSONB NOT NULL 
+    msg_body JSONB NOT NULL
 );
 
 -- 7. 会话消息关联表 (处理引用关系)

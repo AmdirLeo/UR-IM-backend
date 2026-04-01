@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
+
 class Settings(BaseSettings):
     # --- 基础配置 ---
     PROJECT_NAME: str = "UR-IM"
@@ -14,7 +15,7 @@ class Settings(BaseSettings):
     # --- 安全与 JWT 配置 ---
     JWT_SECRET_KEY: str
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30 #默认为30分钟
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30  # 默认为30分钟
 
     # --- 邮件服务配置 (可选) ---
     MAIL_USERNAME: Optional[str] = None
@@ -24,10 +25,11 @@ class Settings(BaseSettings):
 
     # 配置 Pydantic 读取 .env 文件
     model_config = SettingsConfigDict(
-        env_file=".env", 
+        env_file=".env",
         env_file_encoding="utf-8",
-        extra="ignore" # 忽略 .env 中多余的变量
+        extra="ignore"  # 忽略 .env 中多余的变量
     )
+
 
 # 实例化全局配置对象
 settings = Settings()
