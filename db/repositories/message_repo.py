@@ -1,5 +1,6 @@
 import asyncpg
 import json
+from datetime import datetime 
 from core.exceptions import MessageException, MessageErrors
 
 #Sonar
@@ -297,4 +298,99 @@ async def db_get_all_unread_counts_with_mute(conn: asyncpg.Connection, user_id: 
     """
     rows = await conn.fetch(query, user_id)
     return [dict(row) for row in rows]
+
+async def db_filter_messages(
+    conn: asyncpg.Connection,
+    user_id: int,
+    conversation_id: int,
+    keyword: str |None = None,
+    sender_id: int | None = None,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
+    cursor_msg_id: int | None = None,
+    limit: int = 20
+) -> list[dict]:
+    """
+    群聊消息全能筛选器 (支持动态条件 + 游标分页 + 尊重本地删除逻辑)
+    """
+    
+    # 1. 基础查询：从当前用户的收件箱出发，连表查出全局消息和会话映射表(拿 seq_id)
+    base_query = """
+        SELECT 
+            m.msg_id, 
+            m.sender_id, 
+            m.msg_body, 
+            m.created_at,
+            cm.seq_id,
+            m.reply_to_id
+        FROM user_inbox ui
+        JOIN message m ON ui.msg_id = m.msg_id
+        JOIN conversation_message cm ON m.msg_id = cm.msg_id AND cm.conversation_id = ui.conversation_id
+        WHERE ui.user_id = $1 AND ui.conversation_id = $2
+    """
+    
+    # 前两个参数已经固定
+    params = [user_id, conversation_id]
+    conditions = []
+    
+    # 2. 动态拼接筛选条件 (核心魔法，绝对防 SQL 注入)
+    # len(params) + 1 就是下一个 $N 的占位符编号
+    
+    # A. 关键词模糊匹配 (针对 JSONB 里的 text 字段)
+    if keyword:
+        params.append(f"%{keyword}%")  # PostgreSQL 的 LIKE 语法需要加 %
+        # 使用 ->> 提取 JSONB 中的字符串进行模糊匹配
+        conditions.append(f"m.msg_body->>'text' ILIKE ${len(params)}")
+
+    # B. 发送者筛选
+    if sender_id is not None:
+        params.append(sender_id)
+        conditions.append(f"m.sender_id = ${len(params)}")
+
+    # C. 时间段筛选 (开始时间)
+    if start_time:
+        params.append(start_time)
+        conditions.append(f"m.created_at >= ${len(params)}")
+
+    # D. 时间段筛选 (结束时间)
+    if end_time:
+        params.append(end_time)
+        conditions.append(f"m.created_at <= ${len(params)}")
+        
+    # E. 游标分页 (极其重要，滑动加载历史搜索结果)
+    if cursor_msg_id:
+        params.append(cursor_msg_id)
+        conditions.append(f"m.msg_id < ${len(params)}")
+
+    # 3. 组装最终的 SQL 语句
+    if conditions:
+        # 把动态条件用 AND 连起来拼接到基础 SQL 后面
+        final_query = base_query + " AND " + " AND ".join(conditions)
+    else:
+        final_query = base_query
+        
+    # 加上强制排序和分页截断
+    final_query += f" ORDER BY m.msg_id DESC LIMIT {limit};"
+
+    # 4. 执行极其安全的参数化查询
+    records = await conn.fetch(final_query, *params)
+    
+    # 5. 格式化返回值
+    result = []
+    for row in records:
+        try:
+            body_dict = json.loads(row['msg_body']) if isinstance(row['msg_body'], str) else row['msg_body']
+        except Exception:
+            body_dict = {"text": "[解析错误]"}
+            
+        result.append({
+            "msg_id": row['msg_id'],
+            "seq_id": row['seq_id'],  # 把后端强校验的 seq_id 传回给前端
+            "sender_id": row['sender_id'],
+            "msg_body": body_dict,
+            "created_at": row['created_at'].isoformat(),
+            "reply_to_id": row['reply_to_id']
+        })
+        
+    return result
 
