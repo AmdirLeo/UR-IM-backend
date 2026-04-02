@@ -34,6 +34,8 @@ CREATE TABLE conversation (
     conversation_name VARCHAR(255),        -- 群名称（私聊可为空）
     announcement TEXT,                     -- 群公告
     create_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    last_msg_id BIGINT,                    -- 全局id
+    last_msg_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 5. 会话成员表
@@ -51,18 +53,20 @@ CREATE TABLE conversation_member (
 -- 6. 消息内容本体表
 CREATE TABLE message (
     msg_id BIGSERIAL PRIMARY KEY,
-    msg_body JSONB NOT NULL 
+    msg_body JSONB NOT NULL, 
+    quote_id BIGINT,
+    quote_count INT DEFAULT 0
 );
 
 -- 7. 会话消息关联表 (处理引用关系)
 CREATE TABLE conversation_message (
     conversation_id BIGINT NOT NULL REFERENCES conversation(conversation_id) ON DELETE CASCADE,
     msg_id BIGINT NOT NULL REFERENCES message(msg_id) ON DELETE CASCADE,
+    seq_id BIGINT,
     sender_id BIGINT NOT NULL REFERENCES user_account(user_id),
-    quote_id BIGINT,                       -- 引用的被回复消息的 msg_id
-    quote_count INT DEFAULT 0,             -- 被引用的次数
     create_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (conversation_id, msg_id)
+    UNIQUE (conversation_id, seq_id)
 );
 
 -- 8. 用户收件箱 (写扩散模型核心)
@@ -111,3 +115,9 @@ CREATE TABLE group_invite (
     status VARCHAR(20) DEFAULT 'pending',  -- 状态: pending, approved, rejected
     create_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 会话置顶排序
+CREATE INDEX idx_conv_last_time ON conversation(last_msg_time DESC);
+
+-- 消息筛选
+CREATE INDEX idx_msg_sender_time ON message(sender_id, created_at DESC);
