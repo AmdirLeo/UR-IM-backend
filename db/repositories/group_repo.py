@@ -1,8 +1,50 @@
 import asyncpg
-from exceptions import GroupException, GroupErrors
+import json
+from core.exceptions import GroupException, GroupErrors
 
 #Sonar
 QUERY_GET_MEMBER_ROLE = "SELECT role FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;"
+QUERY_GET_CONVERSATION_LIST = """
+    SELECT 
+        c.conversation_id,
+        c.conversation_name,
+        c.last_msg_time,
+        m.msg_body
+    FROM conversation_member cm
+    JOIN conversation c ON cm.conversation_id = c.conversation_id
+    -- 左连接 message 表，把最后一条消息的本体拉出来作为列表预览
+    LEFT JOIN message m ON c.last_msg_id = m.msg_id
+    WHERE cm.member_user_id = $1
+    -- NULLS LAST 保证新建的、还没发过消息的群排在最下面
+    ORDER BY c.last_msg_time DESC NULLS LAST;
+"""
+async def db_get_conversation_list(conn: asyncpg.Connection, user_id: int) -> list[dict]:
+    """
+    获取用户的群聊列表 (按最新活跃时间排序，包含最后一条消息预览)
+    """
+    records = await conn.fetch(QUERY_GET_CONVERSATION_LIST, user_id)
+    
+    result = []
+    for row in records:
+        # 解析你存入的 JSONB 类型的 msg_body，提取用于展示的预览文本
+        preview_text = ""
+        if row['msg_body']:
+            try:
+                # 假设你的前端 msg_body 里面有一个 "text" 字段存文本
+                body_dict = json.loads(row['msg_body'])
+                preview_text = body_dict.get('text', '[非文本消息]')
+            except json.JSONDecodeError:
+                preview_text = "[解析错误]"
+
+        result.append({
+            "conversation_id": row['conversation_id'],
+            "conversation_name": row['conversation_name'],
+            # 格式化时间戳，防范新建群聊还没发消息导致 time 为 None 的情况
+            "last_msg_time": row['last_msg_time'].isoformat() if row['last_msg_time'] else None,
+            "last_msg_preview": preview_text
+        })
+        
+    return result
 
 async def db_create_group(conn: asyncpg.Connection, creator_id: int, member_ids: list[int], group_name: str = "未命名群聊") -> int:
     """

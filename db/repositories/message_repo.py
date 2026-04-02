@@ -4,16 +4,32 @@ from core.exceptions import MessageException, MessageErrors
 
 #Sonar
 QUERY_CHECK_MEMBER_EXISTS = "SELECT 1 FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;"
+QUERY_INSERT_MSG = """
+    INSERT INTO message (sender_id, content, reply_to_id) 
+    VALUES ($1, $2, $3) RETURNING msg_id, created_at;
+"""
+
+QUERY_LOCK_CONV = "SELECT 1 FROM conversation WHERE conversation_id = $1 FOR UPDATE;"
+
+QUERY_GET_NEXT_SEQ = "SELECT COALESCE(MAX(seq_id), 0) + 1 FROM conversation_message WHERE conversation_id = $1;"
+
+QUERY_INSERT_CONV_MSG = "INSERT INTO conversation_message (conversation_id, msg_id, seq_id) VALUES ($1, $2, $3);"
+
+QUERY_UPDATE_CONV_SORT = """
+    UPDATE conversation 
+    SET last_msg_id = $1, last_msg_time = $2 
+    WHERE conversation_id = $3;
+"""
+
 async def db_send_message(
     conn: asyncpg.Connection, 
     sender_id: int, 
     conversation_id: int, 
     msg_body: dict, 
     quote_id: int = None
-) -> int:
+) -> dict:
     """
-    核心发送消息逻辑 (采用写扩散模型)
-    返回: 新生成的消息 msg_id
+    发送消息的核心逻辑：生成全局ID -> 生成会话Seq ID -> 更新置顶状态 -> 写扩散分发
     """
     
     # 1. 权限校验：你必须在这个会话里才能发消息
@@ -42,6 +58,8 @@ async def db_send_message(
         if not msg_id:
             raise MessageException(MessageErrors.MessageNotFound)
 
+        await conn.execute(QUERY_LOCK_CONV, conversation_id)  # 锁住会话，防止并发发消息导致 seq_id 冲突
+        next_seq_id = await conn.fetchval(QUERY_GET_NEXT_SEQ, conversation_id)
         # 3. 插入会话消息映射表，并处理引用逻辑
         insert_conv_msg_query = """
             INSERT INTO conversation_message (conversation_id, msg_id, sender_id, quote_id)
@@ -57,6 +75,8 @@ async def db_send_message(
                 WHERE conversation_id = $1 AND msg_id = $2;
             """
             await conn.execute(update_quote_query, conversation_id, quote_id)
+        
+        await conn.execute(QUERY_UPDATE_CONV_SORT, msg_id, 'now()', conversation_id)  # 更新会话的 last_msg_id 和 last_msg_time，靠这个排序 
 
         # 4.获取会话所有成员，并批量写入收件箱
         get_members_query = "SELECT member_user_id FROM conversation_member WHERE conversation_id = $1;"
@@ -75,7 +95,7 @@ async def db_send_message(
             """
             await conn.executemany(insert_inbox_query, inbox_records)
 
-    return msg_id
+    return {"msg_id": msg_id, "seq_id": next_seq_id}
 
 async def db_get_all_unread_counts(conn: asyncpg.Connection, user_id: int) -> dict:
     """
@@ -133,7 +153,7 @@ async def db_quote_message(
     conversation_id: int, 
     msg_body: dict, 
     quote_message_id: int
-) -> int:
+) -> dict:
     """
     引用特定消息并发送 (对应 POST /api/message/quote)
     """
@@ -277,3 +297,4 @@ async def db_get_all_unread_counts_with_mute(conn: asyncpg.Connection, user_id: 
     """
     rows = await conn.fetch(query, user_id)
     return [dict(row) for row in rows]
+

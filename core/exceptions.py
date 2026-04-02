@@ -44,7 +44,7 @@ class MessageErrors(Enum):
     ConversationNotFound = "ConversationNotFound"
     NotInConversation = "NotInConversation"
     MessageNotFound = "MessageNotFound"
-    QuoteNotFound = "QuoteNotFound"
+    QuoteNotFound = "QuoteNotFound" # 引用的消息不存在
 
 class GroupErrors(Enum):
     GroupNotFound = "GroupNotFound"
