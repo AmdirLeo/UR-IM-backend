@@ -67,6 +67,7 @@ CREATE TABLE message (
     msg_id BIGSERIAL PRIMARY KEY,
     msg_body JSONB NOT NULL, 
     quote_id BIGINT,
+    quote_count BIGINT DEFAULT 0
 );
 
 -- 7. 会话消息关联表 (处理引用关系)

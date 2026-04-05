@@ -5,21 +5,16 @@ from core.exceptions import MessageException, MessageErrors
 
 #Sonar
 QUERY_CHECK_MEMBER_EXISTS = "SELECT 1 FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;"
-QUERY_INSERT_MSG = """
-    INSERT INTO message (sender_id, content, reply_to_id) 
-    VALUES ($1, $2, $3) RETURNING msg_id, created_at;
-"""
-
 QUERY_LOCK_CONV = "SELECT 1 FROM conversation WHERE conversation_id = $1 FOR UPDATE;"
 
 QUERY_GET_NEXT_SEQ = "SELECT COALESCE(MAX(seq_id), 0) + 1 FROM conversation_message WHERE conversation_id = $1;"
 
-QUERY_INSERT_CONV_MSG = "INSERT INTO conversation_message (conversation_id, msg_id, seq_id) VALUES ($1, $2, $3);"
+QUERY_INSERT_CONV_MSG = "INSERT INTO conversation_message (conversation_id, msg_id, sender_id, seq_id) VALUES ($1, $2, $3, $4);"
 
 QUERY_UPDATE_CONV_SORT = """
     UPDATE conversation 
-    SET last_msg_id = $1, last_msg_time = $2 
-    WHERE conversation_id = $3;
+    SET last_msg_id = $1, last_msg_time = CURRENT_TIMESTAMP 
+    WHERE conversation_id = $2;
 """
 
 async def db_send_message(
@@ -48,13 +43,13 @@ async def db_send_message(
     # 开启强事务，保证发消息的一致性
     async with conn.transaction():
         
-        # 2. 插入消息本体 
+        # 2. 插入消息本体
         insert_msg_query = """
             INSERT INTO message (msg_body, quote_id) 
-            VALUES ($1::jsonb) 
+            VALUES ($1::jsonb, $2) 
             RETURNING msg_id;
         """
-        msg_id = await conn.fetchval(insert_msg_query, json.dumps(msg_body))
+        msg_id = await conn.fetchval(insert_msg_query, json.dumps(msg_body), quote_id)
         
         if not msg_id:
             raise MessageException(MessageErrors.MessageNotFound)
@@ -66,7 +61,7 @@ async def db_send_message(
             INSERT INTO conversation_message (conversation_id, msg_id, sender_id, seq_id)
             VALUES ($1, $2, $3, $4);
         """
-        await conn.execute(insert_conv_msg_query, conversation_id, msg_id, sender_id, quote_id)
+        await conn.execute(insert_conv_msg_query, conversation_id, msg_id, sender_id, next_seq_id)
         
         if quote_id:
             update_quote_query = """
@@ -75,7 +70,7 @@ async def db_send_message(
                 WHERE msg_id = $1;
             """
             await conn.execute(update_quote_query, quote_id)
-        await conn.execute(QUERY_UPDATE_CONV_SORT, msg_id, 'now()', conversation_id)  # 更新会话的 last_msg_id 和 last_msg_time，靠这个排序 
+        await conn.execute(QUERY_UPDATE_CONV_SORT, msg_id, conversation_id)  # 更新会话的 last_msg_id 和 last_msg_time，靠这个排序 
 
         # 4.获取会话所有成员，并批量写入收件箱
         get_members_query = "SELECT member_user_id FROM conversation_member WHERE conversation_id = $1;"
@@ -197,31 +192,27 @@ async def db_get_message_history(
             u.username AS sender_name, 
             u.avatar_url AS sender_avatar, 
             m.msg_body, 
-            cm.quote_id, 
-            cm.quote_count, 
+            m.quote_id, 
+            m.quote_count, 
             cm.create_time
         FROM conversation_message cm
+        JOIN user_inbox ui ON ui.conversation_id = cm.conversation_id AND ui.msg_id = cm.msg_id
         JOIN message m ON cm.msg_id = m.msg_id
         JOIN user_account u ON cm.sender_id = u.user_id
+        WHERE ui.user_id = $1 AND cm.conversation_id = $2
     """
     
     # 3. 动态拼接游标条件
+    query = base_query
     if cursor_msg_id:
         # 向上滑动拉取更老的历史消息 (找比游标更小的 ID)
-        query = base_query + """
-            WHERE cm.conversation_id = $1 AND cm.msg_id < $3
-            ORDER BY cm.msg_id DESC 
-            LIMIT $2;
+        query += """
+            AND cm.msg_id < $3
         """
-        rows = await conn.fetch(query, conversation_id, limit, cursor_msg_id)
+        rows = await conn.fetch(query + f" ORDER BY cm.seq_id DESC LIMIT {limit};", user_id, conversation_id, cursor_msg_id)
     else:
         # 第一次打开，没有游标，直接拉取最新的 limit 条
-        query = base_query + """
-            WHERE cm.conversation_id = $1
-            ORDER BY cm.msg_id DESC 
-            LIMIT $2;
-        """
-        rows = await conn.fetch(query, conversation_id, limit)
+        rows = await conn.fetch(query + f" ORDER BY cm.seq_id DESC LIMIT {limit};", user_id, conversation_id)
 
     # 4. 格式化返回
     # 注意：因为使用了 DESC 排序，拿到的列表是时间倒序的（最新的一条在 [0]）。
