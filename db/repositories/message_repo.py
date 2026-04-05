@@ -50,7 +50,7 @@ async def db_send_message(
         
         # 2. 插入消息本体 
         insert_msg_query = """
-            INSERT INTO message (msg_body) 
+            INSERT INTO message (msg_body, quote_id) 
             VALUES ($1::jsonb) 
             RETURNING msg_id;
         """
@@ -63,20 +63,18 @@ async def db_send_message(
         next_seq_id = await conn.fetchval(QUERY_GET_NEXT_SEQ, conversation_id)
         # 3. 插入会话消息映射表，并处理引用逻辑
         insert_conv_msg_query = """
-            INSERT INTO conversation_message (conversation_id, msg_id, sender_id, quote_id)
+            INSERT INTO conversation_message (conversation_id, msg_id, sender_id, seq_id)
             VALUES ($1, $2, $3, $4);
         """
         await conn.execute(insert_conv_msg_query, conversation_id, msg_id, sender_id, quote_id)
         
-        # 如果有引用，将被引用消息的 quote_count + 1
         if quote_id:
             update_quote_query = """
-                UPDATE conversation_message 
+                UPDATE message 
                 SET quote_count = quote_count + 1 
-                WHERE conversation_id = $1 AND msg_id = $2;
+                WHERE msg_id = $1;
             """
-            await conn.execute(update_quote_query, conversation_id, quote_id)
-        
+            await conn.execute(update_quote_query, quote_id)
         await conn.execute(QUERY_UPDATE_CONV_SORT, msg_id, 'now()', conversation_id)  # 更新会话的 last_msg_id 和 last_msg_time，靠这个排序 
 
         # 4.获取会话所有成员，并批量写入收件箱
@@ -229,29 +227,6 @@ async def db_get_message_history(
     # 注意：因为使用了 DESC 排序，拿到的列表是时间倒序的（最新的一条在 [0]）。
     return [dict(row) for row in rows]
 
-async def db_get_full_history(conn: asyncpg.Connection, user_id: int, conversation_id: int) -> list[dict]:
-    """
-    获取会话完整历史记录，按时间升序排列 (对应 POST /api/message/history)
-    注意：在真实生产环境中，极不推荐一次性拉取“全部”记录，通常还是会加上 LIMIT。
-    但为了满足作业需求，这里我们一次性返回。
-    """
-    check_query = QUERY_CHECK_MEMBER_EXISTS
-    if not await conn.fetchval(check_query, conversation_id, user_id):
-        raise MessageException(MessageErrors.NotInConversation)
-
-    query = """
-        SELECT 
-            cm.msg_id, cm.sender_id, u.username AS sender_name, u.avatar_url,
-            m.msg_body, cm.quote_id, cm.quote_count, cm.create_time
-        FROM conversation_message cm
-        JOIN message m ON cm.msg_id = m.msg_id
-        JOIN user_account u ON cm.sender_id = u.user_id
-        WHERE cm.conversation_id = $1
-        ORDER BY cm.create_time ASC; -- 升序，旧的在上，新的在下
-    """
-    rows = await conn.fetch(query, conversation_id)
-    return [dict(row) for row in rows]
-
 async def db_delete_local_messages(conn: asyncpg.Connection, user_id: int, conversation_id: int, msg_ids: list[int]) -> None:
     """
     删除用户的本地聊天记录 (对应 DELETE /api/message/delete)
@@ -345,7 +320,7 @@ async def db_filter_messages(
     # B. 发送者筛选
     if sender_id is not None:
         params.append(sender_id)
-        conditions.append(f"m.sender_id = ${len(params)}")
+        conditions.append(f"cm.sender_id = ${len(params)}")
 
     # C. 时间段筛选 (开始时间)
     if start_time:
