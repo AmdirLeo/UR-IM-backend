@@ -1,6 +1,15 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TypeVar, Generic
+
+
+T = TypeVar("T")
+
+
+class MessageGenericResponse(BaseModel, Generic[T]):
+    code: int = 200
+    msg: str = "操作成功"
+    data: Optional[T] = Field(default=None, description="具体的业务数据")
 
 
 # 前端发消息给后端时的格式
@@ -16,6 +25,12 @@ class SendMessageRequest(BaseModel):
         ..., min_length=1, max_length=1000, description="消息内容"
     )
     msg_type: str = Field(..., pattern="^(text|image)$", description="消息类型")
+
+
+class SendMessageData(BaseModel):
+    msg_id: int = Field(..., gt=0, description="服务器生成的消息 ID")
+    server_time: datetime = Field(..., description="服务器时间戳")
+    local_id: str = Field(..., description="客户端发送时的本地消息 ID")
 
 
 class MessageHistoryRequest(BaseModel):

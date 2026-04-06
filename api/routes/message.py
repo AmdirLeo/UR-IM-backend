@@ -1,8 +1,11 @@
 from fastapi import APIRouter, Depends
 from typing import List, Annotated
 from schemas.message import (
+    MessageGenericResponse,
     SendMessageRequest,
+    SendMessageData,
     MessageHistoryRequest,
+    MessageHistoryItem,
 )
 from api.dependencies import CurrentUserId, DBConnection
 from services.message_service import send_message_service, get_message_history_service
@@ -10,17 +13,23 @@ from services.message_service import send_message_service, get_message_history_s
 router = APIRouter()
 
 
-@router.post("/send", summary="发送消息")
+@router.post(
+    "/send", summary="发送消息", response_model=MessageGenericResponse[SendMessageData]
+)
 async def send_message(
     req: SendMessageRequest,
     current_user_id: CurrentUserId,
     db_session: DBConnection,
 ):
-    data = await send_message_service(db_session, current_user_id, req)
-    return {"code": 200, "data": data}
+    data_dict = await send_message_service(db_session, current_user_id, req)
+    return MessageGenericResponse(data=data_dict)
 
 
-@router.post("/history", summary="获取历史漫游消息")
+@router.post(
+    "/history",
+    summary="获取历史漫游消息",
+    response_model=MessageGenericResponse[List[MessageHistoryItem]],
+)
 async def get_message_history(
     req: MessageHistoryRequest,
     current_user_id: CurrentUserId,
@@ -29,4 +38,4 @@ async def get_message_history(
     history = await get_message_history_service(
         db_session, current_user_id, req.conversation_id, req.start_msg_id, req.limit
     )
-    return {"code": 200, "data": history}
+    return MessageGenericResponse(data=history)
