@@ -2,19 +2,23 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional
 
+
 # 前端发消息给后端时的格式
-class MessageCreate(BaseModel):
-    target_id: Optional[int] = Field(
-        default=None, 
-        description="接收者用户ID。如果是发给世界频道的公共广播，请传 null 或不传此字段。"
+class SendMessageRequest(BaseModel):
+    conversation_id: int = Field(..., gt=0, description="会话 ID")
+    local_id: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        description="客户端生成的本地消息 ID",
     )
-    content: str = Field(
-        ..., 
-        min_length=1, 
-        max_length=1000, 
-        description="消息正文", 
-        examples=["天王盖地虎"]
+    message_content: str = Field(
+        ..., min_length=1, max_length=1000, description="消息内容"
     )
+    msg_type: str = Field(
+        ..., pattern="^(text|image)$", description="消息类型，目前支持 text 或 image"
+    )
+
 
 # 后端返回历史消息给前端时的格式
 class MessageResponse(BaseModel):

@@ -18,16 +18,16 @@ async def lifespan(app: FastAPI):
     # ---------- 启动阶段 ----------
     # 1. 初始化数据库连接池（若失败则应用无法启动）
     await init_db_pool()
-    
+
     # 2. 启动 WebSocket 心跳巡检后台任务
     heartbeat_task = asyncio.create_task(manager.check_heartbeats())
-    
+
     yield  # 应用运行中
-    
+
     # ---------- 关闭阶段 ----------
     # 1. 取消心跳巡检任务
     heartbeat_task.cancel()
-    
+
     # 2. 平滑关闭数据库连接池
     await close_db_pool()
 
@@ -54,7 +54,7 @@ setup_exception_handlers(app)
 # 路由注册
 app.include_router(user.router, prefix="/api/user", tags=["User Management"])
 app.include_router(chat.router, prefix="/chat", tags=["IM WebSocket"])
-app.include_router(message.router, prefix="/api/messages", tags=["Message API"])
+app.include_router(message.router, prefix="/api/message", tags=["Message API"])
 app.include_router(friend.router, prefix="/api/friend", tags=["Manage friendship"])
 
 
