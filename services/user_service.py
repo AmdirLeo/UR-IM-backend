@@ -61,7 +61,7 @@ async def search_users(
 async def send_register_email_service(email: str) -> EmailResponse:
     v_code = generate_verification_code(6)
     # await smtp_send_email(email, verification_code)
-    # await db_save_verification_code(email, verification_code)
+    await db_save_verification_code(email, v_code)
     return EmailResponse(code=200, verification_code=v_code)
 
 
