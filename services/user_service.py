@@ -57,11 +57,11 @@ async def search_users(
     ]
 
 
-async def send_register_email_service(email: str) -> BaseResponse:
+async def send_register_email_service(email: str) -> EmailResponse:
     verification_code = generate_verification_code(6)
     # await smtp_send_email(email, verification_code)
-    await db_save_verification_code(email, verification_code)
-    return BaseResponse(code=200, msg="验证码已发送至邮箱")
+    # await db_save_verification_code(email, verification_code)
+    return EmailResponse(code=200, verification_code=verification_code)
 
 
 async def register_service(conn, user_data: UserRegister) -> RegisterResponse:

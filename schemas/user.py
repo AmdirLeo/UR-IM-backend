@@ -9,6 +9,11 @@ class EmailRequest(BaseModel):
     email: EmailStr = Field(..., description="邮箱地址")
 
 
+class EmailResponse(BaseModel):
+    code: int = 200
+    verification_code: int = Field(..., description="生成的伪邮箱验证码")
+
+
 class UserRegister(BaseModel):
     username: str = Field(..., min_length=3, max_length=20, description="用户名")
     password: str = Field(..., min_length=6, max_length=50, description="明文密码")
