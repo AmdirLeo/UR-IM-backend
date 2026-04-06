@@ -6,9 +6,15 @@ from schemas.message import (
     SendMessageData,
     MessageHistoryRequest,
     MessageHistoryItem,
+    MessageSearchRequest,
+    MessageSearchItem,
 )
 from api.dependencies import CurrentUserId, DBConnection
-from services.message_service import send_message_service, get_message_history_service
+from services.message_service import (
+    send_message_service,
+    get_message_history_service,
+    search_message_service,
+)
 
 router = APIRouter()
 
@@ -39,3 +45,17 @@ async def get_message_history(
         db_session, current_user_id, req.conversation_id, req.start_msg_id, req.limit
     )
     return MessageGenericResponse(data=history)
+
+
+@router.post(
+    "/search",
+    summary="筛选消息记录",
+    response_model=MessageGenericResponse[List[MessageSearchItem]],
+)
+async def search_message(
+    req: MessageSearchRequest,
+    current_user_id: CurrentUserId,
+    db_session: DBConnection,
+):
+    results = await search_message_service(db_session, current_user_id, req)
+    return MessageGenericResponse(data=results)

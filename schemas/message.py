@@ -34,7 +34,7 @@ class SendMessageData(BaseModel):
 
 
 class MessageHistoryRequest(BaseModel):
-    conversation_id: int = Field(..., gt=0, description="会话 ID")
+    conversation_id: int = Field(..., gt=0)
     start_msg_id: Optional[int] = Field(None, gt=0, description="起始消息 ID")
     limit: int = Field(
         50,
@@ -52,3 +52,21 @@ class MessageHistoryItem(BaseModel):
     create_time: datetime = Field(..., description="消息在服务端的落库时间")
     quote_msg_id: Optional[int] = Field(None, gt=0, description="引用的目标消息 ID")
     quote_num: int = Field(0, ge=0, description="该条消息被其他消息引用的次数")
+
+
+class MessageSearchRequest(BaseModel):
+    conversation_id: Optional[int] = Field(None, gt=0)
+    user_id: Optional[int] = Field(None, gt=0, description="发送者 ID")
+    start_time: Optional[datetime] = Field(None, description="起始时间")
+    end_time: Optional[datetime] = Field(None, description="结束时间")
+    keyword: Optional[str] = Field(None, description="搜索关键词")
+    limit: int = Field(20, ge=1, le=100, description="限制返回数量")
+    offset: Optional[int] = Field(None, ge=0, description="偏移量/游标消息ID")
+
+
+class MessageSearchItem(BaseModel):
+    user_id: int = Field(..., description="用户 ID")
+    conversation_id: int = Field(...)
+    msg_id: int = Field(..., description="消息 ID")
+    msg: str = Field(..., description="消息内容")
+    time: datetime = Field(..., description="发送时间")

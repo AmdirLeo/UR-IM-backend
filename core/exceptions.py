@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from enum import Enum
 import logging
+from typing import Optional
 
 
 # ==========================================
@@ -46,6 +47,7 @@ class MessageErrors(Enum):
     NotInConversation = "NotInConversation"
     ConversationNotFound = "ConversationNotFound"
     InvalidMessage = "InvalidMessage"
+    InvalidRequest = "InvalidRequest"
 
 
 # ==========================================
@@ -62,8 +64,9 @@ class FriendException(Exception):
 
 
 class MessageException(Exception):
-    def __init__(self, error_code: MessageErrors):
+    def __init__(self, error_code: MessageErrors, message: Optional[str] = None):
         self.error_code = error_code
+        self.message = message or error_code.value
 
 
 # ==========================================
