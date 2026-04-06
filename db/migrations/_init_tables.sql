@@ -1,9 +1,21 @@
--- 1. 用户表 (补充了 API 要求的 email 和 avatar)
+DROP TABLE IF EXISTS group_invite CASCADE;
+DROP TABLE IF EXISTS group_announcement CASCADE;
+DROP TABLE IF EXISTS friend_tag_mapping CASCADE;
+DROP TABLE IF EXISTS user_friend_tag CASCADE;
+DROP TABLE IF EXISTS user_inbox CASCADE;
+DROP TABLE IF EXISTS conversation_message CASCADE;
+DROP TABLE IF EXISTS message CASCADE;
+DROP TABLE IF EXISTS conversation_member CASCADE;
+DROP TABLE IF EXISTS conversation CASCADE;
+DROP TABLE IF EXISTS friend_request CASCADE;
+DROP TABLE IF EXISTS friend_relationship CASCADE;
+DROP TABLE IF EXISTS user_account CASCADE;
+-- 1. 用户表
 CREATE TABLE user_account (
     user_id BIGSERIAL PRIMARY KEY,
     username VARCHAR(255) NOT NULL,
     password VARCHAR(255) NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,    -- 邮箱，登录/找回密码需要，需保证唯一
+    email VARCHAR(255) UNIQUE NOT NULL,
     avatar_url TEXT,                       -- 头像链接/filekey
     register_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     login_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
@@ -33,7 +45,9 @@ CREATE TABLE conversation (
     type VARCHAR(20) NOT NULL,             -- 会话类型：'private' (单聊) 或 'group' (群聊)
     conversation_name VARCHAR(255),        -- 群名称（私聊可为空）
     announcement TEXT,                     -- 群公告
-    create_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    create_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    last_msg_id BIGINT,                    -- 全局id
+    last_msg_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 5. 会话成员表
@@ -51,19 +65,20 @@ CREATE TABLE conversation_member (
 -- 6. 消息内容本体表
 CREATE TABLE message (
     msg_id BIGSERIAL PRIMARY KEY,
-    -- 使用 JSONB 支持富文本扩展，例如: {"type": "text", "content": "你好"} 或 {"type": "image", "url": "..."}
-    msg_body JSONB NOT NULL 
+    msg_body JSONB NOT NULL, 
+    quote_id BIGINT,
+    quote_count BIGINT DEFAULT 0
 );
 
 -- 7. 会话消息关联表 (处理引用关系)
 CREATE TABLE conversation_message (
     conversation_id BIGINT NOT NULL REFERENCES conversation(conversation_id) ON DELETE CASCADE,
     msg_id BIGINT NOT NULL REFERENCES message(msg_id) ON DELETE CASCADE,
+    seq_id BIGINT,
     sender_id BIGINT NOT NULL REFERENCES user_account(user_id),
-    quote_id BIGINT,                       -- 引用的被回复消息的 msg_id
-    quote_count INT DEFAULT 0,             -- 被引用的次数
     create_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (conversation_id, msg_id)
+    PRIMARY KEY (conversation_id, msg_id),
+    UNIQUE (conversation_id, seq_id)
 );
 
 -- 8. 用户收件箱 (写扩散模型核心)
@@ -78,18 +93,43 @@ CREATE TABLE user_inbox (
 
 -- 9. 好友分组表
 CREATE TABLE user_friend_tag (
-    user_id INT REFERENCES user_account(user_id) ON DELETE CASCADE,
+    user_id BIGINT REFERENCES user_account(user_id) ON DELETE CASCADE,
     tag_name VARCHAR(50) NOT NULL,
     PRIMARY KEY (user_id, tag_name)
 );
 
 CREATE TABLE friend_tag_mapping (
-    user_id INT,
-    friend_user_id INT,
+    user_id BIGINT,
+    friend_user_id BIGINT,
     tag_name VARCHAR(50),
     PRIMARY KEY (user_id, friend_user_id, tag_name),
-    -- 级联删除魔术：如果好友被删了，或者这个分组被删了，这里的记录会自动消失！
+    -- 级联删除
     FOREIGN KEY (user_id, friend_user_id) REFERENCES friend_relationship(user_id, friend_user_id) ON DELETE CASCADE,
     FOREIGN KEY (user_id, tag_name) REFERENCES user_friend_tag(user_id, tag_name) ON DELETE CASCADE
 );
 
+-- 10. 独立的群公告表
+CREATE TABLE group_announcement (
+    announcement_id BIGSERIAL PRIMARY KEY,
+    conversation_id BIGINT NOT NULL REFERENCES conversation(conversation_id) ON DELETE CASCADE,
+    sender_id BIGINT NOT NULL REFERENCES user_account(user_id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    is_pinned BOOLEAN DEFAULT false,       -- 是否置顶
+    create_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 11. 群成员邀请审核表
+CREATE TABLE group_invite (
+    invite_id BIGSERIAL PRIMARY KEY,
+    conversation_id BIGINT NOT NULL REFERENCES conversation(conversation_id) ON DELETE CASCADE,
+    inviter_id BIGINT NOT NULL REFERENCES user_account(user_id) ON DELETE CASCADE, 
+    invitee_id BIGINT NOT NULL REFERENCES user_account(user_id) ON DELETE CASCADE,
+    status VARCHAR(20) DEFAULT 'pending',  -- 状态: pending, approved, rejected
+    create_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 会话置顶排序
+CREATE INDEX idx_conv_last_time ON conversation(last_msg_time DESC);
+
+-- 消息筛选
+CREATE INDEX idx_conv_msg_sender ON conversation_message(sender_id);

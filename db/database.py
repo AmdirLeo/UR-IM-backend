@@ -16,7 +16,7 @@ async def init_db_pool():
     # 这个 URL 应该从 core/config.py 或 .env 文件中读取
     # 先写死
     db_url = os.getenv(
-        "DATABASE_URL", 
+        "DATABASE_URL",
         "postgresql://postgres:123456@127.0.0.1:5432/im_db"
     )
 
@@ -43,8 +43,17 @@ async def close_db_pool():
         await db_pool.close()
         print("数据库连接池关闭。")
 
+def get_db_pool() -> asyncpg.Pool:
+    """
+    获取全局数据库连接池实例。
+    在执行 CRUD 操作或测试环境的数据清理时调用此函数。
+    """
+    global db_pool
+    if db_pool is None:
+        raise RuntimeError("数据库连接池尚未初始化！请确保在 FastAPI 的 lifespan 或测试 setup 中调用了 init_db_pool()")
+    return db_pool
 
-async def get_db_conn() -> AsyncGenerator[asyncpg.Connection, None]:
+async def get_db_conn() -> AsyncGenerator[asyncpg.pool.PoolConnectionProxy, None]:
     """
     当 API 路由被访问时，这个函数会从连接池中借出一个连接，
     通过 yield 交给你的 Repo 函数使用，执行完毕后自动归还给连接池。

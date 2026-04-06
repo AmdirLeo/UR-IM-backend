@@ -116,11 +116,11 @@ async def test_heartbeat_timeout_purge():
             self.messages = []
 
         async def send_json(self, data):
-                # 记录收到的广播消息
-                self.messages.append(data)
-                # 加上这句：既满足 Manager 的 await 调用，又消除 SonarLint 的警告
-                import asyncio
-                await asyncio.sleep(0)
+            # 记录收到的广播消息
+            self.messages.append(data)
+            # 加上这句：既满足 Manager 的 await 调用，又消除 SonarLint 的警告
+            import asyncio
+            await asyncio.sleep(0)
 
         async def close(self, code=1000):
             """模拟关闭连接。"""

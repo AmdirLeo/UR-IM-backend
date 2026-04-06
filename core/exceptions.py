@@ -44,10 +44,26 @@ class FriendErrors(Enum):
 
 
 class MessageErrors(Enum):
-    NotInConversation = "NotInConversation"
     ConversationNotFound = "ConversationNotFound"
+    NotInConversation = "NotInConversation"
+    MessageNotFound = "MessageNotFound"
+    QuoteNotFound = "QuoteNotFound"  # 引用的消息不存在
     InvalidMessage = "InvalidMessage"
     InvalidRequest = "InvalidRequest"
+
+
+class GroupErrors(Enum):
+    GroupNotFound = "GroupNotFound"
+    NotInGroup = "NotInGroup"
+    PermissionDenied = "PermissionDenied"  # 权限不足（非群主/管理员操作）
+    OwnerCannotQuit = "OwnerCannotQuit"  # 群主不能直接退出
+    AlreadyInGroup = "AlreadyInGroup"
+    CannotKickHigherRole = "CannotKickHigherRole"  # 不能踢权限比自己高或同级的人
+    InvalidRole = "InvalidRole"  # 无效的角色类型
+    InviteNotFound = "InviteNotFound"  # 邀请记录不存在或已处理
+    InvitePending = "InvitePending"  # 已有待处理的邀请记录
+    CannotInviteSelf = "CannotInviteSelf"  # 不能邀请自己加群
+    InvalidReviewAction = "InvalidReviewAction"
 
 
 # ==========================================
@@ -67,6 +83,11 @@ class MessageException(Exception):
     def __init__(self, error_code: MessageErrors, message: Optional[str] = None):
         self.error_code = error_code
         self.message = message or error_code.value
+
+
+class GroupException(Exception):
+    def __init__(self, error_code: GroupErrors):
+        self.error_code = error_code
 
 
 # ==========================================
@@ -133,10 +154,37 @@ def setup_exception_handlers(app):
             MessageErrors.NotInConversation: (403, "无权限：不是好友或不在群里"),
             MessageErrors.ConversationNotFound: (404, "conversation_id不存在"),
             MessageErrors.InvalidMessage: (400, "msg不合法"),
+            MessageErrors.MessageNotFound: (404, "消息不存在"),
+            MessageErrors.QuoteNotFound: (404, "引用的消息不存在"),
         }
         status_code, detail = error_mapping.get(
             exc.error_code, (500, "消息模块未知错误")
         )
+        return JSONResponse(
+            status_code=status_code,
+            content={"code": status_code, "msg": detail, "data": None},
+        )
+
+    # 捕获群模块异常
+    @app.exception_handler(GroupException)
+    async def group_exception_handler(request: Request, exc: GroupException):
+        error_mapping = {
+            GroupErrors.GroupNotFound: (404, "群聊不存在"),
+            GroupErrors.NotInGroup: (403, "你不在这个群里"),
+            GroupErrors.PermissionDenied: (403, "权限不足，无法执行此操作"),
+            GroupErrors.OwnerCannotQuit: (400, "群主不能直接退出，请先转让群主"),
+            GroupErrors.AlreadyInGroup: (409, "你已经在这个群里了"),
+            GroupErrors.CannotKickHigherRole: (403, "无法踢出权限比自己高或同级的成员"),
+            GroupErrors.InvalidRole: (400, "无效的角色类型"),
+            GroupErrors.InviteNotFound: (404, "邀请记录不存在或已处理"),
+            GroupErrors.InvitePending: (
+                409,
+                "已有待处理的邀请记录，请耐心等待或前往处理",
+            ),
+            GroupErrors.CannotInviteSelf: (400, "不能邀请自己加入群聊"),
+            GroupErrors.InvalidReviewAction: (400, "无效的审核操作"),
+        }
+        status_code, detail = error_mapping.get(exc.error_code, (500, "群模块未知错误"))
         return JSONResponse(
             status_code=status_code,
             content={"code": status_code, "msg": detail, "data": None},

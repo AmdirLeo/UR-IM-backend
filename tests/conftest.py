@@ -1,32 +1,45 @@
+from db.database import init_db_pool, close_db_pool
+from main import app
 import pytest
 import os
 import asyncpg
 from fastapi.testclient import TestClient
+import asyncio
 
 TEST_DB_NAME = "test_im_db"
 import os
 
 # 优先读取 CI 注入的环境变量 DATABASE_URL，读不到再用本地的地址作为备胎
 TEST_DB_URL = os.getenv(
-    "DATABASE_URL", 
-    f"postgresql://postgres:123456@127.0.0.1:5432/{TEST_DB_NAME}"
+    "DATABASE_URL", f"postgresql://postgres:123456@127.0.0.1:5432/{TEST_DB_NAME}"
 )
 
 # 同样使用 getenv 提供备胎。
 # 优先读取 CI 环境的默认库 URL，如果本地开发没配环境变量，则使用你本地暂存的稳妥地址
 DEFAULT_DB_URL = os.getenv(
-    "DEFAULT_DATABASE_URL", 
-    "postgresql://postgres:123456@127.0.0.1:5432/postgres?sslmode=disable"
+    "DEFAULT_DATABASE_URL",
+    "postgresql://postgres:123456@127.0.0.1:5432/postgres?sslmode=disable",
 )
 
 # 必须在导入 app 之前设置环境变量
 os.environ["DATABASE_URL"] = TEST_DB_URL
 os.environ["DEFAULT_DATABASE_URL"] = DEFAULT_DB_URL
 
-from main import app
-from db.database import init_db_pool, close_db_pool
 
-# ！！！已经删除了自定义的 event_loop，全权交给 pytest-asyncio 接管 ！！！
+# === 新增：强制全局单例事件循环 ===
+
+
+@pytest.fixture(scope="session")
+def event_loop():
+    """
+    强制整个测试会话（Session）共用同一个 Event Loop！
+    彻底解决 asyncpg 连接池与测试用例跨循环抛出 RuntimeError 的世纪难题。
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    yield loop
+    loop.close()
+
 
 @pytest.fixture(scope="session", autouse=True)
 async def setup_test_database():
@@ -46,15 +59,19 @@ async def setup_test_database():
 
     # 2. 初始化全局连接池
     await init_db_pool()
-    
-    # 3. 初始化表结构
+
+    # 3. 读取并执行建表 SQL
     current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sql_file_path = os.path.join(current_dir, 'db', 'migrations', '_init_tables.sql')
-    
-    conn = await asyncpg.connect(TEST_DB_URL)
+    sql_file_path = os.path.join(current_dir, "db", "migrations", "_init_tables.sql")
+
     try:
+        conn = await asyncpg.connect(TEST_DB_URL)
+
+        # --- 新增这行：彻底清空 public schema 并重建 ---
+        # 这一步能保证不管上次留下了什么垃圾数据或表结构，都会被一扫而空
         await conn.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-        with open(sql_file_path, 'r', encoding='utf-8') as f:
+
+        with open(sql_file_path, "r", encoding="utf-8") as f:
             await conn.execute(f.read())
         print("测试数据库初始化建表完成。")
     except Exception as e:
@@ -66,8 +83,8 @@ async def setup_test_database():
     # ==========================================
     # 4. 关键：交出控制权，让所有测试用例开始运行
     # ==========================================
-    yield 
-    
+    yield
+
     # 5. 测试结束后，必须优雅关闭连接池！否则会报跨循环错误
     try:
         await close_db_pool()
@@ -77,23 +94,24 @@ async def setup_test_database():
 
 @pytest.fixture(autouse=True)
 async def clear_database_data():
-    clear_sql = """
-        TRUNCATE TABLE 
-            user_account, 
-            friend_relationship, 
-            friend_request, 
-            conversation, 
-            conversation_member, 
-            message, 
-            conversation_message, 
-            user_inbox 
-        CASCADE;
-    """
     conn = None
     try:
-        # 连接动作放进 try 里面！
+        # 使用 CASCADE 级联清空所有相关表
         conn = await asyncpg.connect(TEST_DB_URL)
-        await conn.execute(clear_sql)
+        await conn.execute(
+            """
+            TRUNCATE TABLE
+                user_account,
+                friend_relationship,
+                friend_request,
+                conversation,
+                conversation_member,
+                message,
+                conversation_message,
+                user_inbox
+            CASCADE;
+        """
+        )
     except Exception as e:
         print(f"清空测试数据失败: {e}")
     finally:
