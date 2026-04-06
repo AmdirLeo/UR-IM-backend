@@ -50,7 +50,7 @@ class ConnectionManager:
 
     async def broadcast(self, message: dict):
         # 为了避免在遍历字典时修改字典引发报错，先拷贝一份 user_id 列表
-        for user_id in list(self.active_connections.keys()):
+        for user_id in self.active_connections.keys():
             await self.send_personal_message(message, user_id)
 
     async def purge_timeouts(self):

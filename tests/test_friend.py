@@ -43,13 +43,13 @@ async def test_friend_journey_and_edge_cases():
         # 直接利用底层函数快速创建用户，避免走 HTTP 注册需要验证码的麻烦
         # 假设每次测试前 conftest.py 都会清理数据库，邮箱不会冲突
         user_a_id = await db_create_user(
-            conn, "friend_user_A", hashed_pw, "friend_a@test.com"
+            conn, "friend_user_A", hashed_pw, "friend_a@test.com"  # type: ignore
         )
         user_b_id = await db_create_user(
-            conn, "friend_user_B", hashed_pw, "friend_b@test.com"
+            conn, "friend_user_B", hashed_pw, "friend_b@test.com"  # type: ignore
         )
         user_c_id = await db_create_user(
-            conn, "friend_user_C", hashed_pw, "friend_c@test.com"
+            conn, "friend_user_C", hashed_pw, "friend_c@test.com"  # type: ignore
         )
         break  # 取一次连接执行完毕即可
 

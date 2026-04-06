@@ -124,7 +124,7 @@ async def clear_database_data():
 
 
 @pytest.fixture
-def test_client():
+def test_client(scope="session"):
     """提供一个测试专用的 FastAPI Client"""
     with TestClient(app) as client:
         yield client

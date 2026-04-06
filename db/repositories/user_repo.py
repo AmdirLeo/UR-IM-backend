@@ -1,5 +1,6 @@
 import asyncpg
 from core.exceptions import UserErrors, UserException
+from typing import Optional
 
 
 async def db_create_user(conn: asyncpg.Connection, username: str, password_hash: str, email: str) -> int:
@@ -15,6 +16,8 @@ async def db_create_user(conn: asyncpg.Connection, username: str, password_hash:
     """
     try:
         user_id = await conn.fetchval(query, username, password_hash, email)
+        if user_id is None:
+            raise UserException(UserErrors.NotFound)
         return user_id
     except asyncpg.exceptions.UniqueViolationError:
         # 捕获数据库层面的唯一性冲突（邮箱重复注册）
@@ -97,9 +100,9 @@ async def db_update_user_password(conn: asyncpg.Connection, user_id: int, new_pa
 async def db_update_user_profile(
     conn: asyncpg.Connection,
     user_id: int,
-    username: str = None,
-    email: str = None,
-    avatar_url: str = None
+    username: Optional[str] = None,
+    email: Optional[str] = None,
+    avatar_url: Optional[str] = None
 ) -> bool:
     """
     通用的资料修改接口（对应 /api/user/edit 系列接口）

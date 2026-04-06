@@ -2,6 +2,7 @@ import asyncpg
 import json
 from datetime import datetime 
 from core.exceptions import MessageException, MessageErrors
+from typing import Optional, Any
 
 #Sonar
 QUERY_CHECK_MEMBER_EXISTS = "SELECT 1 FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;"
@@ -23,7 +24,7 @@ async def db_send_message(
     conversation_id: int, 
     msg_content: str, 
     msg_type: str,
-    quote_id: int = None
+    quote_id: Optional[int] = None
 ) -> dict:
     """
     发送消息的核心逻辑：生成全局ID -> 生成会话Seq ID -> 更新置顶状态 -> 写扩散分发
@@ -172,7 +173,7 @@ async def db_get_message_history(
     conn: asyncpg.Connection, 
     user_id: int, 
     conversation_id: int, 
-    cursor_msg_id: int = None, 
+    cursor_msg_id: Optional[int] = None, 
     limit: int = 20
 ) -> list[dict]:
     """
@@ -323,7 +324,7 @@ async def db_filter_messages(
     """
     
     # 前两个参数已经固定
-    params = [user_id, conversation_id]
+    params: list[Any] = [user_id, conversation_id]
     conditions = []
     
     # 2. 动态拼接筛选条件 (核心魔法，绝对防 SQL 注入)

@@ -151,7 +151,9 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         # ---------------------------------------------------------
         # 7. Access protected route with invalid/missing JWT (401)
         # ---------------------------------------------------------
-        response = await client.put(EDIT_PROFILE_API_PATH, json={"user_name": "new_name"})
+        response = await client.put(
+            EDIT_PROFILE_API_PATH, json={"user_name": "new_name"}
+        )
         assert response.status_code == 401
 
         response = await client.put(
@@ -252,8 +254,7 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         token_for_logout = response.json()["token"]
 
         response = await client.post(
-            "/api/users/logout",
-            headers=get_auth_headers(token_for_logout)
+            "/api/users/logout", headers=get_auth_headers(token_for_logout)
         )
         assert response.status_code == 200
 

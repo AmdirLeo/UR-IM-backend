@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
+from pydantic import Field
 
 
 class Settings(BaseSettings):
@@ -10,10 +11,10 @@ class Settings(BaseSettings):
 
     # --- 数据库配置 ---
     # Pydantic 会自动从 .env 中读取 DATABASE_URL 变量
-    DATABASE_URL: str
+    DATABASE_URL: str = Field(default=...)
 
     # --- 安全与 JWT 配置 ---
-    JWT_SECRET_KEY: str
+    JWT_SECRET_KEY: str = Field(default=...)
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30  # 默认为30分钟
 
@@ -27,7 +28,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        extra="ignore"  # 忽略 .env 中多余的变量
+        extra="ignore",  # 忽略 .env 中多余的变量
     )
 
 
