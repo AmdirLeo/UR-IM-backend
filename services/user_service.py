@@ -30,6 +30,7 @@ from schemas.user import (
     BaseResponse,
     UserForgetPWD,
     PortraitResponse,
+    UserInfoResponse,
 )
 from typing import List
 from core.ws_manager import manager
@@ -213,4 +214,25 @@ async def edit_portrait_service(conn, current_user_id: int, file: UploadFile):
         filekey=relative_url,
         width=256,
         height=256
+    )
+
+
+async def get_user_info_service(conn, current_user_id: int) -> UserInfoResponse:
+    """
+    获取当前用户个人信息的业务逻辑
+    """
+    # 1. 去数据库查询用户信息
+    user = await db_get_user_by_id(conn, current_user_id)
+
+    # 2. 安全校验（理论上带有合法 Token 的用户一定存在，但防一手总是好的）
+    if not user:
+        raise BusinessException(status_code=404, detail="用户不存在")
+
+    # 3. 封装成咱们定义好的返回类
+    return UserInfoResponse(
+        code=200,
+        id=user["user_id"],
+        username=user["username"],
+        avatar_url=user.get("avatar_url"),  # get方法防止数据库里没有这个字段时报错
+        email=user["email"]
     )

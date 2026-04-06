@@ -12,6 +12,7 @@ from schemas.user import (
     BaseResponse,
     UserForgetPWD,
     PortraitResponse,
+    UserInfoResponse,
 )
 from services import user_service
 
@@ -90,3 +91,12 @@ async def edit_portrait(
 ):
     # 把连接、用户ID和文件，统统交给 service 处理
     return await user_service.edit_portrait_service(conn, current_user_id, file)
+
+
+@router.get("/info", response_model=UserInfoResponse, summary="获取个人信息")
+async def get_user_info(
+    current_user_id: CurrentUserId,  # 只要加了这个，FastAPI 就会自动拦截没有 Token 的请求
+    conn: DBConnection
+):
+    # 直接呼叫 Service 层干活
+    return await user_service.get_user_info_service(conn, current_user_id)

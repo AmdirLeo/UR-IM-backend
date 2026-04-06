@@ -111,3 +111,12 @@ class UserSearchResult(BaseModel):
 # 搜索用户响应 (继承 BaseResponse)
 class SearchUserResponse(BaseResponse):
     data: List[UserSearchResult] = Field(default_factory=list)
+
+
+class UserInfoResponse(BaseModel):
+    """获取个人信息的返回模型"""
+    code: int = Field(default=200, description="状态码")
+    id: int = Field(..., description="用户ID")
+    username: str = Field(..., description="用户名")
+    avatar_url: Optional[str] = Field(default=None, description="头像的相对路径 URL")
+    email: str = Field(..., description="邮箱地址")
