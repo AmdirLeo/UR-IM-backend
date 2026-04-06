@@ -39,7 +39,7 @@ async def read_acknowledgement(
     current_user_id: CurrentUserId,
     db_session: DBConnection,
 ):
-    await read_ack(db_session, current_user_id, req.conversation_id, req.msg_id)
+    await read_ack(db_session, current_user_id, req.conversation_id)
     return ConversationGenericResponse(data=None)
 
 

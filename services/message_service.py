@@ -20,15 +20,13 @@ async def send_message_service(
 ) -> dict:
     """发送消息逻辑处理"""
 
-    msg_body = {req.msg_type: req.message_content}
-
     if req.quote_message_id is not None:
         msg_id = await db_quote_message(
-            db_session, user_id, req.conversation_id, msg_body, req.quote_message_id
+            db_session, user_id, req.conversation_id, req.message_content, req.msg_type, req.quote_message_id
         )
     else:
         msg_id = await db_send_message(
-            db_session, user_id, req.conversation_id, msg_body
+            db_session, user_id, req.conversation_id, req.message_content, req.msg_type
         )
 
     # 3. 构造返回结构
