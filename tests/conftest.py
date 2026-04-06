@@ -58,7 +58,8 @@ async def setup_test_database():
 
     # 3. 读取并执行建表 SQL
     current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sql_file_path = os.path.join(current_dir, 'db', 'migrations', '_init_tables.sql')
+    sql_file_path = os.path.join(
+        current_dir, 'db', 'migrations', '_init_tables.sql')
 
     try:
         conn = await asyncpg.connect(TEST_DB_URL)

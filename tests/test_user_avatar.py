@@ -7,6 +7,7 @@ from api.dependencies import CurrentUserId
 
 from core.security import create_access_token
 
+
 @pytest.mark.asyncio
 async def test_upload_avatar_success():
     """测试头像上传流程"""
@@ -17,17 +18,17 @@ async def test_upload_avatar_success():
     # 模拟拦截数据库操作
     with patch("services.user_service.db_update_user_profile", new_callable=AsyncMock) as mock_db:
         mock_db.return_value = True
-        
+
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as ac:
             files = {"file": ("test.png", b"fake_data", "image/png")}
             response = await ac.put(
                 "/api/user/edit/portrait",
                 files=files,
                 headers=headers
-                )
-            
+            )
+
         assert response.status_code == 200
         data = response.json()
         saved_path = data["filekey"].lstrip("/")
         if os.path.exists(saved_path):
-            os.remove(saved_path) # 清理测试产生的图片
+            os.remove(saved_path)  # 清理测试产生的图片

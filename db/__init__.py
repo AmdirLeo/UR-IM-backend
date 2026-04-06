@@ -12,7 +12,8 @@ async def init_db():
 
     try:
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        sql_file_path = os.path.join(current_dir, 'migrations', '_init_tables.sql')
+        sql_file_path = os.path.join(
+            current_dir, 'migrations', '_init_tables.sql')
 
         print(f"正在读取建表脚本: {sql_file_path}")
         with open(sql_file_path, 'r', encoding='utf-8') as f:

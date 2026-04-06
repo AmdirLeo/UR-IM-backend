@@ -200,7 +200,8 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         new_password = "newpassword456"
         response = await client.put(
             "/api/users/edit",
-            json={"old_password": VALID_PASSWORD, "new_password": new_password},
+            json={"old_password": VALID_PASSWORD,
+                  "new_password": new_password},
             headers=auth_headers,
         )
         assert response.status_code == 200

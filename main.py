@@ -59,8 +59,10 @@ setup_exception_handlers(app)
 # 路由注册
 app.include_router(user.router, prefix="/api/user", tags=["User Management"])
 app.include_router(chat.router, prefix="/chat", tags=["IM WebSocket"])
-app.include_router(message.router, prefix="/api/messages", tags=["Message API"])
-app.include_router(friend.router, prefix="/api/friend", tags=["Manage friendship"])
+app.include_router(message.router, prefix="/api/messages",
+                   tags=["Message API"])
+app.include_router(friend.router, prefix="/api/friend",
+                   tags=["Manage friendship"])
 
 
 @app.get("/health")
