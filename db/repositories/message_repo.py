@@ -10,9 +10,7 @@ QUERY_LOCK_CONV = "SELECT 1 FROM conversation WHERE conversation_id = $1 FOR UPD
 
 QUERY_GET_NEXT_SEQ = "SELECT COALESCE(MAX(seq_id), 0) + 1 FROM conversation_message WHERE conversation_id = $1;"
 
-QUERY_INSERT_CONV_MSG = (
-    "INSERT INTO conversation_message (conversation_id, msg_id, sender_id, seq_id) VALUES ($1, $2, $3, $4);"
-)
+QUERY_INSERT_CONV_MSG = "INSERT INTO conversation_message (conversation_id, msg_id, sender_id, seq_id) VALUES ($1, $2, $3, $4);"
 
 QUERY_UPDATE_CONV_SORT = """
     UPDATE conversation
@@ -67,7 +65,9 @@ async def db_send_message(
             INSERT INTO conversation_message (conversation_id, msg_id, sender_id, seq_id)
             VALUES ($1, $2, $3, $4);
         """
-        await conn.execute(insert_conv_msg_query, conversation_id, msg_id, sender_id, next_seq_id)
+        await conn.execute(
+            insert_conv_msg_query, conversation_id, msg_id, sender_id, next_seq_id
+        )
 
         if quote_id:
             update_quote_query = """
@@ -80,12 +80,17 @@ async def db_send_message(
         await conn.execute(QUERY_UPDATE_CONV_SORT, msg_id, conversation_id)
 
         # 4.获取会话所有成员，并批量写入收件箱
-        get_members_query = "SELECT member_user_id FROM conversation_member WHERE conversation_id = $1;"
+        get_members_query = (
+            "SELECT member_user_id FROM conversation_member WHERE conversation_id = $1;"
+        )
         members = await conn.fetch(get_members_query, conversation_id)
 
         if members:
             # 构建批量插入的数据结构: [(user1, conv, msg), (user2, conv, msg), ...]
-            inbox_records = [(member["member_user_id"], conversation_id, msg_id) for member in members]
+            inbox_records = [
+                (member["member_user_id"], conversation_id, msg_id)
+                for member in members
+            ]
 
             insert_inbox_query = """
                 INSERT INTO user_inbox (user_id, conversation_id, msg_id)
@@ -115,7 +120,9 @@ async def db_get_all_unread_counts(conn: asyncpg.Connection, user_id: int) -> di
     return {row["conversation_id"]: row["unread_count"] for row in rows}
 
 
-async def db_mark_conversation_as_read(conn: asyncpg.Connection, user_id: int, conversation_id: int) -> None:
+async def db_mark_conversation_as_read(
+    conn: asyncpg.Connection, user_id: int, conversation_id: int
+) -> None:
     """
     清除特定会话的未读红点（已读上报）
     需要同时更新 inbox 的状态和 member 表的 read_index 水位线
@@ -177,11 +184,22 @@ async def db_quote_message(
         raise MessageException(MessageErrors.QuoteNotFound)
 
     # 复用之前的发送逻辑 (开启事务，插入 message，更新 quote_count，写扩散)
-    return await db_send_message(conn, sender_id, conversation_id, msg_content, msg_type, quote_id=quote_message_id)
+    return await db_send_message(
+        conn,
+        sender_id,
+        conversation_id,
+        msg_content,
+        msg_type,
+        quote_id=quote_message_id,
+    )
 
 
 async def db_get_message_history(
-    conn: asyncpg.Connection, user_id: int, conversation_id: int, cursor_msg_id: Optional[int] = None, limit: int = 20
+    conn: asyncpg.Connection,
+    user_id: int,
+    conversation_id: int,
+    cursor_msg_id: Optional[int] = None,
+    limit: int = 20,
 ) -> list[dict]:
     """
     基于游标拉取历史消息 / 离线消息 (对应 POST /api/message/offlinemsg 和 /history)
@@ -228,17 +246,26 @@ async def db_get_message_history(
             AND cm.msg_id < $3
         """
         rows = await conn.fetch(
-            query + f" ORDER BY cm.seq_id DESC LIMIT {limit};", user_id, conversation_id, cursor_msg_id
+            query + f" ORDER BY cm.seq_id DESC LIMIT {limit};",
+            user_id,
+            conversation_id,
+            cursor_msg_id,
         )
     else:
         # 第一次打开，没有游标
-        rows = await conn.fetch(query + f" ORDER BY cm.seq_id DESC LIMIT {limit};", user_id, conversation_id)
+        rows = await conn.fetch(
+            query + f" ORDER BY cm.seq_id DESC LIMIT {limit};", user_id, conversation_id
+        )
 
     # 4. 格式化返回
     result = []
     for row in rows:
         try:
-            body = json.loads(row["msg_body"]) if isinstance(row["msg_body"], str) else row["msg_body"]
+            body = (
+                json.loads(row["msg_body"])
+                if isinstance(row["msg_body"], str)
+                else row["msg_body"]
+            )
         except Exception:
             body = {"type": "text", "content": "[解析错误]"}
 
@@ -294,7 +321,9 @@ async def db_set_conversation_pin(
         raise MessageException(MessageErrors.NotInConversation)
 
 
-async def db_get_all_unread_counts_with_mute(conn: asyncpg.Connection, user_id: int) -> list[dict]:
+async def db_get_all_unread_counts_with_mute(
+    conn: asyncpg.Connection, user_id: int
+) -> list[dict]:
     """
     获取用户的未读数列表（带上该群是否免打扰的标记，前端靠这个区分红点和灰点）
     """
@@ -393,7 +422,11 @@ async def db_filter_messages(
     result = []
     for row in records:
         try:
-            body_dict = json.loads(row["msg_body"]) if isinstance(row["msg_body"], str) else row["msg_body"]
+            body_dict = (
+                json.loads(row["msg_body"])
+                if isinstance(row["msg_body"], str)
+                else row["msg_body"]
+            )
         except Exception:
             body_dict = {"text": "[解析错误]"}
 
@@ -403,7 +436,9 @@ async def db_filter_messages(
                 "seq_id": row["seq_id"],
                 "sender_id": row["sender_id"],
                 "msg_body": body_dict,
-                "created_at": row["create_time"].isoformat() if row["create_time"] else None,
+                "created_at": (
+                    row["create_time"].isoformat() if row["create_time"] else None
+                ),
                 "reply_to_id": row["quote_id"],
             }
         )
@@ -447,7 +482,8 @@ async def db_sync_conversations(conn: asyncpg.Connection, user_id: int) -> list[
         LEFT JOIN message m ON c.last_msg_id = m.msg_id
 
         -- 左连表：去映射表找这条最后的消息是谁发的、什么时候发的
-        LEFT JOIN conversation_message cm_last ON m.msg_id = cm_last.msg_id AND cm_last.conversation_id = c.conversation_id
+        LEFT JOIN conversation_message cm_last 
+        ON m.msg_id = cm_last.msg_id AND cm_last.conversation_id = c.conversation_id
 
         WHERE cm.member_user_id = $1
         ORDER BY c.last_msg_time DESC NULLS LAST;

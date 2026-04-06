@@ -43,7 +43,7 @@ async def db_get_conversation_list(conn: asyncpg.Connection, user_id: int) -> li
                 "conversation_id": row["conversation_id"],
                 "conversation_name": row["conversation_name"],
                 # 格式化时间戳，防范新建群聊还没发消息导致 time 为 None 的情况
-                "last_msg_time": row["last_msg_time"].isoformat() if row["last_msg_time"] else None,
+                "last_msg_time": (row["last_msg_time"].isoformat() if row["last_msg_time"] else None),
                 "last_msg_preview": preview_text,
             }
         )
@@ -52,7 +52,10 @@ async def db_get_conversation_list(conn: asyncpg.Connection, user_id: int) -> li
 
 
 async def db_create_group(
-    conn: asyncpg.Connection, creator_id: int, member_ids: list[int], group_name: str = "未命名群聊"
+    conn: asyncpg.Connection,
+    creator_id: int,
+    member_ids: list[int],
+    group_name: str = "未命名群聊",
 ) -> int:
     """
     创建群聊 (对应 POST /api/group/create)
@@ -140,7 +143,9 @@ async def db_quit_group(conn: asyncpg.Connection, user_id: int, conversation_id:
         raise GroupException(GroupErrors.OwnerCannotQuit)
 
     await conn.execute(
-        "DELETE FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;", conversation_id, user_id
+        "DELETE FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;",
+        conversation_id,
+        user_id,
     )
 
 
@@ -155,7 +160,10 @@ async def db_disband_group(conn: asyncpg.Connection, user_id: int, conversation_
 
 
 async def db_remove_group_member(
-    conn: asyncpg.Connection, operator_id: int, conversation_id: int, target_user_id: int
+    conn: asyncpg.Connection,
+    operator_id: int,
+    conversation_id: int,
+    target_user_id: int,
 ) -> None:
     """
     移除群员 (对应 DELETE /api/group/member)
@@ -198,7 +206,11 @@ async def db_remove_group_member(
 
 
 async def db_manage_group_role(
-    conn: asyncpg.Connection, operator_id: int, conversation_id: int, target_user_id: int, new_role: str
+    conn: asyncpg.Connection,
+    operator_id: int,
+    conversation_id: int,
+    target_user_id: int,
+    new_role: str,
 ) -> None:
     """
     群权限管理 (对应 PUT /api/group/admin)
@@ -243,7 +255,11 @@ async def db_manage_group_role(
 
 
 async def db_post_group_announcement(
-    conn: asyncpg.Connection, operator_id: int, conversation_id: int, content: str, is_pinned: bool = False
+    conn: asyncpg.Connection,
+    operator_id: int,
+    conversation_id: int,
+    content: str,
+    is_pinned: bool = False,
 ) -> int:
     """
     发布群公告 (对应 POST /api/group/announcement)
@@ -290,7 +306,10 @@ async def db_invite_to_group(conn: asyncpg.Connection, inviter_id: int, conversa
 
     # 4. 防轰炸：校验是否已经有关于该用户的待审核邀请
     has_pending = await conn.fetchval(
-        "SELECT EXISTS(SELECT 1 FROM group_invite WHERE conversation_id = $1 AND invitee_id = $2 AND status = 'pending');",
+        """
+        SELECT EXISTS(SELECT 1 FROM group_invite 
+        WHERE conversation_id = $1 AND invitee_id = $2 AND status = 'pending');
+        """,
         conversation_id,
         invitee_id,
     )
@@ -333,7 +352,11 @@ async def db_review_group_invite(conn: asyncpg.Connection, reviewer_id: int, inv
     # 3. 开启强事务处理审核结果
     async with conn.transaction():
         # a. 更新邀请状态
-        await conn.execute("UPDATE group_invite SET status = $1 WHERE invite_id = $2;", action, invite_id)
+        await conn.execute(
+            "UPDATE group_invite SET status = $1 WHERE invite_id = $2;",
+            action,
+            invite_id,
+        )
 
         # b. 如果通过了，就把人拉进群
         if action == "approved":
