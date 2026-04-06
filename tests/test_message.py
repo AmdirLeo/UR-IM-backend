@@ -119,7 +119,8 @@ async def test_message_journey_and_edge_cases():
         assert len(history_data) >= 2
 
         # 验证引用关联是否正确
-        quote_msg = next((m for m in history_data if m.get("msg_id") == msg_2_id), None)
+        quote_msg = next(
+            (m for m in history_data if m.get("msg_id") == msg_2_id), None)
         assert quote_msg is not None
         assert quote_msg.get("quote_msg_id") == msg_1_id
 

@@ -2,10 +2,10 @@ import asyncpg
 import json
 from core.exceptions import GroupException, GroupErrors
 
-#Sonar
+# Sonar
 QUERY_GET_MEMBER_ROLE = "SELECT role FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;"
 QUERY_GET_CONVERSATION_LIST = """
-    SELECT 
+    SELECT
         c.conversation_id,
         c.conversation_name,
         c.last_msg_time,
@@ -18,12 +18,16 @@ QUERY_GET_CONVERSATION_LIST = """
     -- NULLS LAST 保证新建的、还没发过消息的群排在最下面
     ORDER BY c.last_msg_time DESC NULLS LAST;
 """
-async def db_get_conversation_list(conn: asyncpg.Connection, user_id: int) -> list[dict]:
+
+
+async def db_get_conversation_list(
+        conn: asyncpg.Connection,
+        user_id: int) -> list[dict]:
     """
     获取用户的群聊列表 (按最新活跃时间排序，包含最后一条消息预览)
     """
     records = await conn.fetch(QUERY_GET_CONVERSATION_LIST, user_id)
-    
+
     result = []
     for row in records:
         # 解析你存入的 JSONB 类型的 msg_body，提取用于展示的预览文本
@@ -43,10 +47,15 @@ async def db_get_conversation_list(conn: asyncpg.Connection, user_id: int) -> li
             "last_msg_time": row['last_msg_time'].isoformat() if row['last_msg_time'] else None,
             "last_msg_preview": preview_text
         })
-        
+
     return result
 
-async def db_create_group(conn: asyncpg.Connection, creator_id: int, member_ids: list[int], group_name: str = "未命名群聊") -> int:
+
+async def db_create_group(
+        conn: asyncpg.Connection,
+        creator_id: int,
+        member_ids: list[int],
+        group_name: str = "未命名群聊") -> int:
     """
     创建群聊 (对应 POST /api/group/create)
     将创建者设为 owner，其他好友设为 member
@@ -71,7 +80,10 @@ async def db_create_group(conn: asyncpg.Connection, creator_id: int, member_ids:
     return conv_id
 
 
-async def db_get_group_info(conn: asyncpg.Connection, user_id: int, conversation_id: int) -> dict:
+async def db_get_group_info(
+        conn: asyncpg.Connection,
+        user_id: int,
+        conversation_id: int) -> dict:
     """
     获取群详细信息 (对应 POST /api/group/info)
     包含群基础信息、群成员列表和历史公告
@@ -83,15 +95,15 @@ async def db_get_group_info(conn: asyncpg.Connection, user_id: int, conversation
 
     # 2. 拉取群基础信息
     info = dict(await conn.fetchrow("SELECT conversation_id, conversation_name, create_time FROM conversation WHERE conversation_id = $1;", conversation_id))
-    
+
     # 3. 拉取群成员列表 (带上用户的昵称和头像)
     query_members = """
-        SELECT cm.member_user_id, u.username, u.avatar_url, cm.role, cm.join_time 
+        SELECT cm.member_user_id, u.username, u.avatar_url, cm.role, cm.join_time
         FROM conversation_member cm
         JOIN user_account u ON cm.member_user_id = u.user_id
         WHERE cm.conversation_id = $1
-        ORDER BY 
-            CASE role WHEN 'owner' THEN 1 WHEN 'admin' THEN 2 ELSE 3 END, 
+        ORDER BY
+            CASE role WHEN 'owner' THEN 1 WHEN 'admin' THEN 2 ELSE 3 END,
             cm.join_time ASC;
     """
     info['members'] = [dict(row) for row in await conn.fetch(query_members, conversation_id)]
@@ -109,14 +121,17 @@ async def db_get_group_info(conn: asyncpg.Connection, user_id: int, conversation
     return info
 
 
-async def db_quit_group(conn: asyncpg.Connection, user_id: int, conversation_id: int) -> None:
+async def db_quit_group(
+        conn: asyncpg.Connection,
+        user_id: int,
+        conversation_id: int) -> None:
     """
     退出群聊 (对应 POST /api/group/quit)
     """
     role = await conn.fetchval(QUERY_GET_MEMBER_ROLE, conversation_id, user_id)
     if not role:
         raise GroupException(GroupErrors.NotInGroup)
-    
+
     # 群主不能退群
     if role == 'owner':
         raise GroupException(GroupErrors.OwnerCannotQuit)
@@ -124,7 +139,10 @@ async def db_quit_group(conn: asyncpg.Connection, user_id: int, conversation_id:
     await conn.execute("DELETE FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;", conversation_id, user_id)
 
 
-async def db_disband_group(conn: asyncpg.Connection, user_id: int, conversation_id: int) -> None:
+async def db_disband_group(
+        conn: asyncpg.Connection,
+        user_id: int,
+        conversation_id: int) -> None:
     """
     解散群聊 (对应 POST /api/group/bomb)
     """
@@ -133,10 +151,11 @@ async def db_disband_group(conn: asyncpg.Connection, user_id: int, conversation_
         raise GroupException(GroupErrors.PermissionDenied)
     await conn.execute("DELETE FROM conversation WHERE conversation_id = $1;", conversation_id)
 
+
 async def db_remove_group_member(
-    conn: asyncpg.Connection, 
-    operator_id: int, 
-    conversation_id: int, 
+    conn: asyncpg.Connection,
+    operator_id: int,
+    conversation_id: int,
     target_user_id: int
 ) -> None:
     """
@@ -149,14 +168,14 @@ async def db_remove_group_member(
 
     # 2. 同时查出操作者和被踢者的角色
     query = """
-        SELECT member_user_id, role 
-        FROM conversation_member 
+        SELECT member_user_id, role
+        FROM conversation_member
         WHERE conversation_id = $1 AND member_user_id IN ($2, $3);
     """
     rows = await conn.fetch(query, conversation_id, operator_id, target_user_id)
-    
+
     role_map = {row['member_user_id']: row['role'] for row in rows}
-    
+
     operator_role = role_map.get(operator_id)
     target_role = role_map.get(target_user_id)
 
@@ -178,11 +197,12 @@ async def db_remove_group_member(
     delete_query = "DELETE FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;"
     await conn.execute(delete_query, conversation_id, target_user_id)
 
+
 async def db_manage_group_role(
-    conn: asyncpg.Connection, 
-    operator_id: int, 
-    conversation_id: int, 
-    target_user_id: int, 
+    conn: asyncpg.Connection,
+    operator_id: int,
+    conversation_id: int,
+    target_user_id: int,
     new_role: str
 ) -> None:
     """
@@ -194,7 +214,7 @@ async def db_manage_group_role(
 
     # 1. 只有现任群主才有资格分配权限
     operator_role = await conn.fetchval(
-        QUERY_GET_MEMBER_ROLE, 
+        QUERY_GET_MEMBER_ROLE,
         conversation_id, operator_id
     )
     if operator_role != 'owner':
@@ -202,7 +222,7 @@ async def db_manage_group_role(
 
     # 2. 确认目标在群里
     target_role = await conn.fetchval(
-        QUERY_GET_MEMBER_ROLE, 
+        QUERY_GET_MEMBER_ROLE,
         conversation_id, target_user_id
     )
     if not target_role:
@@ -228,11 +248,12 @@ async def db_manage_group_role(
                 new_role, conversation_id, target_user_id
             )
 
+
 async def db_post_group_announcement(
-    conn: asyncpg.Connection, 
-    operator_id: int, 
-    conversation_id: int, 
-    content: str, 
+    conn: asyncpg.Connection,
+    operator_id: int,
+    conversation_id: int,
+    content: str,
     is_pinned: bool = False
 ) -> int:
     """
@@ -241,7 +262,7 @@ async def db_post_group_announcement(
     """
     # 1. 鉴权：必须是 owner 或 admin
     operator_role = await conn.fetchval(
-        QUERY_GET_MEMBER_ROLE, 
+        QUERY_GET_MEMBER_ROLE,
         conversation_id, operator_id
     )
     if operator_role not in ('owner', 'admin'):
@@ -253,13 +274,14 @@ async def db_post_group_announcement(
         VALUES ($1, $2, $3, $4)
         RETURNING announcement_id;
     """
-    announcement_id = await conn.fetchval(query, conversation_id, operator_id, content, is_pinned)    
+    announcement_id = await conn.fetchval(query, conversation_id, operator_id, content, is_pinned)
     return announcement_id
 
+
 async def db_invite_to_group(
-    conn: asyncpg.Connection, 
-    inviter_id: int, 
-    conversation_id: int, 
+    conn: asyncpg.Connection,
+    inviter_id: int,
+    conversation_id: int,
     invitee_id: int
 ) -> int:
     """
@@ -273,7 +295,7 @@ async def db_invite_to_group(
 
     # 2. 校验邀请人必须在群里
     inviter_role = await conn.fetchval(
-        QUERY_GET_MEMBER_ROLE, 
+        QUERY_GET_MEMBER_ROLE,
         conversation_id, inviter_id
     )
     if not inviter_role:
@@ -281,7 +303,7 @@ async def db_invite_to_group(
 
     # 3. 校验被邀请人是否已经在群里了
     is_invitee_in_group = await conn.fetchval(
-        "SELECT EXISTS(SELECT 1 FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2);", 
+        "SELECT EXISTS(SELECT 1 FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2);",
         conversation_id, invitee_id
     )
     if is_invitee_in_group:
@@ -306,9 +328,9 @@ async def db_invite_to_group(
 
 
 async def db_review_group_invite(
-    conn: asyncpg.Connection, 
-    reviewer_id: int, 
-    invite_id: int, 
+    conn: asyncpg.Connection,
+    reviewer_id: int,
+    invite_id: int,
     action: str
 ) -> None:
     """
@@ -321,7 +343,7 @@ async def db_review_group_invite(
     # 1. 查找这条邀请记录
     query_invite = "SELECT conversation_id, invitee_id, status FROM group_invite WHERE invite_id = $1;"
     invite_record = await conn.fetchrow(query_invite, invite_id)
-    
+
     if not invite_record or invite_record['status'] != 'pending':
         raise GroupException(GroupErrors.InviteNotFound)
 
@@ -330,7 +352,7 @@ async def db_review_group_invite(
 
     # 2. 核心鉴权：审核人必须是这个群的 owner 或 admin
     reviewer_role = await conn.fetchval(
-        QUERY_GET_MEMBER_ROLE, 
+        QUERY_GET_MEMBER_ROLE,
         conversation_id, reviewer_id
     )
     if reviewer_role not in ('owner', 'admin'):

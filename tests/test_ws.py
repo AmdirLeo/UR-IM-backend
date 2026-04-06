@@ -163,7 +163,11 @@ async def test_heartbeat_timeout_purge():
 
 def test_websocket_missing_sub_in_token():
     """测试 WebSocket 鉴权层：如果 Token 签名合法，但缺少 sub 字段，应拒绝连接"""
-    payload_without_sub = {"exp": datetime.now(timezone.utc) + timedelta(minutes=10)}
+    payload_without_sub = {
+        "exp": datetime.now(
+            timezone.utc) +
+        timedelta(
+            minutes=10)}
     malformed_token = jwt.encode(
         payload_without_sub, settings.JWT_SECRET_KEY, algorithm="HS256"
     )

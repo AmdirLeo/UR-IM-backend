@@ -46,7 +46,8 @@ async def search_users(
     # 如果 repository 返回的是字典列表，直接转换
     return [
         UserSearchResult(
-            user_id=u["user_id"], username=u["username"], avatar_url=u.get("avatar_url")
+            user_id=u["user_id"], username=u["username"], avatar_url=u.get(
+                "avatar_url")
         )
         for u in users["items"]  # <--- 重点：加上 ["items"]
     ]
@@ -83,7 +84,8 @@ async def forget_password_send_service(conn, email: str) -> BaseResponse:
     return BaseResponse(code=200, msg="密码找回邮件已发送")
 
 
-async def forget_password_set_service(conn, request: UserForgetPWD) -> BaseResponse:
+async def forget_password_set_service(
+        conn, request: UserForgetPWD) -> BaseResponse:
     if not await db_verify_code(request.email, request.verification_code):
         raise BusinessException(status_code=400, detail="验证码错误")
     new_password_hash = get_password_hash(request.password)
@@ -110,7 +112,7 @@ async def login_service(conn, login_data: UserLogin) -> LoginResponse:
     hashed_pwd = user["password"]
     if not hashed_pwd:
         raise BusinessException(status_code=400, detail="账号数据异常，请联系管理员")
-    
+
     if not verify_password(login_data.password, hashed_pwd):
         raise BusinessException(status_code=400, detail="密码错误")
 

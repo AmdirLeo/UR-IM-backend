@@ -25,7 +25,8 @@ async def test_init_db_success(mock_connect):
         await init_db()
 
     # 核心断言
-    mock_connect.assert_called_once_with("postgresql://postgres:123456@127.0.0.1:5432/im_db")
+    mock_connect.assert_called_once_with(
+        "postgresql://postgres:123456@127.0.0.1:5432/im_db")
     mock_conn.execute.assert_called_once_with(fake_sql)
     mock_conn.close.assert_called_once()
 

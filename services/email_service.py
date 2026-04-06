@@ -3,7 +3,8 @@ import aiosmtplib
 from email.message import EmailMessage
 
 # 注意：这里的导入路径可能需要根据你们项目的实际结构微调
-# 如果你的 config.py 在 backend/core/ 目录下，可能需要改成 from backend.core.config import settings
+# 如果你的 config.py 在 backend/core/ 目录下，可能需要改成 from backend.core.config
+# import settings
 from core.config import settings
 
 

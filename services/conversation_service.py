@@ -24,14 +24,18 @@ async def read_ack(
 
 
 async def set_conversation_mute(
-    db_session: asyncpg.Connection, user_id: int, conversation_id: int, is_muted: bool
-):
+        db_session: asyncpg.Connection,
+        user_id: int,
+        conversation_id: int,
+        is_muted: bool):
     """设置消息免打扰"""
     await db_set_conversation_mute(db_session, user_id, conversation_id, is_muted)
 
 
 async def set_conversation_pin(
-    db_session: asyncpg.Connection, user_id: int, conversation_id: int, is_pinned: bool
-):
+        db_session: asyncpg.Connection,
+        user_id: int,
+        conversation_id: int,
+        is_pinned: bool):
     """设置会话置顶"""
     await db_set_conversation_pin(db_session, user_id, conversation_id, is_pinned)

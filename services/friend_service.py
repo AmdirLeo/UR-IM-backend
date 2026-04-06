@@ -42,8 +42,10 @@ async def apply_friend(
 
 
 async def handle_friend_request(
-    db_session: asyncpg.Connection, current_user_id: int, request_id: int, action: str
-) -> None:
+        db_session: asyncpg.Connection,
+        current_user_id: int,
+        request_id: int,
+        action: str) -> None:
     """
     处理好友申请的业务逻辑。
     """
@@ -115,8 +117,10 @@ async def delete_friend_tag(
 
 
 async def add_friends_to_tag(
-    db_session: asyncpg.Connection, user_id: int, tag_name: str, friend_ids: list[int]
-) -> None:
+        db_session: asyncpg.Connection,
+        user_id: int,
+        tag_name: str,
+        friend_ids: list[int]) -> None:
     """
     将好友移入分组
     """
@@ -136,8 +140,10 @@ async def get_friends_by_tag(
 
 
 async def remove_friend_from_tag(
-    db_session: asyncpg.Connection, user_id: int, friend_user_id: int, tag_name: str
-) -> None:
+        db_session: asyncpg.Connection,
+        user_id: int,
+        friend_user_id: int,
+        tag_name: str) -> None:
     """
     将特定好友移出分组
     """
