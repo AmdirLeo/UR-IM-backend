@@ -17,7 +17,7 @@ TEST_DB_URL = os.getenv(
 # 同样使用 getenv 提供备胎。
 # 优先读取 CI 环境的默认库 URL，如果本地开发没配环境变量，则使用你本地暂存的稳妥地址
 DEFAULT_DB_URL = os.getenv(
-    "DEFAULT_DATABASE_URL",
+    "DATABASE_URL",
     "postgresql://postgres:123456@127.0.0.1:5432/postgres?sslmode=disable",
 )
 
