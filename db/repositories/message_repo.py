@@ -332,7 +332,7 @@ async def db_filter_messages(
     if keyword:
         params.append(f"%{keyword}%")
         # 使用 ->> 提取 JSONB 中的字符串进行模糊匹配
-        conditions.append(f"m.msg_body->>'text' ILIKE ${len(params)}")
+        conditions.append(f"m.msg_body->>'content' ILIKE ${len(params)}")
 
     # B. 发送者筛选
     if sender_id is not None:
