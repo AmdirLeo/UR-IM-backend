@@ -64,7 +64,9 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
             "/api/users/register/email", json={"email": VALID_EMAIL}
         )
         assert response.status_code == 200
-        assert response.json()["msg"] == "验证码已发送至邮箱"
+        res_data = response.json()
+        assert "code" in res_data
+        assert res_data["verification_code"] == "123456" # 校验 mock 的值
         mock_generate_code.assert_called()
 
         # ---------------------------------------------------------

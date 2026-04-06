@@ -11,7 +11,7 @@ class EmailRequest(BaseModel):
 
 class EmailResponse(BaseModel):
     code: int = 200
-    verification_code: int = Field(..., description="生成的伪邮箱验证码")
+    verification_code: str = Field(..., description="生成的伪邮箱验证码")
 
 
 class UserRegister(BaseModel):

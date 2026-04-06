@@ -6,6 +6,7 @@ from schemas.user import (
     UserLogin,
     LoginResponse,
     EmailRequest,
+    EmailResponse,
     UserEdit,
     EmailEdit,
     BaseResponse,
@@ -19,7 +20,7 @@ router = APIRouter()
 # ==========================================
 # 1. 注册与密码找回
 # ==========================================
-@router.post("/register/email", response_model=BaseResponse, summary="发送注册验证码")
+@router.post("/register/email", response_model=EmailResponse, summary="发送注册验证码")
 async def send_register_email(request: EmailRequest):
     return await user_service.send_register_email_service(request.email)
 
