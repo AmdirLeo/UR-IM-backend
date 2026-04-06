@@ -1,11 +1,16 @@
 import asyncpg
 from datetime import datetime, timezone
-from schemas.message import SendMessageRequest, MessageSearchRequest
+from schemas.message import (
+    SendMessageRequest,
+    MessageSearchRequest,
+    DeleteMessageRequest,
+)
 from core.exceptions import MessageException, MessageErrors
 from db.repositories.message_repo import (
     db_send_message,
     db_get_message_history,
     db_filter_messages,
+    db_delete_local_messages,
 )
 
 
@@ -56,9 +61,7 @@ async def search_message_service(
         )
 
     if req.conversation_id is None:
-        raise MessageException(
-            MessageErrors.InvalidRequest, "conversation_id 不能为空"
-        )
+        raise MessageException(MessageErrors.InvalidRequest, "conversation_id 不能为空")
 
     history = await db_filter_messages(
         conn=db_session,
@@ -85,3 +88,17 @@ async def search_message_service(
         )
 
     return result
+
+
+async def delete_message_service(
+    db_session: asyncpg.Connection,
+    current_user_id: int,
+    req: DeleteMessageRequest,
+) -> None:
+    """删除消息记录"""
+    await db_delete_local_messages(
+        db_session,
+        user_id=current_user_id,
+        conversation_id=req.conversation_id,
+        msg_ids=[req.message_id],
+    )

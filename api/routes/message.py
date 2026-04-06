@@ -8,12 +8,14 @@ from schemas.message import (
     MessageHistoryItem,
     MessageSearchRequest,
     MessageSearchItem,
+    DeleteMessageRequest,
 )
 from api.dependencies import CurrentUserId, DBConnection
 from services.message_service import (
     send_message_service,
     get_message_history_service,
     search_message_service,
+    delete_message_service,
 )
 
 router = APIRouter()
@@ -59,3 +61,17 @@ async def search_message(
 ):
     results = await search_message_service(db_session, current_user_id, req)
     return MessageGenericResponse(data=results)
+
+
+@router.delete(
+    "",
+    summary="删除消息记录",
+    response_model=MessageGenericResponse[None],
+)
+async def delete_message(
+    req: DeleteMessageRequest,
+    current_user_id: CurrentUserId,
+    db_session: DBConnection,
+):
+    await delete_message_service(db_session, current_user_id, req)
+    return MessageGenericResponse(data=None)

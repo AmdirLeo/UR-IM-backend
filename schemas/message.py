@@ -70,3 +70,8 @@ class MessageSearchItem(BaseModel):
     msg_id: int = Field(..., description="消息 ID")
     msg: str = Field(..., description="消息内容")
     time: datetime = Field(..., description="发送时间")
+
+
+class DeleteMessageRequest(BaseModel):
+    conversation_id: int = Field(..., gt=0)
+    message_id: int = Field(..., gt=0, description="消息 ID")
