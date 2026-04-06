@@ -194,9 +194,8 @@ async def db_get_message_history(
     base_query = """
         SELECT 
             cm.msg_id, 
-            m.msg_type,
+            m.msg_body, 
             cm.sender_id, 
-            m.msg_content, 
             cm.create_time,
             m.quote_id, 
             
@@ -212,20 +211,20 @@ async def db_get_message_history(
         FROM conversation_message cm
         JOIN message m ON cm.msg_id = m.msg_id
         JOIN user_inbox ui ON ui.msg_id = m.msg_id AND ui.user_id = $1 AND ui.conversation_id = $2
+        WHERE cm.conversation_id = $2  -- 👈 增加规范的 WHERE 条件，防止游标拼接出错
     """
     
-    # 3. 动态拼接游标条件
     query = base_query
     if cursor_msg_id:
-        # 向上滑动拉取更老的历史消息 (找比游标更小的 ID)
+        # 向上滑动拉取更老的历史消息
         query += """
             AND cm.msg_id < $3
         """
         rows = await conn.fetch(query + f" ORDER BY cm.seq_id DESC LIMIT {limit};", user_id, conversation_id, cursor_msg_id)
     else:
-        # 第一次打开，没有游标，直接拉取最新的 limit 条
+        # 第一次打开，没有游标
         rows = await conn.fetch(query + f" ORDER BY cm.seq_id DESC LIMIT {limit};", user_id, conversation_id)
-
+        
     # 4. 格式化返回
     result = []
     for row in rows:
