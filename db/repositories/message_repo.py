@@ -10,7 +10,10 @@ QUERY_LOCK_CONV = "SELECT 1 FROM conversation WHERE conversation_id = $1 FOR UPD
 
 QUERY_GET_NEXT_SEQ = "SELECT COALESCE(MAX(seq_id), 0) + 1 FROM conversation_message WHERE conversation_id = $1;"
 
-QUERY_INSERT_CONV_MSG = "INSERT INTO conversation_message (conversation_id, msg_id, sender_id, seq_id) VALUES ($1, $2, $3, $4);"
+QUERY_INSERT_CONV_MSG = (
+    "INSERT INTO conversation_message (conversation_id, msg_id, sender_id, seq_id) "
+    "VALUES ($1, $2, $3, $4);"
+)
 
 QUERY_UPDATE_CONV_SORT = """
     UPDATE conversation
@@ -482,7 +485,7 @@ async def db_sync_conversations(conn: asyncpg.Connection, user_id: int) -> list[
         LEFT JOIN message m ON c.last_msg_id = m.msg_id
 
         -- 左连表：去映射表找这条最后的消息是谁发的、什么时候发的
-        LEFT JOIN conversation_message cm_last 
+        LEFT JOIN conversation_message cm_last
         ON m.msg_id = cm_last.msg_id AND cm_last.conversation_id = c.conversation_id
 
         WHERE cm.member_user_id = $1

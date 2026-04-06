@@ -307,7 +307,7 @@ async def db_invite_to_group(conn: asyncpg.Connection, inviter_id: int, conversa
     # 4. 防轰炸：校验是否已经有关于该用户的待审核邀请
     has_pending = await conn.fetchval(
         """
-        SELECT EXISTS(SELECT 1 FROM group_invite 
+        SELECT EXISTS(SELECT 1 FROM group_invite
         WHERE conversation_id = $1 AND invitee_id = $2 AND status = 'pending');
         """,
         conversation_id,
