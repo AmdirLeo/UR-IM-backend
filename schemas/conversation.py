@@ -27,3 +27,12 @@ class ConversationSyncItem(BaseModel):
     last_msg_send_time: Optional[datetime] = Field(
         None, description="最新一条消息的服务端时间"
     )
+
+
+class ReadAckRequest(BaseModel):
+    conversation_id: int = Field(..., gt=0, description="会话 ID")
+    msg_id: int = Field(
+        ...,
+        gt=0,
+        description="已读确认的最新消息 ID",
+    )
