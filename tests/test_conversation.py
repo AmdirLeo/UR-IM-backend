@@ -40,17 +40,14 @@ async def test_conversation_journey_and_edge_cases():
     async for conn in get_db_conn():
         hashed_pw = get_password_hash("password123")
         # 1. 创建测试用户
-        user_id = await db_create_user(
-            conn, "conv_tester", hashed_pw, "conv@test.com"  # type: ignore
-        )
+        user_id = await db_create_user(conn, "conv_tester", hashed_pw, "conv@test.com")  # type: ignore
 
         # 2. 强行在底层创建一个会话，并把该用户拉入会话
-        conv_id = await conn.fetchval(
-            "INSERT INTO conversation (type) VALUES ('single') RETURNING conversation_id;"
-        )
+        conv_id = await conn.fetchval("INSERT INTO conversation (type) VALUES ('single') RETURNING conversation_id;")
         await conn.execute(
             "INSERT INTO conversation_member (conversation_id, member_user_id, read_index) VALUES ($1, $2, 1);",
-            conv_id, user_id
+            conv_id,
+            user_id,
         )
 
         # 3. 强行造一条消息，用于后面的 read_ack (已读上报) 测试
@@ -77,9 +74,7 @@ async def test_conversation_journey_and_edge_cases():
     headers = get_auth_headers(token)
 
     # 开始端到端 HTTP 测试
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="https://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:
 
         # ---------------------------------------------------------
         # 1. 消息免打扰 (Mute)
@@ -145,8 +140,6 @@ async def test_conversation_journey_and_edge_cases():
         assert res.status_code == 200
 
         # 可选断言：已读后，再次拉取 sync 或者未读数接口，红点应该消失
-        res_sync_after_read = await client.get(
-            "/api/conversation/sync", headers=headers
-        )
+        res_sync_after_read = await client.get("/api/conversation/sync", headers=headers)
         sync_data_after = res_sync_after_read.json()["data"]
         assert sync_data_after[0]["unread_count"] == 0

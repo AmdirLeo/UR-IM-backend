@@ -37,10 +37,7 @@ def test_create_access_token():
     assert isinstance(token, str)
 
     # 解析 Token 并验证载荷内容
-    decoded_data = jwt.decode(
-        token,
-        settings.JWT_SECRET_KEY,
-        algorithms=["HS256"])
+    decoded_data = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=["HS256"])
     assert decoded_data["sub"] == "user_id_1"
     assert "exp" in decoded_data
 
@@ -53,9 +50,6 @@ def test_create_access_token_with_expires_delta():
     expires_delta = timedelta(minutes=15)
     token = create_access_token(data=data, expires_delta=expires_delta)
 
-    decoded_data = jwt.decode(
-        token,
-        settings.JWT_SECRET_KEY,
-        algorithms=["HS256"])
+    decoded_data = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=["HS256"])
     assert decoded_data["sub"] == "user_id_2"
     assert "exp" in decoded_data

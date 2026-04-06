@@ -15,9 +15,7 @@ from db.repositories.message_repo import (
 )
 
 
-async def send_message_service(
-    db_session: asyncpg.Connection, user_id: int, req: SendMessageRequest
-) -> dict:
+async def send_message_service(db_session: asyncpg.Connection, user_id: int, req: SendMessageRequest) -> dict:
     """发送消息逻辑处理"""
 
     if req.quote_message_id is not None:
@@ -26,9 +24,7 @@ async def send_message_service(
             db_session, user_id, req.conversation_id, req.message_content, req.msg_type, req.quote_message_id
         )
     else:
-        db_result = await db_send_message(
-            db_session, user_id, req.conversation_id, req.message_content, req.msg_type
-        )
+        db_result = await db_send_message(db_session, user_id, req.conversation_id, req.message_content, req.msg_type)
 
     # 从字典中提取出真正的 msg_id
     real_msg_id = db_result["msg_id"]
@@ -51,9 +47,7 @@ async def get_message_history_service(
     """获取历史消息记录"""
 
     # 获取历史记录
-    history = await db_get_message_history(
-        db_session, user_id, conversation_id, start_msg_id, limit
-    )
+    history = await db_get_message_history(db_session, user_id, conversation_id, start_msg_id, limit)
 
     return history
 
@@ -66,14 +60,10 @@ async def search_message_service(
     """筛选历史消息记录"""
 
     if req.start_time is None and req.end_time is None and req.keyword is None:
-        raise MessageException(
-            MessageErrors.InvalidRequest, "start_time, end_time, keyword 不能全为空"
-        )
+        raise MessageException(MessageErrors.InvalidRequest, "start_time, end_time, keyword 不能全为空")
 
     if req.conversation_id is None:
-        raise MessageException(
-            MessageErrors.InvalidRequest, "conversation_id 不能为空"
-        )
+        raise MessageException(MessageErrors.InvalidRequest, "conversation_id 不能为空")
 
     history = await db_filter_messages(
         conn=db_session,

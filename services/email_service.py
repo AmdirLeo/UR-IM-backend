@@ -22,9 +22,7 @@ async def smtp_send_email(to_email: str, code: str) -> bool:
 
     # 邮件正文内容
     message.set_content(
-        f"欢迎注册 UR-IM!\n\n"
-        f"您的注册验证码是：{code}\n"
-        f"请在 5 分钟内输入。如果非本人操作，请忽略此邮件。"
+        f"欢迎注册 UR-IM!\n\n" f"您的注册验证码是：{code}\n" f"请在 5 分钟内输入。如果非本人操作，请忽略此邮件。"
     )
 
     try:
@@ -35,7 +33,7 @@ async def smtp_send_email(to_email: str, code: str) -> bool:
             port=settings.MAIL_PORT,
             username=settings.MAIL_USERNAME,
             password=settings.MAIL_PASSWORD,
-            use_tls=True  # 现代邮箱服务通常强制要求 TLS 加密
+            use_tls=True,  # 现代邮箱服务通常强制要求 TLS 加密
         )
         return True
     except Exception as e:

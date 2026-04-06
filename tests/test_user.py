@@ -56,16 +56,12 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
     """
 
     # 核心：使用 AsyncClient 替代 TestClient
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="https://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:
 
         # ---------------------------------------------------------
         # 1. Send Registration Email
         # ---------------------------------------------------------
-        response = await client.post(
-            "/api/users/register/email", json={"email": VALID_EMAIL}
-        )
+        response = await client.post("/api/users/register/email", json={"email": VALID_EMAIL})
         assert response.status_code == 200
         assert response.json()["msg"] == "验证码已发送至邮箱"
         mock_generate_code.assert_called()
@@ -121,9 +117,7 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         # ---------------------------------------------------------
         # 5. Login with incorrect credentials (400)
         # ---------------------------------------------------------
-        response = await client.post(
-            LOGIN_API_PATH, json={"id": VALID_EMAIL, "password": "wrong_password"}
-        )
+        response = await client.post(LOGIN_API_PATH, json={"id": VALID_EMAIL, "password": "wrong_password"})
         assert response.status_code == 400
         assert response.json()["msg"] == "密码错误"
 
@@ -137,23 +131,17 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         # ---------------------------------------------------------
         # 6. Login successfully -> obtain JWT token
         # ---------------------------------------------------------
-        response = await client.post(
-            LOGIN_API_PATH, json={"id": VALID_EMAIL, "password": VALID_PASSWORD}
-        )
+        response = await client.post(LOGIN_API_PATH, json={"id": VALID_EMAIL, "password": VALID_PASSWORD})
         assert response.status_code == 200
         token = response.json()["token"]
 
-        response = await client.post(
-            LOGIN_API_PATH, json={"id": str(user_id), "password": VALID_PASSWORD}
-        )
+        response = await client.post(LOGIN_API_PATH, json={"id": str(user_id), "password": VALID_PASSWORD})
         assert response.status_code == 200
 
         # ---------------------------------------------------------
         # 7. Access protected route with invalid/missing JWT (401)
         # ---------------------------------------------------------
-        response = await client.put(
-            EDIT_PROFILE_API_PATH, json={"user_name": "new_name"}
-        )
+        response = await client.put(EDIT_PROFILE_API_PATH, json={"user_name": "new_name"})
         assert response.status_code == 401
 
         response = await client.put(
@@ -213,14 +201,10 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         # ---------------------------------------------------------
         # 9. Forget Password Flow
         # ---------------------------------------------------------
-        response = await client.post(
-            "/api/users/register/forgetpswdsend", json={"email": "notfound@example.com"}
-        )
+        response = await client.post("/api/users/register/forgetpswdsend", json={"email": "notfound@example.com"})
         assert response.status_code == 404
 
-        response = await client.post(
-            "/api/users/register/forgetpswdsend", json={"email": new_email}
-        )
+        response = await client.post("/api/users/register/forgetpswdsend", json={"email": new_email})
         assert response.status_code == 200
 
         response = await client.post(
@@ -253,9 +237,7 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         assert response.status_code == 200
         token_for_logout = response.json()["token"]
 
-        response = await client.post(
-            "/api/users/logout", headers=get_auth_headers(token_for_logout)
-        )
+        response = await client.post("/api/users/logout", headers=get_auth_headers(token_for_logout))
         assert response.status_code == 200
 
         # 为了防止登出导致旧 Token 失效，重新登录拿一个新 Token 去执行终极删号操作

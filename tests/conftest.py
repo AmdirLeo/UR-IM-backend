@@ -9,9 +9,7 @@ import asyncio
 TEST_DB_NAME = "test_im_db"
 
 # 优先读取 CI 注入的环境变量 DATABASE_URL，读不到再用本地的地址作为备胎
-TEST_DB_URL = os.getenv(
-    "DATABASE_URL",
-    f"postgresql://postgres:123456@127.0.0.1:5432/{TEST_DB_NAME}")
+TEST_DB_URL = os.getenv("DATABASE_URL", f"postgresql://postgres:123456@127.0.0.1:5432/{TEST_DB_NAME}")
 
 # 同样使用 getenv 提供备胎。
 # 优先读取 CI 环境的默认库 URL，如果本地开发没配环境变量，则使用你本地暂存的稳妥地址
@@ -45,9 +43,7 @@ async def setup_test_database():
     # 1. 强制建库
     sys_conn = await asyncpg.connect(DEFAULT_DB_URL)
     try:
-        exists = await sys_conn.fetchval(
-            "SELECT 1 FROM pg_database WHERE datname = $1", TEST_DB_NAME
-        )
+        exists = await sys_conn.fetchval("SELECT 1 FROM pg_database WHERE datname = $1", TEST_DB_NAME)
         if not exists:
             await sys_conn.execute(f'CREATE DATABASE "{TEST_DB_NAME}"')
             print(f"成功创建测试专用数据库: {TEST_DB_NAME}")
@@ -61,11 +57,7 @@ async def setup_test_database():
 
     # 3. 读取并执行建表 SQL
     current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sql_file_path = os.path.join(
-        current_dir,
-        "db",
-        "migrations",
-        "_init_tables.sql")
+    sql_file_path = os.path.join(current_dir, "db", "migrations", "_init_tables.sql")
 
     try:
         conn = await asyncpg.connect(TEST_DB_URL)
@@ -101,8 +93,7 @@ async def clear_database_data():
     try:
         # 使用 CASCADE 级联清空所有相关表
         conn = await asyncpg.connect(TEST_DB_URL)
-        await conn.execute(
-            """
+        await conn.execute("""
             TRUNCATE TABLE
                 user_account,
                 friend_relationship,
@@ -113,8 +104,7 @@ async def clear_database_data():
                 conversation_message,
                 user_inbox
             CASCADE;
-        """
-        )
+        """)
     except Exception as e:
         print(f"清空测试数据失败: {e}")
     finally:

@@ -120,6 +120,7 @@ async def test_heartbeat_timeout_purge():
             self.messages.append(data)
             # 加上这句：既满足 Manager 的 await 调用，又消除 SonarLint 的警告
             import asyncio
+
             await asyncio.sleep(0)
 
         async def close(self, code=1000):
@@ -163,14 +164,8 @@ async def test_heartbeat_timeout_purge():
 
 def test_websocket_missing_sub_in_token():
     """测试 WebSocket 鉴权层：如果 Token 签名合法，但缺少 sub 字段，应拒绝连接"""
-    payload_without_sub = {
-        "exp": datetime.now(
-            timezone.utc) +
-        timedelta(
-            minutes=10)}
-    malformed_token = jwt.encode(
-        payload_without_sub, settings.JWT_SECRET_KEY, algorithm="HS256"
-    )
+    payload_without_sub = {"exp": datetime.now(timezone.utc) + timedelta(minutes=10)}
+    malformed_token = jwt.encode(payload_without_sub, settings.JWT_SECRET_KEY, algorithm="HS256")
 
     with pytest.raises(WebSocketDisconnect) as exc:
         with client.websocket_connect(f"/websocket/ws?token={malformed_token}"):

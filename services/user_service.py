@@ -33,9 +33,7 @@ from typing import List
 from core.ws_manager import manager
 
 
-async def search_users(
-    db_session, keyword: str, page: int = 1, page_size: int = 20
-) -> List[UserSearchResult]:
+async def search_users(db_session, keyword: str, page: int = 1, page_size: int = 20) -> List[UserSearchResult]:
     # 直接调用 repository 层已实现的函数
     users = await db_search_users(
         db_session,
@@ -45,10 +43,7 @@ async def search_users(
     )
     # 如果 repository 返回的是字典列表，直接转换
     return [
-        UserSearchResult(
-            user_id=u["user_id"], username=u["username"], avatar_url=u.get(
-                "avatar_url")
-        )
+        UserSearchResult(user_id=u["user_id"], username=u["username"], avatar_url=u.get("avatar_url"))
         for u in users["items"]  # <--- 重点：加上 ["items"]
     ]
 
@@ -84,8 +79,7 @@ async def forget_password_send_service(conn, email: str) -> BaseResponse:
     return BaseResponse(code=200, msg="密码找回邮件已发送")
 
 
-async def forget_password_set_service(
-        conn, request: UserForgetPWD) -> BaseResponse:
+async def forget_password_set_service(conn, request: UserForgetPWD) -> BaseResponse:
     if not await db_verify_code(request.email, request.verification_code):
         raise BusinessException(status_code=400, detail="验证码错误")
     new_password_hash = get_password_hash(request.password)
@@ -132,9 +126,7 @@ async def delete_account_service(conn, current_user_id: int) -> BaseResponse:
     return BaseResponse(code=200, msg="账号已彻底注销")
 
 
-async def edit_profile_service(
-    conn, current_user_id: int, edit_data: UserEdit
-) -> BaseResponse:
+async def edit_profile_service(conn, current_user_id: int, edit_data: UserEdit) -> BaseResponse:
     if edit_data.old_password and edit_data.new_password:
         hashed_pwd = await db_get_password_by_id(conn, current_user_id)
         if not hashed_pwd:
@@ -145,18 +137,12 @@ async def edit_profile_service(
         await db_update_user_password(conn, current_user_id, hashed_new)
 
     if edit_data.user_name or edit_data.email:
-        await db_update_user_profile(
-            conn, current_user_id, username=edit_data.user_name, email=edit_data.email
-        )
+        await db_update_user_profile(conn, current_user_id, username=edit_data.user_name, email=edit_data.email)
     return BaseResponse(code=200, msg="信息修改成功")
 
 
-async def edit_email_service(
-    conn, current_user_id: int, edit_data: EmailEdit
-) -> BaseResponse:
-    success = await db_update_user_profile(
-        conn, current_user_id, email=edit_data.new_email
-    )
+async def edit_email_service(conn, current_user_id: int, edit_data: EmailEdit) -> BaseResponse:
+    success = await db_update_user_profile(conn, current_user_id, email=edit_data.new_email)
     if not success:
         raise BusinessException(status_code=400, detail="邮箱更新失败")
     return BaseResponse(code=200, msg="邮箱修改成功")
