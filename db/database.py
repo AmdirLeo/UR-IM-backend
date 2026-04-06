@@ -2,7 +2,6 @@ import asyncpg
 from typing import AsyncGenerator
 import os
 
-
 db_pool: asyncpg.Pool | None = None
 
 
@@ -15,10 +14,7 @@ async def init_db_pool():
 
     # 这个 URL 应该从 core/config.py 或 .env 文件中读取
     # 先写死
-    db_url = os.getenv(
-        "DATABASE_URL",
-        "postgresql://postgres:123456@127.0.0.1:5432/im_db"
-    )
+    db_url = os.getenv("DATABASE_URL", "postgresql://postgres:123456@127.0.0.1:5432/im_db")
 
     try:
         db_pool = await asyncpg.create_pool(
@@ -43,6 +39,7 @@ async def close_db_pool():
         await db_pool.close()
         print("数据库连接池关闭。")
 
+
 def get_db_pool() -> asyncpg.Pool:
     """
     获取全局数据库连接池实例。
@@ -52,6 +49,7 @@ def get_db_pool() -> asyncpg.Pool:
     if db_pool is None:
         raise RuntimeError("数据库连接池尚未初始化！请确保在 FastAPI 的 lifespan 或测试 setup 中调用了 init_db_pool()")
     return db_pool
+
 
 async def get_db_conn() -> AsyncGenerator[asyncpg.pool.PoolConnectionProxy, None]:
     """

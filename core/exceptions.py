@@ -113,9 +113,7 @@ def setup_exception_handlers(app):
             UserErrors.InvalidVerifyCode: (400, "验证码错误或已失效"),
             UserErrors.NoUpdateFields: (400, "没有任何字段需要更新"),
         }
-        status_code, detail = error_mapping.get(
-            exc.error_code, (500, "用户模块未知错误")
-        )
+        status_code, detail = error_mapping.get(exc.error_code, (500, "用户模块未知错误"))
         return JSONResponse(
             status_code=status_code,
             content={"code": status_code, "msg": detail, "data": None},
@@ -139,9 +137,7 @@ def setup_exception_handlers(app):
             FriendErrors.TagNotFound: (404, "分组不存在"),
             FriendErrors.NotInTag: (404, "该好友不在当前分组中"),
         }
-        status_code, detail = error_mapping.get(
-            exc.error_code, (500, "好友模块未知错误")
-        )
+        status_code, detail = error_mapping.get(exc.error_code, (500, "好友模块未知错误"))
         return JSONResponse(
             status_code=status_code,
             content={"code": status_code, "msg": detail, "data": None},
@@ -157,9 +153,7 @@ def setup_exception_handlers(app):
             MessageErrors.MessageNotFound: (404, "消息不存在"),
             MessageErrors.QuoteNotFound: (404, "引用的消息不存在"),
         }
-        status_code, detail = error_mapping.get(
-            exc.error_code, (500, "消息模块未知错误")
-        )
+        status_code, detail = error_mapping.get(exc.error_code, (500, "消息模块未知错误"))
         return JSONResponse(
             status_code=status_code,
             content={"code": status_code, "msg": detail, "data": None},
@@ -192,9 +186,7 @@ def setup_exception_handlers(app):
 
     # 捕获 FastAPI 原生的参数校验异常 (Pydantic 报错)
     @app.exception_handler(RequestValidationError)
-    async def validation_exception_handler(
-        request: Request, exc: RequestValidationError
-    ):
+    async def validation_exception_handler(request: Request, exc: RequestValidationError):
         # 提取 Pydantic 返回的第一个错误信息，将其扁平化，变得人类可读
         errors = exc.errors()
         if errors:
@@ -205,9 +197,7 @@ def setup_exception_handlers(app):
         else:
             error_detail = "数据格式错误"
 
-        return JSONResponse(
-            status_code=422, content={"code": 422, "msg": error_detail, "data": None}
-        )
+        return JSONResponse(status_code=422, content={"code": 422, "msg": error_detail, "data": None})
 
     # 捕获所有未知的系统级崩溃 (兜底)
     @app.exception_handler(Exception)
