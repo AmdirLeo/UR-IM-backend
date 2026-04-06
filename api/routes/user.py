@@ -76,3 +76,13 @@ async def edit_email(
     edit_data: EmailEdit, current_user_id: CurrentUserId, conn: DBConnection
 ):
     return await user_service.edit_email_service(conn, current_user_id, edit_data)
+
+# 【新增：修改头像的路由】
+@router.put("/edit/portrait", summary="修改头像")
+async def edit_portrait(
+    current_user_id: CurrentUserId, 
+    conn: DBConnection,
+    file: UploadFile = File(...)
+):
+    # 把连接、用户ID和文件，统统交给 service 处理
+    return await user_service.edit_portrait_service(conn, current_user_id, file)

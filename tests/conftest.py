@@ -6,6 +6,9 @@ import asyncpg
 from fastapi.testclient import TestClient
 import asyncio
 
+from dotenv import load_dotenv
+load_dotenv()
+
 TEST_DB_NAME = "test_im_db"
 # 优先读取 CI 注入的环境变量 DATABASE_URL，读不到再用你原来的本地地址作为备胎
 TEST_DB_URL = os.getenv(

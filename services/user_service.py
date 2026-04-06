@@ -31,6 +31,10 @@ from schemas.user import (
 )
 from typing import List
 from core.ws_manager import manager
+import os
+import uuid
+import shutil
+from fastapi import UploadFile
 
 
 async def search_users(
@@ -150,3 +154,54 @@ async def edit_email_service(
     if not success:
         raise BusinessException(status_code=400, detail="邮箱更新失败")
     return BaseResponse(code=200, msg="邮箱修改成功")
+
+# ==========================================
+# 头像存储的本地相对路径配置
+# ==========================================
+AVATAR_DIR = "static/avatars"
+
+async def edit_portrait_service(conn, current_user_id: int, file: UploadFile):
+    """
+    修改头像的业务逻辑服务
+    """
+    # 1. 确保文件夹存在
+    os.makedirs(AVATAR_DIR, exist_ok=True)
+    
+    # 2. 校验后缀名，防止上传恶意文件
+    ext = os.path.splitext(file.filename)[1].lower()
+    allowed_extensions = [".jpg", ".jpeg", ".png", ".webp"]
+    if ext not in allowed_extensions:
+        raise BusinessException(status_code=400, detail="不支持的图片格式")
+        
+    # 3. 生成唯一的 UUID 文件名
+    new_filename = f"{uuid.uuid4().hex}{ext}"
+    file_path = os.path.join(AVATAR_DIR, new_filename)
+    
+    # 4. 保存物理文件到本地服务器硬盘
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception:
+        raise BusinessException(status_code=500, detail="文件保存失败")
+
+    # 5. 更新数据库里的路径信息
+    relative_url = f"/{file_path}"
+    is_success = await db_update_user_profile(
+        conn=conn, 
+        user_id=current_user_id, 
+        avatar_url=relative_url
+    )
+    
+    if not is_success:
+        # 如果数据库因为某种原因挂了没更新成功，把刚才存进去的垃圾图片删掉
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise BusinessException(status_code=500, detail="数据库更新头像失败")
+        
+    # 6. 成功！返回前端要求的数据结构
+    return {
+        "code": 200, 
+        "filekey": relative_url, 
+        "width": 256,
+        "height": 256
+    }
