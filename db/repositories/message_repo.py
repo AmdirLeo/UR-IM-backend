@@ -21,7 +21,8 @@ async def db_send_message(
     conn: asyncpg.Connection, 
     sender_id: int, 
     conversation_id: int, 
-    msg_body: dict, 
+    msg_content: str, 
+    msg_type: str,
     quote_id: int = None
 ) -> dict:
     """
@@ -42,7 +43,10 @@ async def db_send_message(
 
     # 开启强事务，保证发消息的一致性
     async with conn.transaction():
-        
+        msg_body = {
+            "type": msg_type,
+            "content": msg_content
+        }
         # 2. 插入消息本体
         insert_msg_query = """
             INSERT INTO message (msg_body, quote_id) 
@@ -145,7 +149,8 @@ async def db_quote_message(
     conn: asyncpg.Connection, 
     sender_id: int, 
     conversation_id: int, 
-    msg_body: dict, 
+    msg_content: str,
+    msg_type: str,
     quote_message_id: int
 ) -> dict:
     """
@@ -162,7 +167,7 @@ async def db_quote_message(
         raise MessageException(MessageErrors.QuoteNotFound)
 
     # 复用之前的发送逻辑 (开启事务，插入 message，更新 quote_count，写扩散)
-    return await db_send_message(conn, sender_id, conversation_id, msg_body, quote_id=quote_message_id)
+    return await db_send_message(conn, sender_id, conversation_id, msg_content,msg_type, quote_id=quote_message_id)
 async def db_get_message_history(
     conn: asyncpg.Connection, 
     user_id: int, 
@@ -188,18 +193,24 @@ async def db_get_message_history(
     base_query = """
         SELECT 
             cm.msg_id, 
+            m.msg_type,
             cm.sender_id, 
-            u.username AS sender_name, 
-            u.avatar_url AS sender_avatar, 
-            m.msg_body, 
+            m.msg_content, 
+            cm.create_time,
             m.quote_id, 
-            m.quote_count, 
-            cm.create_time
+            
+            (
+                SELECT COUNT(1) 
+                FROM message sub_m 
+                JOIN user_inbox sub_ui ON sub_m.msg_id = sub_ui.msg_id 
+                WHERE sub_m.quote_id = m.msg_id 
+                  AND sub_ui.user_id = $1 
+                  AND sub_ui.conversation_id = $2
+            ) AS quote_num
+
         FROM conversation_message cm
-        JOIN user_inbox ui ON ui.conversation_id = cm.conversation_id AND ui.msg_id = cm.msg_id
         JOIN message m ON cm.msg_id = m.msg_id
-        JOIN user_account u ON cm.sender_id = u.user_id
-        WHERE ui.user_id = $1 AND cm.conversation_id = $2
+        JOIN user_inbox ui ON ui.msg_id = m.msg_id AND ui.user_id = $1 AND ui.conversation_id = $2
     """
     
     # 3. 动态拼接游标条件
@@ -215,8 +226,24 @@ async def db_get_message_history(
         rows = await conn.fetch(query + f" ORDER BY cm.seq_id DESC LIMIT {limit};", user_id, conversation_id)
 
     # 4. 格式化返回
-    # 注意：因为使用了 DESC 排序，拿到的列表是时间倒序的（最新的一条在 [0]）。
-    return [dict(row) for row in rows]
+    result = []
+    for row in rows:
+        try:
+            body = json.loads(row['msg_body']) if isinstance(row['msg_body'], str) else row['msg_body']
+        except Exception:
+            body = {"type": "text", "content": "[解析错误]"}
+            
+        result.append({
+            "msg_id": row['msg_id'],
+            "msg_type": body.get("type", "text"),  
+            "msg_content": body.get("content", ""), 
+            "sender_id": row['sender_id'],
+            "create_time": row['create_time'], 
+            "quote_msg_id": row['quote_id'],   
+            "quote_num": row['quote_num']      
+        })
+        
+    return result
 
 async def db_delete_local_messages(conn: asyncpg.Connection, user_id: int, conversation_id: int, msg_ids: list[int]) -> None:
     """
@@ -304,7 +331,7 @@ async def db_filter_messages(
     
     # A. 关键词模糊匹配 (针对 JSONB 里的 text 字段)
     if keyword:
-        params.append(f"%{keyword}%")  # PostgreSQL 的 LIKE 语法需要加 %
+        params.append(f"%{keyword}%")
         # 使用 ->> 提取 JSONB 中的字符串进行模糊匹配
         conditions.append(f"m.msg_body->>'text' ILIKE ${len(params)}")
 
@@ -360,3 +387,49 @@ async def db_filter_messages(
         
     return result
 
+async def db_sync_conversations(conn: asyncpg.Connection, user_id: int) -> list[dict]:
+    """
+    同步会话列表及未读信息 (对应移动端/前端首屏拉取)
+    完美契合前端同事的 ConversationSyncItem Pydantic 模型
+    """
+    query = """
+        SELECT 
+            c.conversation_id,
+            c.type,
+            cm.read_index AS last_ack_msg_id,
+            c.last_msg_id,
+            
+            -- 【核心魔法】：使用 ->> 操作符，直接从 JSONB 内部提取纯文本值
+            -- 如果 m.msg_body 是 NULL，或者里面没有 'type' 键，它会极其安全地返回 NULL
+            m.msg_body->>'type' AS last_msg_type,
+            m.msg_body->>'content' AS last_msg_content,
+            
+            cm_last.sender_id AS last_msg_sender_id,
+            cm_last.create_time AS last_msg_send_time,
+            
+            -- 动态统计当前会话的未读数 (仅限收件箱内未读的消息)
+            (
+                SELECT COUNT(1) 
+                FROM user_inbox ui 
+                WHERE ui.user_id = $1 
+                  AND ui.conversation_id = c.conversation_id 
+                  AND ui.is_read = false
+            ) AS unread_count
+            
+        FROM conversation_member cm
+        JOIN conversation c ON cm.conversation_id = c.conversation_id
+        
+        -- 左连表：根据会话表记录的 last_msg_id，去 message 表找消息本体
+        LEFT JOIN message m ON c.last_msg_id = m.msg_id
+        
+        -- 左连表：去映射表找这条最后的消息是谁发的、什么时候发的
+        LEFT JOIN conversation_message cm_last ON m.msg_id = cm_last.msg_id AND cm_last.conversation_id = c.conversation_id
+        
+        WHERE cm.member_user_id = $1
+        ORDER BY c.last_msg_time DESC NULLS LAST;
+    """
+    
+    rows = await conn.fetch(query, user_id)
+    
+    # 将 asyncpg 的 Record 对象转换为标准字典，直接返回给 FastAPI 路由
+    return [dict(row) for row in rows]
