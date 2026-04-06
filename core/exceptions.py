@@ -42,6 +42,12 @@ class FriendErrors(Enum):
     NotInTag = "NotInTag"
 
 
+class MessageErrors(Enum):
+    NotInConversation = "NotInConversation"
+    ConversationNotFound = "ConversationNotFound"
+    InvalidMessage = "InvalidMessage"
+
+
 # ==========================================
 # 2. 定义业务异常类
 # ==========================================
@@ -52,6 +58,11 @@ class UserException(Exception):
 
 class FriendException(Exception):
     def __init__(self, error_code: FriendErrors):
+        self.error_code = error_code
+
+
+class MessageException(Exception):
+    def __init__(self, error_code: MessageErrors):
         self.error_code = error_code
 
 
@@ -106,6 +117,22 @@ def setup_exception_handlers(app):
         }
         status_code, detail = error_mapping.get(
             exc.error_code, (500, "好友模块未知错误")
+        )
+        return JSONResponse(
+            status_code=status_code,
+            content={"code": status_code, "msg": detail, "data": None},
+        )
+
+    # 捕获消息模块异常
+    @app.exception_handler(MessageException)
+    async def message_exception_handler(request: Request, exc: MessageException):
+        error_mapping = {
+            MessageErrors.NotInConversation: (403, "无权限：不是好友或不在群里"),
+            MessageErrors.ConversationNotFound: (404, "conversation_id不存在"),
+            MessageErrors.InvalidMessage: (400, "msg不合法"),
+        }
+        status_code, detail = error_mapping.get(
+            exc.error_code, (500, "消息模块未知错误")
         )
         return JSONResponse(
             status_code=status_code,
