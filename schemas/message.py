@@ -25,6 +25,7 @@ class SendMessageRequest(BaseModel):
         ..., min_length=1, max_length=1000, description="消息内容"
     )
     msg_type: str = Field(..., pattern="^(text|image)$", description="消息类型")
+    quote_message_id: Optional[int] = Field(None, description="当前信息所引用的信息的id")
 
 
 class SendMessageData(BaseModel):

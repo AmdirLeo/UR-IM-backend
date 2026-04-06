@@ -8,6 +8,7 @@ from schemas.message import (
 from core.exceptions import MessageException, MessageErrors
 from db.repositories.message_repo import (
     db_send_message,
+    db_quote_message,
     db_get_message_history,
     db_filter_messages,
     db_delete_local_messages,
@@ -19,9 +20,16 @@ async def send_message_service(
 ) -> dict:
     """发送消息逻辑处理"""
 
-    msg_id = await db_send_message(
-        db_session, user_id, req.conversation_id, req.message_content, req.msg_type
-    )
+    msg_body = {req.msg_type: req.message_content}
+
+    if req.quote_message_id is not None:
+        msg_id = await db_quote_message(
+            db_session, user_id, req.conversation_id, msg_body, req.quote_message_id
+        )
+    else:
+        msg_id = await db_send_message(
+            db_session, user_id, req.conversation_id, msg_body
+        )
 
     # 3. 构造返回结构
     return {
@@ -61,7 +69,9 @@ async def search_message_service(
         )
 
     if req.conversation_id is None:
-        raise MessageException(MessageErrors.InvalidRequest, "conversation_id 不能为空")
+        raise MessageException(
+            MessageErrors.InvalidRequest, "conversation_id 不能为空"
+        )
 
     history = await db_filter_messages(
         conn=db_session,
