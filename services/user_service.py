@@ -172,7 +172,7 @@ async def edit_portrait_service(conn, current_user_id: int, file: UploadFile):
     # 1. 【新增】：校验文件大小，放在最前面，第一时间把巨型文件踢出去
     if file.size > MAX_AVATAR_SIZE:
         raise BusinessException(status_code=400, detail="头像图片大小不能超过 2MB")
-    
+
     # 1. 确保文件夹存在
     os.makedirs(AVATAR_DIR, exist_ok=True)
 
@@ -209,8 +209,8 @@ async def edit_portrait_service(conn, current_user_id: int, file: UploadFile):
 
     # 6. 成功！返回前端要求的数据结构
     return PortraitResponse(
-        code=200, 
-        filekey=relative_url, 
+        code=200,
+        filekey=relative_url,
         width=256,
         height=256
     )

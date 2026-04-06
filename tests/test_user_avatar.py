@@ -33,14 +33,15 @@ async def test_upload_avatar_success():
         if os.path.exists(saved_path):
             os.remove(saved_path)  # 清理测试产生的图片
 
+
 @pytest.mark.asyncio
 async def test_upload_avatar_too_large():
     """测试上传超过 2MB 的超大文件会被拒绝"""
-    
+
     # 1. 伪造一个大于 2MB 的垃圾数据 (2MB + 1KB)
     large_file_content = b"0" * (2 * 1024 * 1024 + 1024)
     filename = "too_large_avatar.png"
-    
+
     # 2. 签发测试 Token
     test_token = create_access_token(data={"sub": "1"})
     headers = {"Authorization": f"Bearer {test_token}"}
