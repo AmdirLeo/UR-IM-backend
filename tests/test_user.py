@@ -66,7 +66,7 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         assert response.status_code == 200
         res_data = response.json()
         assert "code" in res_data
-        assert res_data["verification_code"] == "123456" # 校验 mock 的值
+        assert res_data["verification_code"] == "123456"  # 校验 mock 的值
         mock_generate_code.assert_called()
 
         # ---------------------------------------------------------
