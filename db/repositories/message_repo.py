@@ -224,7 +224,7 @@ async def db_get_message_history(
     else:
         # 第一次打开，没有游标
         rows = await conn.fetch(query + f" ORDER BY cm.seq_id DESC LIMIT {limit};", user_id, conversation_id)
-        
+
     # 4. 格式化返回
     result = []
     for row in rows:
@@ -311,11 +311,11 @@ async def db_filter_messages(
     base_query = """
         SELECT 
             m.msg_id, 
-            m.sender_id, 
+            cm.sender_id, 
             m.msg_body, 
-            m.created_at,
+            cm.create_time,
             cm.seq_id,
-            m.reply_to_id
+            m.quote_id
         FROM user_inbox ui
         JOIN message m ON ui.msg_id = m.msg_id
         JOIN conversation_message cm ON m.msg_id = cm.msg_id AND cm.conversation_id = ui.conversation_id
@@ -333,7 +333,7 @@ async def db_filter_messages(
     if keyword:
         params.append(f"%{keyword}%")
         # 使用 ->> 提取 JSONB 中的字符串进行模糊匹配
-        conditions.append(f"m.msg_body->>'text' ILIKE ${len(params)}")
+        conditions.append(f"m.msg_body->>'content' ILIKE ${len(params)}")
 
     # B. 发送者筛选
     if sender_id is not None:
@@ -343,12 +343,12 @@ async def db_filter_messages(
     # C. 时间段筛选 (开始时间)
     if start_time:
         params.append(start_time)
-        conditions.append(f"m.created_at >= ${len(params)}")
+        conditions.append(f"cm.create_time >= ${len(params)}")
 
     # D. 时间段筛选 (结束时间)
     if end_time:
         params.append(end_time)
-        conditions.append(f"m.created_at <= ${len(params)}")
+        conditions.append(f"cm.create_time <= ${len(params)}")
         
     # E. 游标分页 (极其重要，滑动加载历史搜索结果)
     if cursor_msg_id:
@@ -378,11 +378,11 @@ async def db_filter_messages(
             
         result.append({
             "msg_id": row['msg_id'],
-            "seq_id": row['seq_id'],  # 把后端强校验的 seq_id 传回给前端
+            "seq_id": row['seq_id'], 
             "sender_id": row['sender_id'],
             "msg_body": body_dict,
-            "created_at": row['created_at'].isoformat(),
-            "reply_to_id": row['reply_to_id']
+            "created_at": row['create_time'].isoformat() if row['create_time'] else None,
+            "reply_to_id": row['quote_id']
         })
         
     return result
