@@ -3,11 +3,7 @@ from core.exceptions import UserErrors, UserException
 from typing import Optional
 
 
-async def db_create_user(
-        conn: asyncpg.Connection,
-        username: str,
-        password_hash: str,
-        email: str) -> int:
+async def db_create_user(conn: asyncpg.Connection, username: str, password_hash: str, email: str) -> int:
     """
     创建一个新用户
     返回新创建的 user_id
@@ -28,9 +24,7 @@ async def db_create_user(
         raise UserException(UserErrors.AlreadyExists)
 
 
-async def db_get_user_by_email(
-        conn: asyncpg.Connection,
-        email: str) -> dict | None:
+async def db_get_user_by_email(conn: asyncpg.Connection, email: str) -> dict | None:
     """
     通过邮箱查找用户（主要用于登录时校验密码，或注册时检查邮箱是否已存在）
     """
@@ -40,9 +34,7 @@ async def db_get_user_by_email(
     return dict(row) if row else None
 
 
-async def db_get_user_by_id(
-        conn: asyncpg.Connection,
-        user_id: int) -> dict | None:
+async def db_get_user_by_id(conn: asyncpg.Connection, user_id: int) -> dict | None:
     """
     通过 ID 获取用户信息（用于展示个人主页）
     注意：这里刻意没有 SELECT password 字段，防止密码哈希被意外泄露给前端
@@ -58,9 +50,7 @@ async def db_get_user_by_id(
     return dict(row)
 
 
-async def db_get_password_by_id(
-        conn: asyncpg.Connection,
-        user_id: int) -> str | None:
+async def db_get_password_by_id(conn: asyncpg.Connection, user_id: int) -> str | None:
     """
     通过 ID 获取用户的密码哈希（仅用于登录时验证密码）
     注意：这个函数只返回 password 字段，其他信息都不返回
@@ -93,20 +83,17 @@ async def db_delete_user(conn: asyncpg.Connection, user_id: int):
     # execute 返回的是命令状态字符串，例如成功删除了1行会返回 'DELETE 1'
     status = await conn.execute(query, user_id)
 
-    if status != 'DELETE 1':
+    if status != "DELETE 1":
         raise UserException(UserErrors.NotFound)
 
 
-async def db_update_user_password(
-        conn: asyncpg.Connection,
-        user_id: int,
-        new_password_hash: str):
+async def db_update_user_password(conn: asyncpg.Connection, user_id: int, new_password_hash: str):
     """
     专门用于修改密码（对应忘记密码或主动修改密码接口）
     """
     query = "UPDATE user_account SET password = $1 WHERE user_id = $2;"
     status = await conn.execute(query, new_password_hash, user_id)
-    if status != 'UPDATE 1':
+    if status != "UPDATE 1":
         raise UserException(UserErrors.NotFound)
 
 
@@ -115,7 +102,7 @@ async def db_update_user_profile(
     user_id: int,
     username: Optional[str] = None,
     email: Optional[str] = None,
-    avatar_url: Optional[str] = None
+    avatar_url: Optional[str] = None,
 ) -> bool:
     """
     通用的资料修改接口（对应 /api/user/edit 系列接口）
@@ -145,15 +132,10 @@ async def db_update_user_profile(
         WHERE user_id = ${len(values)};
     """
     status = await conn.execute(query, *values)
-    return status == 'UPDATE 1'
+    return status == "UPDATE 1"
 
 
-async def db_search_users(
-    conn: asyncpg.Connection,
-    keyword: str,
-    page: int = 1,
-    page_size: int = 20
-) -> dict:
+async def db_search_users(conn: asyncpg.Connection, keyword: str, page: int = 1, page_size: int = 20) -> dict:
     """
     通过用户名模糊查找用户 (支持分页)
 
@@ -192,8 +174,8 @@ async def db_search_users(
 
     # 4. 组装成标准的分页返回格式
     return {
-        "items": items,          # 当前页的用户列表
-        "total": total_count,    # 满足条件的总条数
-        "page": page,            # 当前页码
-        "page_size": page_size   # 每页大小
+        "items": items,  # 当前页的用户列表
+        "total": total_count,  # 满足条件的总条数
+        "page": page,  # 当前页码
+        "page_size": page_size,  # 每页大小
     }

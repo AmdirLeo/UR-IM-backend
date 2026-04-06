@@ -10,7 +10,9 @@ QUERY_LOCK_CONV = "SELECT 1 FROM conversation WHERE conversation_id = $1 FOR UPD
 
 QUERY_GET_NEXT_SEQ = "SELECT COALESCE(MAX(seq_id), 0) + 1 FROM conversation_message WHERE conversation_id = $1;"
 
-QUERY_INSERT_CONV_MSG = "INSERT INTO conversation_message (conversation_id, msg_id, sender_id, seq_id) VALUES ($1, $2, $3, $4);"
+QUERY_INSERT_CONV_MSG = (
+    "INSERT INTO conversation_message (conversation_id, msg_id, sender_id, seq_id) VALUES ($1, $2, $3, $4);"
+)
 
 QUERY_UPDATE_CONV_SORT = """
     UPDATE conversation
@@ -25,7 +27,7 @@ async def db_send_message(
     conversation_id: int,
     msg_content: str,
     msg_type: str,
-    quote_id: Optional[int] = None
+    quote_id: Optional[int] = None,
 ) -> dict:
     """
     发送消息的核心逻辑：生成全局ID -> 生成会话Seq ID -> 更新置顶状态 -> 写扩散分发
@@ -45,10 +47,7 @@ async def db_send_message(
 
     # 开启强事务，保证发消息的一致性
     async with conn.transaction():
-        msg_body = {
-            "type": msg_type,
-            "content": msg_content
-        }
+        msg_body = {"type": msg_type, "content": msg_content}
         # 2. 插入消息本体
         insert_msg_query = """
             INSERT INTO message (msg_body, quote_id)
@@ -86,10 +85,7 @@ async def db_send_message(
 
         if members:
             # 构建批量插入的数据结构: [(user1, conv, msg), (user2, conv, msg), ...]
-            inbox_records = [
-                (member['member_user_id'], conversation_id, msg_id)
-                for member in members
-            ]
+            inbox_records = [(member["member_user_id"], conversation_id, msg_id) for member in members]
 
             insert_inbox_query = """
                 INSERT INTO user_inbox (user_id, conversation_id, msg_id)
@@ -100,9 +96,7 @@ async def db_send_message(
     return {"msg_id": msg_id, "seq_id": next_seq_id}
 
 
-async def db_get_all_unread_counts(
-        conn: asyncpg.Connection,
-        user_id: int) -> dict:
+async def db_get_all_unread_counts(conn: asyncpg.Connection, user_id: int) -> dict:
     """
     获取当前用户所有会话的未读消息数 (对应 GET /api/conversation/unread)
     返回格式: {conversation_id: unread_count, ...} 比如 {101: 5, 102: 12}
@@ -118,13 +112,10 @@ async def db_get_all_unread_counts(
 
     # 转换成易于前端解析的字典格式
     # 如果没有任何未读消息，会直接返回一个空字典 {}
-    return {row['conversation_id']: row['unread_count'] for row in rows}
+    return {row["conversation_id"]: row["unread_count"] for row in rows}
 
 
-async def db_mark_conversation_as_read(
-        conn: asyncpg.Connection,
-        user_id: int,
-        conversation_id: int) -> None:
+async def db_mark_conversation_as_read(conn: asyncpg.Connection, user_id: int, conversation_id: int) -> None:
     """
     清除特定会话的未读红点（已读上报）
     需要同时更新 inbox 的状态和 member 表的 read_index 水位线
@@ -162,18 +153,26 @@ async def db_quote_message(
     conversation_id: int,
     msg_content: str,
     msg_type: str,
-    quote_message_id: int
+    quote_message_id: int,
 ) -> dict:
     """
     引用特定消息并发送 (对应 POST /api/message/quote)
     """
     # 校验是否在群里
-    is_member = await conn.fetchval("SELECT EXISTS(SELECT 1 FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2)", conversation_id, sender_id)
+    is_member = await conn.fetchval(
+        "SELECT EXISTS(SELECT 1 FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2)",
+        conversation_id,
+        sender_id,
+    )
     if not is_member:
         raise MessageException(MessageErrors.NotInConversation)
 
     # 校验被引用的消息是否存在于该会话中
-    quote_exists = await conn.fetchval("SELECT EXISTS(SELECT 1 FROM conversation_message WHERE conversation_id = $1 AND msg_id = $2)", conversation_id, quote_message_id)
+    quote_exists = await conn.fetchval(
+        "SELECT EXISTS(SELECT 1 FROM conversation_message WHERE conversation_id = $1 AND msg_id = $2)",
+        conversation_id,
+        quote_message_id,
+    )
     if not quote_exists:
         raise MessageException(MessageErrors.QuoteNotFound)
 
@@ -182,11 +181,7 @@ async def db_quote_message(
 
 
 async def db_get_message_history(
-    conn: asyncpg.Connection,
-    user_id: int,
-    conversation_id: int,
-    cursor_msg_id: Optional[int] = None,
-    limit: int = 20
+    conn: asyncpg.Connection, user_id: int, conversation_id: int, cursor_msg_id: Optional[int] = None, limit: int = 20
 ) -> list[dict]:
     """
     基于游标拉取历史消息 / 离线消息 (对应 POST /api/message/offlinemsg 和 /history)
@@ -232,7 +227,9 @@ async def db_get_message_history(
         query += """
             AND cm.msg_id < $3
         """
-        rows = await conn.fetch(query + f" ORDER BY cm.seq_id DESC LIMIT {limit};", user_id, conversation_id, cursor_msg_id)
+        rows = await conn.fetch(
+            query + f" ORDER BY cm.seq_id DESC LIMIT {limit};", user_id, conversation_id, cursor_msg_id
+        )
     else:
         # 第一次打开，没有游标
         rows = await conn.fetch(query + f" ORDER BY cm.seq_id DESC LIMIT {limit};", user_id, conversation_id)
@@ -241,31 +238,28 @@ async def db_get_message_history(
     result = []
     for row in rows:
         try:
-            body = json.loads(
-                row['msg_body']) if isinstance(
-                row['msg_body'],
-                str) else row['msg_body']
+            body = json.loads(row["msg_body"]) if isinstance(row["msg_body"], str) else row["msg_body"]
         except Exception:
             body = {"type": "text", "content": "[解析错误]"}
 
-        result.append({
-            "msg_id": row['msg_id'],
-            "msg_type": body.get("type", "text"),
-            "msg_content": body.get("content", ""),
-            "sender_id": row['sender_id'],
-            "create_time": row['create_time'],
-            "quote_msg_id": row['quote_id'],
-            "quote_num": row['quote_num']
-        })
+        result.append(
+            {
+                "msg_id": row["msg_id"],
+                "msg_type": body.get("type", "text"),
+                "msg_content": body.get("content", ""),
+                "sender_id": row["sender_id"],
+                "create_time": row["create_time"],
+                "quote_msg_id": row["quote_id"],
+                "quote_num": row["quote_num"],
+            }
+        )
 
     return result
 
 
 async def db_delete_local_messages(
-        conn: asyncpg.Connection,
-        user_id: int,
-        conversation_id: int,
-        msg_ids: list[int]) -> None:
+    conn: asyncpg.Connection, user_id: int, conversation_id: int, msg_ids: list[int]
+) -> None:
     """
     删除用户的本地聊天记录 (对应 DELETE /api/message/delete)
     注意：这只是从当前用户的收件箱中抹去记录，不影响真正的 message 实体和其他群成员。
@@ -281,32 +275,26 @@ async def db_delete_local_messages(
 
 
 async def db_set_conversation_mute(
-        conn: asyncpg.Connection,
-        user_id: int,
-        conversation_id: int,
-        is_muted: bool) -> None:
+    conn: asyncpg.Connection, user_id: int, conversation_id: int, is_muted: bool
+) -> None:
     """设置消息免打扰 (对应 PUT /api/conversation/mute)"""
     query = "UPDATE conversation_member SET is_muted = $1 WHERE conversation_id = $2 AND member_user_id = $3;"
     status = await conn.execute(query, is_muted, conversation_id, user_id)
-    if status != 'UPDATE 1':
+    if status != "UPDATE 1":
         raise MessageException(MessageErrors.NotInConversation)
 
 
 async def db_set_conversation_pin(
-        conn: asyncpg.Connection,
-        user_id: int,
-        conversation_id: int,
-        is_pinned: bool) -> None:
+    conn: asyncpg.Connection, user_id: int, conversation_id: int, is_pinned: bool
+) -> None:
     """设置置顶会话 (对应 PUT /api/conversation/pin)"""
     query = "UPDATE conversation_member SET is_pinned = $1 WHERE conversation_id = $2 AND member_user_id = $3;"
     status = await conn.execute(query, is_pinned, conversation_id, user_id)
-    if status != 'UPDATE 1':
+    if status != "UPDATE 1":
         raise MessageException(MessageErrors.NotInConversation)
 
 
-async def db_get_all_unread_counts_with_mute(
-        conn: asyncpg.Connection,
-        user_id: int) -> list[dict]:
+async def db_get_all_unread_counts_with_mute(conn: asyncpg.Connection, user_id: int) -> list[dict]:
     """
     获取用户的未读数列表（带上该群是否免打扰的标记，前端靠这个区分红点和灰点）
     """
@@ -334,7 +322,7 @@ async def db_filter_messages(
     start_time: datetime | None = None,
     end_time: datetime | None = None,
     cursor_msg_id: int | None = None,
-    limit: int = 20
+    limit: int = 20,
 ) -> list[dict]:
     """
     群聊消息全能筛选器 (支持动态条件 + 游标分页 + 尊重本地删除逻辑)
@@ -405,28 +393,25 @@ async def db_filter_messages(
     result = []
     for row in records:
         try:
-            body_dict = json.loads(
-                row['msg_body']) if isinstance(
-                row['msg_body'],
-                str) else row['msg_body']
+            body_dict = json.loads(row["msg_body"]) if isinstance(row["msg_body"], str) else row["msg_body"]
         except Exception:
             body_dict = {"text": "[解析错误]"}
 
-        result.append({
-            "msg_id": row['msg_id'],
-            "seq_id": row['seq_id'],
-            "sender_id": row['sender_id'],
-            "msg_body": body_dict,
-            "created_at": row['create_time'].isoformat() if row['create_time'] else None,
-            "reply_to_id": row['quote_id']
-        })
+        result.append(
+            {
+                "msg_id": row["msg_id"],
+                "seq_id": row["seq_id"],
+                "sender_id": row["sender_id"],
+                "msg_body": body_dict,
+                "created_at": row["create_time"].isoformat() if row["create_time"] else None,
+                "reply_to_id": row["quote_id"],
+            }
+        )
 
     return result
 
 
-async def db_sync_conversations(
-        conn: asyncpg.Connection,
-        user_id: int) -> list[dict]:
+async def db_sync_conversations(conn: asyncpg.Connection, user_id: int) -> list[dict]:
     """
     同步会话列表及未读信息 (对应移动端/前端首屏拉取)
     完美契合前端同事的 ConversationSyncItem Pydantic 模型

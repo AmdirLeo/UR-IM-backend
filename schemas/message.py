@@ -2,7 +2,6 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, TypeVar, Generic
 
-
 T = TypeVar("T")
 
 
@@ -21,9 +20,7 @@ class SendMessageRequest(BaseModel):
         max_length=64,
         description="客户端生成的本地消息 ID",
     )
-    message_content: str = Field(
-        ..., min_length=1, max_length=1000, description="消息内容"
-    )
+    message_content: str = Field(..., min_length=1, max_length=1000, description="消息内容")
     msg_type: str = Field(..., pattern="^(text|image)$", description="消息类型")
     quote_message_id: Optional[int] = Field(None, description="当前信息所引用的信息的id")
 

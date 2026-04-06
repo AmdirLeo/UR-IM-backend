@@ -30,9 +30,7 @@ QUERY_WIPE_INBOX = """
 """
 
 
-async def db_create_friend_request(
-    conn: asyncpg.Connection, sender_id: int, receiver_id: int, message: str
-) -> int:
+async def db_create_friend_request(conn: asyncpg.Connection, sender_id: int, receiver_id: int, message: str) -> int:
     """
     发起好友申请 (对应 POST /api/friend/apply)
     """
@@ -79,10 +77,7 @@ async def db_create_friend_request(
 
 
 async def db_handle_friend_request(
-    conn: asyncpg.Connection,
-    request_id: int,
-    current_user_id: int,
-    action: str
+    conn: asyncpg.Connection, request_id: int, current_user_id: int, action: str
 ) -> dict:
     if action not in ("accepted", "rejected"):
         raise FriendException(FriendErrors.InvalidAction)
@@ -126,22 +121,18 @@ async def db_handle_friend_request(
                 )
                 await conn.execute(
                     "INSERT INTO conversation_member (conversation_id, member_user_id) VALUES ($1, $2), ($1, $3);",
-                    new_conv_id, current_user_id, sender_id
+                    new_conv_id,
+                    current_user_id,
+                    sender_id,
                 )
                 conv_id = new_conv_id
 
-            return {
-                "status": "success",
-                "friend_id": sender_id,
-                "conversation_id": conv_id
-            }
+            return {"status": "success", "friend_id": sender_id, "conversation_id": conv_id}
 
     return {"status": action, "friend_id": sender_id}
 
 
-async def db_get_friend_list(
-        conn: asyncpg.Connection,
-        user_id: int) -> list[dict]:
+async def db_get_friend_list(conn: asyncpg.Connection, user_id: int) -> list[dict]:
     """
     获取好友列表及信息 (对应 GET /api/friend)
     需要联表查询 (JOIN) 拿到好友的具体信息（头像、昵称等）
@@ -160,9 +151,7 @@ async def db_get_friend_list(
     return [dict(row) for row in rows]
 
 
-async def db_remove_friend(
-    conn: asyncpg.Connection, user_id: int, friend_user_id: int
-) -> None:
+async def db_remove_friend(conn: asyncpg.Connection, user_id: int, friend_user_id: int) -> None:
     """
     删除好友 (对应 DELETE /api/friend/remove)
     需要同时斩断双向联系
@@ -186,9 +175,7 @@ async def db_remove_friend(
             await conn.execute(QUERY_WIPE_INBOX, direct_conv_id)
 
 
-async def db_create_friend_tag(
-    conn: asyncpg.Connection, user_id: int, tag_name: str
-) -> None:
+async def db_create_friend_tag(conn: asyncpg.Connection, user_id: int, tag_name: str) -> None:
     """新建好友分组 (对应 POST /api/friend/tag/new)"""
     query = """
         INSERT INTO user_friend_tag (user_id, tag_name)
@@ -200,9 +187,7 @@ async def db_create_friend_tag(
         raise BusinessException(status_code=409, detail="该分组已存在")
 
 
-async def db_delete_friend_tag(
-    conn: asyncpg.Connection, user_id: int, tag_name: str
-) -> None:
+async def db_delete_friend_tag(conn: asyncpg.Connection, user_id: int, tag_name: str) -> None:
     """
     删除好友分组 (对应 POST /api/friend/tag/delete)
     """
@@ -212,11 +197,7 @@ async def db_delete_friend_tag(
         raise BusinessException(status_code=404, detail="分组不存在")
 
 
-async def db_add_friends_to_tag(
-        conn: asyncpg.Connection,
-        user_id: int,
-        tag_name: str,
-        friend_ids: list[int]) -> None:
+async def db_add_friends_to_tag(conn: asyncpg.Connection, user_id: int, tag_name: str, friend_ids: list[int]) -> None:
     check_tag = await conn.fetchval(
         "SELECT EXISTS(SELECT 1 FROM user_friend_tag WHERE user_id = $1 AND tag_name = $2)",
         user_id,
@@ -237,9 +218,7 @@ async def db_add_friends_to_tag(
     await conn.executemany(query, records)
 
 
-async def db_get_friends_by_tag(
-    conn: asyncpg.Connection, user_id: int, tag_name: str
-) -> list[dict]:
+async def db_get_friends_by_tag(conn: asyncpg.Connection, user_id: int, tag_name: str) -> list[dict]:
     """
     获取某个分组下的所有好友信息 (对应 POST /api/friend/tag/query)
     """
@@ -253,9 +232,7 @@ async def db_get_friends_by_tag(
     return [dict(row) for row in rows]
 
 
-async def db_remove_friend_from_tag(
-    conn: asyncpg.Connection, user_id: int, friend_user_id: int, tag_name: str
-) -> None:
+async def db_remove_friend_from_tag(conn: asyncpg.Connection, user_id: int, friend_user_id: int, tag_name: str) -> None:
     """
     将某个好友移出该分组 (对应 POST /api/friend/tag/remove)
     """
