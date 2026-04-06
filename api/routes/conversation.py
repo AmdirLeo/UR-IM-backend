@@ -1,11 +1,16 @@
 from fastapi import APIRouter, Depends
 from typing import Annotated
 from api.dependencies import CurrentUserId, DBConnection
-from services.conversation_service import sync_conversations, read_ack
+from services.conversation_service import (
+    sync_conversations,
+    read_ack,
+    set_conversation_mute,
+)
 from schemas.conversation import (
     ConversationGenericResponse,
     ConversationSyncItem,
     ReadAckRequest,
+    ConversationMuteRequest,
 )
 
 router = APIRouter()
@@ -33,4 +38,18 @@ async def read_acknowledgement(
     db_session: DBConnection,
 ):
     await read_ack(db_session, current_user_id, req.conversation_id, req.msg_id)
+    return ConversationGenericResponse(data=None)
+
+
+@router.put(
+    "/mute", summary="消息免打扰", response_model=ConversationGenericResponse[None]
+)
+async def mute_conversation(
+    req: ConversationMuteRequest,
+    current_user_id: CurrentUserId,
+    db_session: DBConnection,
+):
+    await set_conversation_mute(
+        db_session, current_user_id, req.conversation_id, req.is_muted
+    )
     return ConversationGenericResponse(data=None)

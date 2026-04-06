@@ -2,6 +2,7 @@ import asyncpg
 from db.repositories.conversation_repo import (
     db_sync_conversations,
     db_mark_conversation_as_read,
+    db_set_conversation_mute,
 )
 
 
@@ -19,3 +20,10 @@ async def read_ack(
     """处理已读回执"""
     # 也可以在这里加上用户是否在会话中的校验，如果是正常流程则不一定需要
     await db_mark_conversation_as_read(db_session, user_id, conversation_id, msg_id)
+
+
+async def set_conversation_mute(
+    db_session: asyncpg.Connection, user_id: int, conversation_id: int, is_muted: bool
+):
+    """设置消息免打扰"""
+    await db_set_conversation_mute(db_session, user_id, conversation_id, is_muted)

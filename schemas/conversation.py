@@ -39,9 +39,14 @@ class ConversationSyncItem(BaseModel):
 
 
 class ReadAckRequest(BaseModel):
-    conversation_id: int = Field(..., gt=0, description="会话 ID")
+    conversation_id: int = Field(..., gt=0)
     msg_id: int = Field(
         ...,
         gt=0,
         description="已读确认的最新消息 ID",
     )
+
+
+class ConversationMuteRequest(BaseModel):
+    conversation_id: int = Field(..., gt=0)
+    is_muted: bool = Field(False, description="免打扰状态，默认为 false")
