@@ -50,3 +50,8 @@ class ReadAckRequest(BaseModel):
 class ConversationMuteRequest(BaseModel):
     conversation_id: int = Field(..., gt=0)
     is_muted: bool = Field(False, description="免打扰状态，默认为 false")
+
+
+class ConversationPinRequest(BaseModel):
+    conversation_id: int = Field(..., gt=0, description="会话 ID")
+    is_pinned: bool = Field(False, description="置顶状态，默认为 false")

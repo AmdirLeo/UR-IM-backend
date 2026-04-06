@@ -3,6 +3,7 @@ from db.repositories.conversation_repo import (
     db_sync_conversations,
     db_mark_conversation_as_read,
     db_set_conversation_mute,
+    db_set_conversation_pin,
 )
 
 
@@ -27,3 +28,10 @@ async def set_conversation_mute(
 ):
     """设置消息免打扰"""
     await db_set_conversation_mute(db_session, user_id, conversation_id, is_muted)
+
+
+async def set_conversation_pin(
+    db_session: asyncpg.Connection, user_id: int, conversation_id: int, is_pinned: bool
+):
+    """设置会话置顶"""
+    await db_set_conversation_pin(db_session, user_id, conversation_id, is_pinned)

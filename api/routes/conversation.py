@@ -5,12 +5,14 @@ from services.conversation_service import (
     sync_conversations,
     read_ack,
     set_conversation_mute,
+    set_conversation_pin,
 )
 from schemas.conversation import (
     ConversationGenericResponse,
     ConversationSyncItem,
     ReadAckRequest,
     ConversationMuteRequest,
+    ConversationPinRequest,
 )
 
 router = APIRouter()
@@ -51,5 +53,19 @@ async def mute_conversation(
 ):
     await set_conversation_mute(
         db_session, current_user_id, req.conversation_id, req.is_muted
+    )
+    return ConversationGenericResponse(data=None)
+
+
+@router.put(
+    "/pin", summary="置顶会话", response_model=ConversationGenericResponse[None]
+)
+async def pin_conversation(
+    req: ConversationPinRequest,
+    current_user_id: CurrentUserId,
+    db_session: DBConnection,
+):
+    await set_conversation_pin(
+        db_session, current_user_id, req.conversation_id, req.is_pinned
     )
     return ConversationGenericResponse(data=None)
