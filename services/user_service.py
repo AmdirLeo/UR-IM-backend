@@ -29,6 +29,7 @@ from schemas.user import (
     EmailEdit,
     BaseResponse,
     UserForgetPWD,
+    PortraitResponse,
 )
 from typing import List
 from core.ws_manager import manager
@@ -161,12 +162,17 @@ async def edit_email_service(
 # 头像存储的本地相对路径配置
 # ==========================================
 AVATAR_DIR = "static/avatars"
+MAX_AVATAR_SIZE = 2 * 1024 * 1024  # 限制为 2MB (以字节为单位)
 
 
 async def edit_portrait_service(conn, current_user_id: int, file: UploadFile):
     """
     修改头像的业务逻辑服务
     """
+    # 1. 【新增】：校验文件大小，放在最前面，第一时间把巨型文件踢出去
+    if file.size > MAX_AVATAR_SIZE:
+        raise BusinessException(status_code=400, detail="头像图片大小不能超过 2MB")
+    
     # 1. 确保文件夹存在
     os.makedirs(AVATAR_DIR, exist_ok=True)
 
@@ -202,9 +208,9 @@ async def edit_portrait_service(conn, current_user_id: int, file: UploadFile):
         raise BusinessException(status_code=500, detail="数据库更新头像失败")
 
     # 6. 成功！返回前端要求的数据结构
-    return {
-        "code": 200,
-        "filekey": relative_url,
-        "width": 256,
-        "height": 256
-    }
+    return PortraitResponse(
+        code=200, 
+        filekey=relative_url, 
+        width=256,
+        height=256
+    )

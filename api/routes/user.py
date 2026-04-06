@@ -11,6 +11,7 @@ from schemas.user import (
     EmailEdit,
     BaseResponse,
     UserForgetPWD,
+    PortraitResponse,
 )
 from services import user_service
 
@@ -81,7 +82,7 @@ async def edit_email(
 # 【新增：修改头像的路由】
 
 
-@router.put("/edit/portrait", summary="修改头像")
+@router.put("/edit/portrait", response_model=PortraitResponse, summary="修改头像")
 async def edit_portrait(
     current_user_id: CurrentUserId,
     conn: DBConnection,
