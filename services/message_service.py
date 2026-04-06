@@ -21,17 +21,21 @@ async def send_message_service(
     """发送消息逻辑处理"""
 
     if req.quote_message_id is not None:
-        msg_id = await db_quote_message(
+        # 把返回值存在一个中间变量 db_result 里
+        db_result = await db_quote_message(
             db_session, user_id, req.conversation_id, req.message_content, req.msg_type, req.quote_message_id
         )
     else:
-        msg_id = await db_send_message(
+        db_result = await db_send_message(
             db_session, user_id, req.conversation_id, req.message_content, req.msg_type
         )
 
+    # 从字典中提取出真正的 msg_id
+    real_msg_id = db_result["msg_id"]
+
     # 3. 构造返回结构
     return {
-        "msg_id": msg_id,
+        "msg_id": real_msg_id,  # 这里填入提取出来的整数
         "server_time": datetime.now(timezone.utc),
         "local_id": req.local_id,
     }
