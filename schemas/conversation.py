@@ -1,6 +1,15 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TypeVar, Generic
 from pydantic import BaseModel, Field
+
+
+T = TypeVar("T")
+
+
+class ConversationGenericResponse(BaseModel, Generic[T]):
+    code: int = 200
+    msg: str = "操作成功"
+    data: Optional[T] = Field(default=None, description="具体的业务数据")
 
 
 class ConversationSyncItem(BaseModel):
