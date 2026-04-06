@@ -205,3 +205,50 @@ async def test_friend_journey_and_edge_cases():
         # 尝试删除一个根本不是好友的 C (404)
         res = await client.delete(f"/api/friend/remove/{user_c_id}", headers=headers_a)
         assert res.status_code == 404
+
+        # ---------------------------------------------------------
+        # 7. 补充边界测试：处理异常好友请求与删除自己 (覆盖 400 异常)
+        # ---------------------------------------------------------
+        # A 试图删除自己
+        res = await client.delete(f"/api/friend/remove/{user_a_id}", headers=headers_a)
+        assert res.status_code == 400
+        assert res.json()["msg"] == "不能删除自己"
+
+        # B 试图处理一个根本不存在的好友申请 (假设 99999 这个 ID 绝对不存在)
+        res = await client.put(
+            "/api/friend/handle",
+            json={"request_id": 999999, "action": "accepted"},
+            headers=headers_b,
+        )
+        assert res.status_code == 404
+        assert res.json()["msg"] == "好友申请不存在或已被处理"
+
+        # ---------------------------------------------------------
+        # 8. 补充边界测试：好友分组的异常流转 (覆盖 404 异常)
+        # ---------------------------------------------------------
+        fake_tag_name = "GhostTag"
+
+        # 删除一个不存在的分组
+        res = await client.post(
+            "/api/friend/tag/delete", json={"tag_name": fake_tag_name}, headers=headers_a
+        )
+        assert res.status_code == 404
+        assert res.json()["msg"] == "分组不存在"
+
+        # 将好友加入一个不存在的分组
+        res = await client.post(
+            "/api/friend/tag/add",
+            json={"tag_name": fake_tag_name, "friend_ids": [user_b_id]},
+            headers=headers_a,
+        )
+        assert res.status_code == 404
+        assert res.json()["msg"] == "分组不存在"
+
+        # 从不存在的分组（或该好友压根不在该分组中）移出好友
+        res = await client.post(
+            "/api/friend/tag/remove",
+            json={"tag_name": fake_tag_name, "friend_id": user_b_id},
+            headers=headers_a,
+        )
+        assert res.status_code == 404
+        assert res.json()["msg"] == "该好友不在当前分组中"
