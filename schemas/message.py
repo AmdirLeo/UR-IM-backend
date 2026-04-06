@@ -15,16 +15,25 @@ class SendMessageRequest(BaseModel):
     message_content: str = Field(
         ..., min_length=1, max_length=1000, description="消息内容"
     )
-    msg_type: str = Field(
-        ..., pattern="^(text|image)$", description="消息类型，目前支持 text 或 image"
+    msg_type: str = Field(..., pattern="^(text|image)$", description="消息类型")
+
+
+class MessageHistoryRequest(BaseModel):
+    conversation_id: int = Field(..., gt=0, description="会话 ID")
+    start_msg_id: Optional[int] = Field(None, gt=0, description="起始消息 ID")
+    limit: int = Field(
+        50,
+        ge=1,
+        le=100,
+        description="单次拉取的消息数量限制",
     )
 
 
-# 后端返回历史消息给前端时的格式
-class MessageResponse(BaseModel):
-    id: int = Field(..., description="消息的唯一全局ID")
-    sender_id: int = Field(..., description="发送者的用户ID")
-    target_id: Optional[int] = Field(None, description="接收者的用户ID")
-    content: str = Field(..., description="消息正文")
-    msg_type: str = Field(..., description="消息类型，例如: private 或 broadcast")
-    created_at: datetime = Field(..., description="消息发送的服务器时间")
+class MessageHistoryItem(BaseModel):
+    msg_id: int = Field(..., gt=0, description="全局唯一的消息 ID")
+    msg_type: str = Field(..., pattern="^(text|image)$", description="消息类型")
+    sender_id: int = Field(..., gt=0, description="发送者的用户 ID")
+    msg_content: str = Field(..., description="消息主体内容")
+    create_time: datetime = Field(..., description="消息在服务端的落库时间")
+    quote_msg_id: Optional[int] = Field(None, gt=0, description="引用的目标消息 ID")
+    quote_num: int = Field(0, ge=0, description="该条消息被其他消息引用的次数")
