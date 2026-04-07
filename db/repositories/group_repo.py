@@ -20,7 +20,9 @@ QUERY_GET_CONVERSATION_LIST = """
 """
 
 
-async def db_get_conversation_list(conn: asyncpg.Connection, user_id: int) -> list[dict]:
+async def db_get_conversation_list(
+        conn: asyncpg.Connection,
+        user_id: int) -> list[dict]:
     """
     获取用户的群聊列表 (按最新活跃时间排序，包含最后一条消息预览)
     """
@@ -87,7 +89,10 @@ async def db_create_group(
     return conv_id
 
 
-async def db_get_group_info(conn: asyncpg.Connection, user_id: int, conversation_id: int) -> dict:
+async def db_get_group_info(
+        conn: asyncpg.Connection,
+        user_id: int,
+        conversation_id: int) -> dict:
     """
     获取群详细信息 (对应 POST /api/group/info)
     包含群基础信息、群成员列表和历史公告
@@ -130,7 +135,10 @@ async def db_get_group_info(conn: asyncpg.Connection, user_id: int, conversation
     return info
 
 
-async def db_quit_group(conn: asyncpg.Connection, user_id: int, conversation_id: int) -> None:
+async def db_quit_group(
+        conn: asyncpg.Connection,
+        user_id: int,
+        conversation_id: int) -> None:
     """
     退出群聊 (对应 POST /api/group/quit)
     """
@@ -149,7 +157,10 @@ async def db_quit_group(conn: asyncpg.Connection, user_id: int, conversation_id:
     )
 
 
-async def db_disband_group(conn: asyncpg.Connection, user_id: int, conversation_id: int) -> None:
+async def db_disband_group(
+        conn: asyncpg.Connection,
+        user_id: int,
+        conversation_id: int) -> None:
     """
     解散群聊 (对应 POST /api/group/bomb)
     """
@@ -280,7 +291,11 @@ async def db_post_group_announcement(
     return announcement_id
 
 
-async def db_invite_to_group(conn: asyncpg.Connection, inviter_id: int, conversation_id: int, invitee_id: int) -> int:
+async def db_invite_to_group(
+        conn: asyncpg.Connection,
+        inviter_id: int,
+        conversation_id: int,
+        invitee_id: int) -> int:
     """
     邀请好友加入群聊 (对应 POST /api/group/invite)
     产生一条 pending 状态的邀请记录，等待审核
@@ -326,7 +341,11 @@ async def db_invite_to_group(conn: asyncpg.Connection, inviter_id: int, conversa
     return invite_id
 
 
-async def db_review_group_invite(conn: asyncpg.Connection, reviewer_id: int, invite_id: int, action: str) -> None:
+async def db_review_group_invite(
+        conn: asyncpg.Connection,
+        reviewer_id: int,
+        invite_id: int,
+        action: str) -> None:
     """
     审核群邀请 (对应 PUT /api/group/invite/review)
     action 必须是 'approved' 或 'rejected'

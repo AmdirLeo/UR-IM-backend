@@ -638,7 +638,7 @@ async def test_manage_role_transfer_owner(mock_conn):
 
     mock_conn.transaction.assert_called_once()
     # 验证调用了两个 UPDATE：降级自己 + 提升对方
-    update_calls = [c for c in mock_conn.execute.call_args_list]
+    update_calls = mock_conn.execute.call_args_list
     assert len(update_calls) >= 2
 
 
@@ -854,8 +854,8 @@ async def test_review_invite_approve_success(mock_conn):
 
     mock_conn.transaction.assert_called_once()
     # 应该调用两个 execute：更新邀请状态 + 添加成员
-    execute_calls = [c for c in mock_conn.execute.call_args_list]
-    assert len(execute_calls) >= 2
+    update_calls = mock_conn.execute.call_args_list
+    assert len(update_calls) >= 2
 
 
 @pytest.mark.asyncio(loop_scope="session")
