@@ -22,7 +22,7 @@ async def smtp_send_email(to_email: str, code: str) -> bool:
 
     # 邮件正文内容
     message.set_content(
-        f"欢迎注册 UR-IM!\n\n" f"您的注册验证码是：{code}\n" f"请在 5 分钟内输入。如果非本人操作，请忽略此邮件。"
+        f"欢迎注册 UR-IM!\n\n您的注册验证码是：{code}\n请在 5 分钟内输入。如果非本人操作，请忽略此邮件。"
     )
 
     try:
