@@ -1,32 +1,75 @@
 from fastapi import APIRouter, Depends
 from typing import List, Annotated
-from datetime import datetime, timezone
-from schemas.message import MessageResponse
-from api.dependencies import get_current_user_id
+from schemas.message import (
+    MessageGenericResponse,
+    SendMessageRequest,
+    SendMessageData,
+    MessageHistoryRequest,
+    MessageHistoryItem,
+    MessageSearchRequest,
+    MessageSearchItem,
+    DeleteMessageRequest,
+)
+from api.dependencies import CurrentUserId, DBConnection
+from services.message_service import (
+    send_message_service,
+    get_message_history_service,
+    search_message_service,
+    delete_message_service,
+)
 
 router = APIRouter()
 
 
-@router.get(
+@router.post("/send", summary="发送消息", response_model=MessageGenericResponse[SendMessageData])
+async def send_message(
+    req: SendMessageRequest,
+    current_user_id: CurrentUserId,
+    db_session: DBConnection,
+):
+    data_dict = await send_message_service(db_session, current_user_id, req)
+    return MessageGenericResponse(data=data_dict)
+
+
+@router.post(
     "/history",
-    response_model=List[MessageResponse],
     summary="获取历史漫游消息",
-    description="（Mock阶段）前端通过此接口拉取最近的聊天记录。必须在 Header 中携带合法的 JWT Token。"
+    response_model=MessageGenericResponse[List[MessageHistoryItem]],
 )
 async def get_message_history(
-    current_user_id: Annotated[int, Depends(get_current_user_id)],
-    target_id: int = None,
-    # 挂载保安：只有带着合法 Token 的人才能调用这个接口！
+    req: MessageHistoryRequest,
+    current_user_id: CurrentUserId,
+    db_session: DBConnection,
 ):
-    # 模拟从数据库返回的数据
-    mock_data = [
-        MessageResponse(
-            id=1,
-            sender_id=target_id or 2,
-            target_id=current_user_id,
-            content="你好呀，这是来自后端的历史消息！",
-            msg_type="private",
-            created_at=datetime.now(timezone.utc)
-        )
-    ]
-    return mock_data
+    history = await get_message_history_service(
+        db_session, current_user_id, req.conversation_id, req.start_msg_id, req.limit
+    )
+    return MessageGenericResponse(data=history)
+
+
+@router.post(
+    "/search",
+    summary="筛选消息记录",
+    response_model=MessageGenericResponse[List[MessageSearchItem]],
+)
+async def search_message(
+    req: MessageSearchRequest,
+    current_user_id: CurrentUserId,
+    db_session: DBConnection,
+):
+    results = await search_message_service(db_session, current_user_id, req)
+    return MessageGenericResponse(data=results)
+
+
+@router.delete(
+    "",
+    summary="删除消息记录",
+    response_model=MessageGenericResponse[None],
+)
+async def delete_message(
+    req: DeleteMessageRequest,
+    current_user_id: CurrentUserId,
+    db_session: DBConnection,
+):
+    await delete_message_service(db_session, current_user_id, req)
+    return MessageGenericResponse(data=None)

@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from core.config import settings
 from core.exceptions import setup_exception_handlers
 from core.ws_manager import manager
-from api.routes import chat, friend, message, user
+from api.routes import friend, message, user, websocket
 
 # 导入数据库连接池生命周期函数
 from db.database import init_db_pool, close_db_pool
@@ -53,8 +53,8 @@ setup_exception_handlers(app)
 
 # 路由注册
 app.include_router(user.router, prefix="/api/user", tags=["User Management"])
-app.include_router(chat.router, prefix="/chat", tags=["IM WebSocket"])
-app.include_router(message.router, prefix="/api/messages", tags=["Message API"])
+app.include_router(websocket.router, prefix="/websocket", tags=["IM WebSocket"])
+app.include_router(message.router, prefix="/api/message", tags=["Message API"])
 app.include_router(friend.router, prefix="/api/friend", tags=["Manage friendship"])
 
 

@@ -12,10 +12,10 @@ async def init_db():
 
     try:
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        sql_file_path = os.path.join(current_dir, 'migrations', '_init_tables.sql')
+        sql_file_path = os.path.join(current_dir, "migrations", "_init_tables.sql")
 
         print(f"正在读取建表脚本: {sql_file_path}")
-        with open(sql_file_path, 'r', encoding='utf-8') as f:
+        with open(sql_file_path, "r", encoding="utf-8") as f:
             sql_content = f.read()
 
         print("正在执行建表操作...")
@@ -27,6 +27,7 @@ async def init_db():
         print(f"初始化失败: {e}")
     finally:
         await conn.close()
+
 
 if __name__ == "__main__":
     asyncio.run(init_db())

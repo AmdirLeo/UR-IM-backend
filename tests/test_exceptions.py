@@ -1,7 +1,14 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field
-from core.exceptions import setup_exception_handlers, BusinessException, FriendException, FriendErrors
+from core.exceptions import (
+    setup_exception_handlers,
+    BusinessException,
+    FriendException,
+    FriendErrors,
+    UserException,
+    UserErrors,
+)
 from fastapi.exceptions import RequestValidationError
 
 # 1. 构造测试专用的微型应用并注册异常处理器
@@ -14,6 +21,7 @@ setup_exception_handlers(app)
 @app.get("/test-business-error")
 async def trigger_business_error():
     raise BusinessException(status_code=400, detail="业务逻辑错误测试")
+
 
 # 专门用于触发空错误列表的路由
 
@@ -67,6 +75,7 @@ async def trigger_validation_error(data: MockSchema):
 @app.get("/test-server-error")
 async def trigger_server_error():
     raise ValueError("模拟的底层代码崩溃")
+
 
 # 3. 初始化测试客户端
 client = TestClient(app, raise_server_exceptions=False)
@@ -164,4 +173,95 @@ def test_friend_exception_handler_unauthorized():
     data = response.json()
     assert data["code"] == 403
     assert data["msg"] == "越权操作：无权处理他人的好友申请"
+    assert data["data"] is None
+
+
+# ==========================================
+# 补充：UserException 的测试路由
+# ==========================================
+@app.get("/test-user-error-not-found")
+def trigger_user_error_not_found():
+    raise UserException(error_code=UserErrors.NotFound)
+
+
+@app.get("/test-user-error-already")
+def trigger_user_error_already():
+    raise UserException(error_code=UserErrors.AlreadyExists)
+
+
+@app.get("/test-user-error-auth")
+def trigger_user_error_auth():
+    raise UserException(error_code=UserErrors.AuthFailed)
+
+
+@app.get("/test-user-error-invalid-code")
+def trigger_user_error_invalid_code():
+    raise UserException(error_code=UserErrors.InvalidVerifyCode)
+
+
+@app.get("/test-user-error-no-update")
+def trigger_user_error_no_update():
+    raise UserException(error_code=UserErrors.NoUpdateFields)
+
+
+@app.get("/test-user-error-unknown")
+def trigger_user_error_unknown():
+    # 故意传入一个不在枚举中的错误，触发 500 兜底分支
+    raise UserException(error_code="UnknownErrorCode")  # type: ignore
+
+
+# ==========================================
+# 补充：UserException 的测试用例
+# ==========================================
+def test_user_exception_handler_not_found():
+    response = client.get("/test-user-error-not-found")
+    assert response.status_code == 404
+    data = response.json()
+    assert data["code"] == 404
+    assert data["msg"] == "用户不存在"
+    assert data["data"] is None
+
+
+def test_user_exception_handler_already():
+    response = client.get("/test-user-error-already")
+    assert response.status_code == 409
+    data = response.json()
+    assert data["code"] == 409
+    assert data["msg"] == "该邮箱已被注册"
+    assert data["data"] is None
+
+
+def test_user_exception_handler_auth():
+    response = client.get("/test-user-error-auth")
+    assert response.status_code == 401
+    data = response.json()
+    assert data["code"] == 401
+    assert data["msg"] == "邮箱或密码错误"
+    assert data["data"] is None
+
+
+def test_user_exception_handler_invalid_code():
+    response = client.get("/test-user-error-invalid-code")
+    assert response.status_code == 400
+    data = response.json()
+    assert data["code"] == 400
+    assert data["msg"] == "验证码错误或已失效"
+    assert data["data"] is None
+
+
+def test_user_exception_handler_no_update():
+    response = client.get("/test-user-error-no-update")
+    assert response.status_code == 400
+    data = response.json()
+    assert data["code"] == 400
+    assert data["msg"] == "没有任何字段需要更新"
+    assert data["data"] is None
+
+
+def test_user_exception_handler_unknown():
+    response = client.get("/test-user-error-unknown")
+    assert response.status_code == 500
+    data = response.json()
+    assert data["code"] == 500
+    assert data["msg"] == "用户模块未知错误"
     assert data["data"] is None

@@ -46,15 +46,9 @@ class UserForgetPWD(BaseModel):
 # 3. 信息修改相关结构
 # ==========================================
 class UserEdit(BaseModel):
-    user_name: Optional[str] = Field(
-        None, min_length=3, max_length=20, description="新用户名"
-    )
-    old_password: Optional[str] = Field(
-        None, min_length=6, max_length=50, description="旧密码"
-    )
-    new_password: Optional[str] = Field(
-        None, min_length=6, max_length=50, description="新密码"
-    )
+    user_name: Optional[str] = Field(None, min_length=3, max_length=20, description="新用户名")
+    old_password: Optional[str] = Field(None, min_length=6, max_length=50, description="旧密码")
+    new_password: Optional[str] = Field(None, min_length=6, max_length=50, description="新密码")
     email: Optional[EmailStr] = Field(None, description="新邮箱")
 
 
@@ -77,9 +71,7 @@ class BaseResponse(BaseModel):
 # ==========================================
 # 搜索用户请求参数 (GET 使用 query)
 class SearchUserQuery(BaseModel):
-    keyword: str = Field(
-        ..., min_length=1, max_length=50, description="搜索关键词（用户名模糊匹配）"
-    )
+    keyword: str = Field(..., min_length=1, max_length=50, description="搜索关键词（用户名模糊匹配）")
     # 可选分页参数，可后续扩展
     page: int = Field(1, ge=1)
     size: int = Field(20, ge=1, le=100)

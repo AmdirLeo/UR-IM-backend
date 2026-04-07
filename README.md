@@ -5,7 +5,7 @@ backend/
 ├── api/                 # 【接口层】处理请求进入与响应返回
 │   ├── dependencies.py  # 依赖注入：全局 Token 身份验证 (get_current_user_id)、数据库连接获取等
 │   └── routes/          # 具体的路由定义：仅负责解析 Request 和调用 Service，不编写业务逻辑
-│       └── chat.py
+│       └── websocket.py
 │       └── message.py
 │       └── user.py      # 用户相关接口：注册、登录、登出、注销、个人信息修改、头像上传
 ├── core/                # 【核心层】全站共享的单例与配置

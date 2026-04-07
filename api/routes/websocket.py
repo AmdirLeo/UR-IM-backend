@@ -10,16 +10,12 @@ router = APIRouter()
 async def websocket_endpoint(
     websocket: WebSocket,
     # 要求前端通过 ?token=xxx 传入 JWT
-    token: str = Query(..., description="JWT Token")
+    token: str = Query(..., description="JWT Token"),
 ):
     # 1. 握手阶段：Token 鉴权
     try:
         # 使用与 HTTP 接口相同的规则解密 Token
-        payload = jwt.decode(
-            token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[getattr(settings, "ALGORITHM", "HS256")]
-        )
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[getattr(settings, "ALGORITHM", "HS256")])
         user_id_str = payload.get("sub")
 
         if user_id_str is None:
@@ -53,13 +49,9 @@ async def websocket_endpoint(
             content = data.get("content")
 
             if target_id:
-                await manager.send_personal_message({
-                    "type": "private", "from": user_id, "content": content
-                }, target_id)
+                await manager.send_personal_message({"type": "private", "from": user_id, "content": content}, target_id)
             else:
-                await manager.broadcast({
-                    "type": "broadcast", "from": user_id, "content": content
-                })
+                await manager.broadcast({"type": "broadcast", "from": user_id, "content": content})
 
     except WebSocketDisconnect:
         await manager.disconnect(user_id)
