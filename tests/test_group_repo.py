@@ -25,18 +25,20 @@ import json
 
 class AsyncContextManagerMock(AsyncMock):
     """异步上下文管理器 Mock"""
+
     async def __aenter__(self):
         return self
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         return None
 
 
 class TransactionMock:
     """事务 Mock，支持异步上下文管理器"""
+
     async def __aenter__(self):
         return self
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         return None
 
@@ -68,20 +70,26 @@ def mock_conn():
 async def test_get_conversation_list_success(mock_conn):
     """测试成功获取群聊列表"""
     user_id = 1
-    mock_rows = [
-        {
-            'conversation_id': 101,
-            'conversation_name': '测试群1',
-            'last_msg_time': datetime(2026, 4, 7, 10, 0, 0, tzinfo=timezone.utc),
-            'msg_body': json.dumps({'text': '最后一条消息'})
-        },
-        {
-            'conversation_id': 102,
-            'conversation_name': '测试群2',
-            'last_msg_time': datetime(2026, 4, 7, 9, 0, 0, tzinfo=timezone.utc),
-            'msg_body': json.dumps({'text': '前一条消息'})
-        }
-    ]
+    mock_rows = [{'conversation_id': 101,
+                  'conversation_name': '测试群1',
+                  'last_msg_time': datetime(2026,
+                                            4,
+                                            7,
+                                            10,
+                                            0,
+                                            0,
+                                            tzinfo=timezone.utc),
+                  'msg_body': json.dumps({'text': '最后一条消息'})},
+                 {'conversation_id': 102,
+                  'conversation_name': '测试群2',
+                  'last_msg_time': datetime(2026,
+                                            4,
+                                            7,
+                                            9,
+                                            0,
+                                            0,
+                                            tzinfo=timezone.utc),
+                  'msg_body': json.dumps({'text': '前一条消息'})}]
     mock_conn.fetch.return_value = mock_rows
 
     result = await db_get_conversation_list(mock_conn, user_id)
@@ -91,7 +99,8 @@ async def test_get_conversation_list_success(mock_conn):
     assert result[0]['conversation_name'] == '测试群1'
     assert result[0]['last_msg_preview'] == '最后一条消息'
     assert result[1]['last_msg_preview'] == '前一条消息'
-    mock_conn.fetch.assert_called_once_with(QUERY_GET_CONVERSATION_LIST, user_id)
+    mock_conn.fetch.assert_called_once_with(
+        QUERY_GET_CONVERSATION_LIST, user_id)
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -119,14 +128,16 @@ async def test_get_conversation_list_with_none_msg_body(mock_conn):
 async def test_get_conversation_list_with_invalid_json(mock_conn):
     """测试获取列表时 msg_body 包含无效的 JSON"""
     user_id = 1
-    mock_rows = [
-        {
-            'conversation_id': 101,
-            'conversation_name': '测试群',
-            'last_msg_time': datetime(2026, 4, 7, 10, 0, 0, tzinfo=timezone.utc),
-            'msg_body': 'invalid json'
-        }
-    ]
+    mock_rows = [{'conversation_id': 101,
+                  'conversation_name': '测试群',
+                  'last_msg_time': datetime(2026,
+                                            4,
+                                            7,
+                                            10,
+                                            0,
+                                            0,
+                                            tzinfo=timezone.utc),
+                  'msg_body': 'invalid json'}]
     mock_conn.fetch.return_value = mock_rows
 
     result = await db_get_conversation_list(mock_conn, user_id)
@@ -138,14 +149,16 @@ async def test_get_conversation_list_with_invalid_json(mock_conn):
 async def test_get_conversation_list_with_no_text_field(mock_conn):
     """测试获取列表时 msg_body 没有 text 字段"""
     user_id = 1
-    mock_rows = [
-        {
-            'conversation_id': 101,
-            'conversation_name': '测试群',
-            'last_msg_time': datetime(2026, 4, 7, 10, 0, 0, tzinfo=timezone.utc),
-            'msg_body': json.dumps({'other_field': 'value'})
-        }
-    ]
+    mock_rows = [{'conversation_id': 101,
+                  'conversation_name': '测试群',
+                  'last_msg_time': datetime(2026,
+                                            4,
+                                            7,
+                                            10,
+                                            0,
+                                            0,
+                                            tzinfo=timezone.utc),
+                  'msg_body': json.dumps({'other_field': 'value'})}]
     mock_conn.fetch.return_value = mock_rows
 
     result = await db_get_conversation_list(mock_conn, user_id)
