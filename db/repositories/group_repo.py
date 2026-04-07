@@ -205,10 +205,9 @@ async def db_remove_group_member(
     if operator_role == "member":
         # 普通人谁也踢不了
         raise GroupException(GroupErrors.PermissionDenied)
-    elif operator_role == "admin":
+    elif operator_role == "admin" and target_role in ("owner", "admin"):
         # 管理员只能踢普通人，不能踢群主，也不能互踢
-        if target_role in ("owner", "admin"):
-            raise GroupException(GroupErrors.CannotKickHigherRole)
+        raise GroupException(GroupErrors.CannotKickHigherRole)
     # 如果是 owner，则畅通无阻，可以直接往下走
 
     # 4. 执行踢人操作
