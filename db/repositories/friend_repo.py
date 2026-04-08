@@ -138,22 +138,38 @@ async def db_get_friend_requests(
     limit: int = 20
 ) -> list[dict]:
     """
-    获取别人发给当前用户的离线/历史好友申请记录（游标分页）
+    获取当前用户的所有好友申请记录（包含我发出的 + 我收到的，游标分页）
     """
     
-    # 核心 SQL：联表查询 user_account 拿到发起人的头像和昵称
+    # 核心 SQL：动态判断方向，并始终 JOIN “对方”的账户信息
     base_query = """
         SELECT 
             fr.request_id,
-            fr.sender_id,
-            u.username AS sender_name,
-            u.avatar_url AS sender_avatar,
             fr.reason,
             fr.status,
-            fr.create_time
+            fr.create_time,
+            
+            -- 【魔法 1：判断方向】
+            CASE 
+                WHEN fr.sender_id = $1 THEN 'outbound' 
+                ELSE 'inbound' 
+            END AS direction,
+            
+            -- 【魔法 2：获取对方 ID】我发的对方就是 receiver，别人发给我的对方就是 sender
+            CASE 
+                WHEN fr.sender_id = $1 THEN fr.receiver_id 
+                ELSE fr.sender_id 
+            END AS target_user_id,
+            
+            u.username AS target_user_name,
+            u.avatar_url AS target_user_avatar
+            
         FROM friend_request fr
-        JOIN user_account u ON fr.sender_id = u.user_id
-        WHERE fr.receiver_id = $1
+        -- 根据魔法 2 的逻辑，精准 JOIN 对方的用户表
+        JOIN user_account u ON u.user_id = (
+            CASE WHEN fr.sender_id = $1 THEN fr.receiver_id ELSE fr.sender_id END
+        )
+        WHERE (fr.sender_id = $1 OR fr.receiver_id = $1)
     """
     
     # 动态拼接游标
@@ -164,17 +180,18 @@ async def db_get_friend_requests(
         query = base_query + " ORDER BY fr.request_id DESC LIMIT $2;"
         rows = await conn.fetch(query, user_id, limit)
 
-    # 格式化返回
+    # 格式化返回：参考你的原格式，但将 sender 统一升级为 target，并增加 direction
     result = []
     for row in rows:
         result.append({
             "request_id": row['request_id'],
-            "sender_id": row['sender_id'],
-            "sender_name": row['sender_name'],
-            "sender_avatar": row['sender_avatar'],
+            "direction": row['direction'],               # 新增：'inbound' (收到) 或 'outbound' (发出)
+            "target_user_id": row['target_user_id'],     # 替代原 sender_id
+            "target_user_name": row['target_user_name'], # 替代原 sender_name
+            "target_user_avatar": row['target_user_avatar'], # 替代原 sender_avatar
             "reason": row['reason'],
             "status": row['status'],
-            "create_time": row['create_time']  # datetime 对象，Pydantic 会自动序列化
+            "create_time": row['create_time']            # datetime 对象
         })
         
     return result
