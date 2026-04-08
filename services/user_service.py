@@ -40,9 +40,7 @@ import shutil
 from fastapi import UploadFile
 
 
-async def search_users(
-    db_session, keyword: str, page: int = 1, page_size: int = 20
-) -> List[UserSearchResult]:
+async def search_users(db_session, keyword: str, page: int = 1, page_size: int = 20) -> List[UserSearchResult]:
     # 直接调用 repository 层已实现的函数
     users = await db_search_users(
         db_session,
@@ -52,10 +50,7 @@ async def search_users(
     )
     # 如果 repository 返回的是字典列表，直接转换
     return [
-        UserSearchResult(
-            user_id=u["user_id"], username=u["username"], avatar_url=u.get(
-                "avatar_url")
-        )
+        UserSearchResult(user_id=u["user_id"], username=u["username"], avatar_url=u.get("avatar_url"))
         for u in users["items"]  # <--- 重点：加上 ["items"]
     ]
 
@@ -99,6 +94,8 @@ async def forget_password_set_service(conn, request: UserForgetPWD) -> BaseRespo
         raise BusinessException(status_code=400, detail="验证码错误")
     new_password_hash = get_password_hash(request.password)
     user = await db_get_user_by_email(conn, request.email)
+    if user is None:
+        raise BusinessException(status_code=404, detail="未找到绑定该邮箱的账号")
     await db_update_user_password(conn, user["user_id"], new_password_hash)
     return BaseResponse(code=200, msg="密码修改完毕，请重新登陆")
 
@@ -116,7 +113,11 @@ async def login_service(conn, login_data: UserLogin) -> LoginResponse:
     if not user:
         raise BusinessException(status_code=400, detail="账号不存在")
 
-    if not verify_password(login_data.password, user["password"]):
+    hashed_pwd = user["password"]
+    if not hashed_pwd:
+        raise BusinessException(status_code=400, detail="账号数据异常，请联系管理员")
+
+    if not verify_password(login_data.password, hashed_pwd):
         raise BusinessException(status_code=400, detail="密码错误")
 
     await db_update_user_login_time(conn, user["user_id"])
@@ -135,29 +136,23 @@ async def delete_account_service(conn, current_user_id: int) -> BaseResponse:
     return BaseResponse(code=200, msg="账号已彻底注销")
 
 
-async def edit_profile_service(
-    conn, current_user_id: int, edit_data: UserEdit
-) -> BaseResponse:
+async def edit_profile_service(conn, current_user_id: int, edit_data: UserEdit) -> BaseResponse:
     if edit_data.old_password and edit_data.new_password:
         hashed_pwd = await db_get_password_by_id(conn, current_user_id)
+        if not hashed_pwd:
+            raise BusinessException(status_code=400, detail="账号数据异常，请联系管理员")
         if not verify_password(edit_data.old_password, hashed_pwd):
             raise BusinessException(status_code=400, detail="密码错误")
         hashed_new = get_password_hash(edit_data.new_password)
         await db_update_user_password(conn, current_user_id, hashed_new)
 
     if edit_data.user_name or edit_data.email:
-        await db_update_user_profile(
-            conn, current_user_id, username=edit_data.user_name, email=edit_data.email
-        )
+        await db_update_user_profile(conn, current_user_id, username=edit_data.user_name, email=edit_data.email)
     return BaseResponse(code=200, msg="信息修改成功")
 
 
-async def edit_email_service(
-    conn, current_user_id: int, edit_data: EmailEdit
-) -> BaseResponse:
-    success = await db_update_user_profile(
-        conn, current_user_id, email=edit_data.new_email
-    )
+async def edit_email_service(conn, current_user_id: int, edit_data: EmailEdit) -> BaseResponse:
+    success = await db_update_user_profile(conn, current_user_id, email=edit_data.new_email)
     if not success:
         raise BusinessException(status_code=400, detail="邮箱更新失败")
     return BaseResponse(code=200, msg="邮箱修改成功")

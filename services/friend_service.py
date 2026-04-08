@@ -73,9 +73,7 @@ async def handle_friend_request(
         raise BusinessException(status_code=400, detail="处理失败，请稍后重试")
 
 
-async def remove_friend(
-    db_session: asyncpg.Connection, current_user_id: int, friend_user_id: int
-) -> None:
+async def remove_friend(db_session: asyncpg.Connection, current_user_id: int, friend_user_id: int) -> None:
     """
     删除好友的业务逻辑。
     - 不能删除自己
@@ -89,9 +87,7 @@ async def remove_friend(
     await db_remove_friend(db_session, current_user_id, friend_user_id)
 
 
-async def get_friend_list(
-    db_session: asyncpg.Connection, current_user_id: int
-) -> List[Dict]:
+async def get_friend_list(db_session: asyncpg.Connection, current_user_id: int) -> List[Dict]:
     """
     获取当前用户的好友列表。
     """
@@ -100,9 +96,7 @@ async def get_friend_list(
     return friends
 
 
-async def create_friend_tag(
-    db_session: asyncpg.Connection, user_id: int, tag_name: str
-) -> None:
+async def create_friend_tag(db_session: asyncpg.Connection, user_id: int, tag_name: str) -> None:
     """
     新建好友分组
     """
@@ -114,9 +108,7 @@ async def create_friend_tag(
         raise BusinessException(status_code=409, detail="该分组已存在") from e
 
 
-async def delete_friend_tag(
-    db_session: asyncpg.Connection, user_id: int, tag_name: str
-) -> None:
+async def delete_friend_tag(db_session: asyncpg.Connection, user_id: int, tag_name: str) -> None:
     """
     删除好友分组
     """
@@ -139,9 +131,7 @@ async def add_friends_to_tag(
         raise BusinessException(status_code=404, detail="分组不存在") from e
 
 
-async def get_friends_by_tag(
-    db_session: asyncpg.Connection, user_id: int, tag_name: str
-) -> list[dict]:
+async def get_friends_by_tag(db_session: asyncpg.Connection, user_id: int, tag_name: str) -> list[dict]:
     """
     获取某分组下的所有好友
     """
@@ -155,8 +145,6 @@ async def remove_friend_from_tag(
     将特定好友移出分组
     """
     try:
-        await db_remove_friend_from_tag(
-            db_session, user_id, friend_user_id, tag_name
-        )
+        await db_remove_friend_from_tag(db_session, user_id, friend_user_id, tag_name)
     except Exception as e:
         raise BusinessException(status_code=404, detail="该好友不在当前分组中") from e

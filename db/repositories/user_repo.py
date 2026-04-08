@@ -1,5 +1,6 @@
 import asyncpg
 from core.exceptions import UserErrors, UserException
+from typing import Optional
 
 
 async def db_create_user(conn: asyncpg.Connection, username: str, password_hash: str, email: str) -> int:
@@ -15,6 +16,8 @@ async def db_create_user(conn: asyncpg.Connection, username: str, password_hash:
     """
     try:
         user_id = await conn.fetchval(query, username, password_hash, email)
+        if user_id is None:
+            raise UserException(UserErrors.NotFound)
         return user_id
     except asyncpg.exceptions.UniqueViolationError:
         # 捕获数据库层面的唯一性冲突（邮箱重复注册）
@@ -80,7 +83,7 @@ async def db_delete_user(conn: asyncpg.Connection, user_id: int):
     # execute 返回的是命令状态字符串，例如成功删除了1行会返回 'DELETE 1'
     status = await conn.execute(query, user_id)
 
-    if status != 'DELETE 1':
+    if status != "DELETE 1":
         raise UserException(UserErrors.NotFound)
 
 
@@ -90,16 +93,16 @@ async def db_update_user_password(conn: asyncpg.Connection, user_id: int, new_pa
     """
     query = "UPDATE user_account SET password = $1 WHERE user_id = $2;"
     status = await conn.execute(query, new_password_hash, user_id)
-    if status != 'UPDATE 1':
+    if status != "UPDATE 1":
         raise UserException(UserErrors.NotFound)
 
 
 async def db_update_user_profile(
     conn: asyncpg.Connection,
     user_id: int,
-    username: str = None,
-    email: str = None,
-    avatar_url: str = None
+    username: Optional[str] = None,
+    email: Optional[str] = None,
+    avatar_url: Optional[str] = None,
 ) -> bool:
     """
     通用的资料修改接口（对应 /api/user/edit 系列接口）
@@ -129,15 +132,10 @@ async def db_update_user_profile(
         WHERE user_id = ${len(values)};
     """
     status = await conn.execute(query, *values)
-    return status == 'UPDATE 1'
+    return status == "UPDATE 1"
 
 
-async def db_search_users(
-    conn: asyncpg.Connection,
-    keyword: str,
-    page: int = 1,
-    page_size: int = 20
-) -> dict:
+async def db_search_users(conn: asyncpg.Connection, keyword: str, page: int = 1, page_size: int = 20) -> dict:
     """
     通过用户名模糊查找用户 (支持分页)
 
@@ -176,8 +174,8 @@ async def db_search_users(
 
     # 4. 组装成标准的分页返回格式
     return {
-        "items": items,          # 当前页的用户列表
-        "total": total_count,    # 满足条件的总条数
-        "page": page,            # 当前页码
-        "page_size": page_size   # 每页大小
+        "items": items,  # 当前页的用户列表
+        "total": total_count,  # 满足条件的总条数
+        "page": page,  # 当前页码
+        "page_size": page_size,  # 每页大小
     }

@@ -27,10 +27,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         if not is_valid:
             raise HTTPException(status_code=400, detail="密码错误")
     """
-    return bcrypt.checkpw(
-        plain_password.encode('utf-8'),
-        hashed_password.encode('utf-8')
-    )
+    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
 
 def get_password_hash(password: str) -> str:
@@ -45,8 +42,8 @@ def get_password_hash(password: str) -> str:
         db_user = User(username="allan", password=hashed_pw)
     """
     salt = bcrypt.gensalt()
-    hashed_bytes = bcrypt.hashpw(password.encode('utf-8'), salt)
-    return hashed_bytes.decode('utf-8')
+    hashed_bytes = bcrypt.hashpw(password.encode("utf-8"), salt)
+    return hashed_bytes.decode("utf-8")
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
@@ -73,9 +70,5 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
 
     to_encode.update({"exp": expire})
 
-    encoded_jwt = jwt.encode(
-        to_encode,
-        settings.JWT_SECRET_KEY,
-        algorithm="HS256"
-    )
+    encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm="HS256")
     return encoded_jwt

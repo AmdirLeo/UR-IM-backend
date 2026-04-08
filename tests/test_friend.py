@@ -42,15 +42,9 @@ async def test_friend_journey_and_edge_cases():
         hashed_pw = get_password_hash("password123")
         # 直接利用底层函数快速创建用户，避免走 HTTP 注册需要验证码的麻烦
         # 假设每次测试前 conftest.py 都会清理数据库，邮箱不会冲突
-        user_a_id = await db_create_user(
-            conn, "friend_user_A", hashed_pw, "friend_a@test.com"
-        )
-        user_b_id = await db_create_user(
-            conn, "friend_user_B", hashed_pw, "friend_b@test.com"
-        )
-        user_c_id = await db_create_user(
-            conn, "friend_user_C", hashed_pw, "friend_c@test.com"
-        )
+        user_a_id = await db_create_user(conn, "friend_user_A", hashed_pw, "friend_a@test.com")  # type: ignore
+        user_b_id = await db_create_user(conn, "friend_user_B", hashed_pw, "friend_b@test.com")  # type: ignore
+        user_c_id = await db_create_user(conn, "friend_user_C", hashed_pw, "friend_c@test.com")  # type: ignore
         break  # 取一次连接执行完毕即可
 
     # 为用户生成真实的 JWT Token，完美通过路由的鉴权依赖
@@ -61,26 +55,20 @@ async def test_friend_journey_and_edge_cases():
     headers_b = get_auth_headers(token_b)
 
     # 开始端到端 HTTP 测试
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:
 
         # ---------------------------------------------------------
         # 1. 搜索用户 (Search)
         # ---------------------------------------------------------
         # A 搜索 B
-        res = await client.get(
-            "/api/friend/search?keyword=friend_user_B", headers=headers_a
-        )
+        res = await client.get("/api/friend/search?keyword=friend_user_B", headers=headers_a)
         assert res.status_code == 200
         data = res.json()["data"]
         assert len(data) >= 1
         assert data[0]["username"] == "friend_user_B"
 
         # A 搜索不存在的用户
-        res = await client.get(
-            "/api/friend/search?keyword=nobody_exists", headers=headers_a
-        )
+        res = await client.get("/api/friend/search?keyword=nobody_exists", headers=headers_a)
         assert res.status_code == 200
         assert len(res.json()["data"]) == 0
 
@@ -149,15 +137,11 @@ async def test_friend_journey_and_edge_cases():
         tag_name = "BestFriends"
 
         # 1. 新建标签
-        res = await client.post(
-            "/api/friend/tag/new", json={"tag_name": tag_name}, headers=headers_a
-        )
+        res = await client.post("/api/friend/tag/new", json={"tag_name": tag_name}, headers=headers_a)
         assert res.status_code == 200
 
         # 2. 模拟重名标签冲突 (409)
-        res = await client.post(
-            "/api/friend/tag/new", json={"tag_name": tag_name}, headers=headers_a
-        )
+        res = await client.post("/api/friend/tag/new", json={"tag_name": tag_name}, headers=headers_a)
         assert res.status_code == 409
 
         # 3. 把 B 加入标签
@@ -169,9 +153,7 @@ async def test_friend_journey_and_edge_cases():
         assert res.status_code == 200
 
         # 4. 查询标签里的好友，应该只有 B
-        res = await client.post(
-            "/api/friend/tag/query", json={"tag_name": tag_name}, headers=headers_a
-        )
+        res = await client.post("/api/friend/tag/query", json={"tag_name": tag_name}, headers=headers_a)
         assert res.status_code == 200
         assert len(res.json()["data"]) == 1
         assert res.json()["data"][0]["user_id"] == user_b_id
@@ -185,9 +167,7 @@ async def test_friend_journey_and_edge_cases():
         assert res.status_code == 200
 
         # 6. 彻底删除标签
-        res = await client.post(
-            "/api/friend/tag/delete", json={"tag_name": tag_name}, headers=headers_a
-        )
+        res = await client.post("/api/friend/tag/delete", json={"tag_name": tag_name}, headers=headers_a)
         assert res.status_code == 200
 
         # ---------------------------------------------------------
@@ -205,3 +185,48 @@ async def test_friend_journey_and_edge_cases():
         # 尝试删除一个根本不是好友的 C (404)
         res = await client.delete(f"/api/friend/remove/{user_c_id}", headers=headers_a)
         assert res.status_code == 404
+
+        # ---------------------------------------------------------
+        # 7. 补充边界测试：处理异常好友请求与删除自己 (覆盖 400 异常)
+        # ---------------------------------------------------------
+        # A 试图删除自己
+        res = await client.delete(f"/api/friend/remove/{user_a_id}", headers=headers_a)
+        assert res.status_code == 400
+        assert res.json()["msg"] == "不能删除自己"
+
+        # B 试图处理一个根本不存在的好友申请 (假设 99999 这个 ID 绝对不存在)
+        res = await client.put(
+            "/api/friend/handle",
+            json={"request_id": 999999, "action": "accepted"},
+            headers=headers_b,
+        )
+        assert res.status_code == 404
+        assert res.json()["msg"] == "好友申请不存在或已被处理"
+
+        # ---------------------------------------------------------
+        # 8. 补充边界测试：好友分组的异常流转 (覆盖 404 异常)
+        # ---------------------------------------------------------
+        fake_tag_name = "GhostTag"
+
+        # 删除一个不存在的分组
+        res = await client.post("/api/friend/tag/delete", json={"tag_name": fake_tag_name}, headers=headers_a)
+        assert res.status_code == 404
+        assert res.json()["msg"] == "分组不存在"
+
+        # 将好友加入一个不存在的分组
+        res = await client.post(
+            "/api/friend/tag/add",
+            json={"tag_name": fake_tag_name, "friend_ids": [user_b_id]},
+            headers=headers_a,
+        )
+        assert res.status_code == 404
+        assert res.json()["msg"] == "分组不存在"
+
+        # 从不存在的分组（或该好友压根不在该分组中）移出好友
+        res = await client.post(
+            "/api/friend/tag/remove",
+            json={"tag_name": fake_tag_name, "friend_id": user_b_id},
+            headers=headers_a,
+        )
+        assert res.status_code == 404
+        assert res.json()["msg"] == "该好友不在当前分组中"
