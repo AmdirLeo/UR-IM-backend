@@ -15,7 +15,9 @@ async def test_friend_request_realtime_notification():
 
     async for conn in get_db_conn():
         # 探测列名
-        columns = await conn.fetch("SELECT column_name FROM information_schema.columns WHERE table_name = 'user_account'")
+        columns = await conn.fetch(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'user_account'"
+            )
         print(
             f"\n[DEBUG] user_account 表的列名有: {[col['column_name'] for col in columns]}")
         # ... 后面的代码
@@ -25,11 +27,13 @@ async def test_friend_request_realtime_notification():
     async for conn in get_db_conn():
         # 往用户表塞入两个测试账号（根据你的 user_account 表结构调整字段）
         await conn.execute(
-            "INSERT INTO user_account (user_id, username, password, email) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id) DO NOTHING",
+            "INSERT INTO user_account (user_id, username, password, email) "
+            "VALUES ($1, $2, $3, $4) ON CONFLICT (user_id) DO NOTHING",
             sender_user_id, "sender_test", "hashed_pwd", "sender@test.com"
         )
         await conn.execute(
-            "INSERT INTO user_account (user_id, username, password, email) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id) DO NOTHING",
+            "INSERT INTO user_account (user_id, username, password, email) "
+            "VALUES ($1, $2, $3, $4) ON CONFLICT (user_id) DO NOTHING",
             target_user_id, "target_test", "hashed_pwd", "target@test.com"
         )
         break  # 拿到连接并操作完就退出循环
