@@ -131,6 +131,53 @@ async def db_handle_friend_request(
 
     return {"status": action, "friend_id": sender_id}
 
+async def db_get_friend_requests(
+    conn: asyncpg.Connection, 
+    user_id: int, 
+    cursor_req_id: int | None = None, 
+    limit: int = 20
+) -> list[dict]:
+    """
+    获取别人发给当前用户的离线/历史好友申请记录（游标分页）
+    """
+    
+    # 核心 SQL：联表查询 user_account 拿到发起人的头像和昵称
+    base_query = """
+        SELECT 
+            fr.request_id,
+            fr.sender_id,
+            u.username AS sender_name,
+            u.avatar_url AS sender_avatar,
+            fr.reason,
+            fr.status,
+            fr.create_time
+        FROM friend_request fr
+        JOIN user_account u ON fr.sender_id = u.user_id
+        WHERE fr.receiver_id = $1
+    """
+    
+    # 动态拼接游标
+    if cursor_req_id:
+        query = base_query + " AND fr.request_id < $2 ORDER BY fr.request_id DESC LIMIT $3;"
+        rows = await conn.fetch(query, user_id, cursor_req_id, limit)
+    else:
+        query = base_query + " ORDER BY fr.request_id DESC LIMIT $2;"
+        rows = await conn.fetch(query, user_id, limit)
+
+    # 格式化返回
+    result = []
+    for row in rows:
+        result.append({
+            "request_id": row['request_id'],
+            "sender_id": row['sender_id'],
+            "sender_name": row['sender_name'],
+            "sender_avatar": row['sender_avatar'],
+            "reason": row['reason'],
+            "status": row['status'],
+            "create_time": row['create_time']  # datetime 对象，Pydantic 会自动序列化
+        })
+        
+    return result
 
 async def db_get_friend_list(conn: asyncpg.Connection, user_id: int) -> list[dict]:
     """
