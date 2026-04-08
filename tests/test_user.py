@@ -195,7 +195,8 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         new_password = "newpassword456"
         response = await client.put(
             EDIT_PROFILE_API_PATH,
-            json={"old_password": VALID_PASSWORD, "new_password": new_password},
+            json={"old_password": VALID_PASSWORD,
+                  "new_password": new_password},
             headers=auth_headers,
         )
         assert response.status_code == 200
@@ -212,7 +213,7 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         # --- 修改点 A：验证返回包里是否有短路验证码 ---
         forget_res_data = response.json()
         assert "code" in forget_res_data
-        assert forget_res_data["verification_code"] == "123456" # 确认拿到了码
+        assert forget_res_data["verification_code"] == "123456"  # 确认拿到了码
         # ------------------------------------------
 
         response = await client.post(

@@ -19,7 +19,8 @@ def get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
     """
     try:
         # 使用你在 security.py 中配置的同一个密钥和算法进行解密
-        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[getattr(settings, "ALGORITHM", "HS256")])
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[
+                             getattr(settings, "ALGORITHM", "HS256")])
 
         # 提取之前在 create_access_token 中存入的 "sub" 字段
         user_id_str = payload.get("sub")

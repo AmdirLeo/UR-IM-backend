@@ -15,7 +15,8 @@ async def websocket_endpoint(
     # 1. 握手阶段：Token 鉴权
     try:
         # 使用与 HTTP 接口相同的规则解密 Token
-        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[getattr(settings, "ALGORITHM", "HS256")])
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[
+                             getattr(settings, "ALGORITHM", "HS256")])
         user_id_str = payload.get("sub")
 
         if user_id_str is None:

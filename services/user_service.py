@@ -50,7 +50,8 @@ async def search_users(db_session, keyword: str, page: int = 1, page_size: int =
     )
     # 如果 repository 返回的是字典列表，直接转换
     return [
-        UserSearchResult(user_id=u["user_id"], username=u["username"], avatar_url=u.get("avatar_url"))
+        UserSearchResult(
+            user_id=u["user_id"], username=u["username"], avatar_url=u.get("avatar_url"))
         for u in users["items"]  # <--- 重点：加上 ["items"]
     ]
 
@@ -76,7 +77,7 @@ async def register_service(conn, user_data: UserRegister) -> RegisterResponse:
     return RegisterResponse(code=200, id=user_id)
 
 
-async def forget_password_send_service(conn, email: str) -> BaseResponse:
+async def forget_password_send_service(conn, email: str) -> EmailResponse:
     user = await db_get_user_by_email(conn, email)
     if not user:
         raise BusinessException(status_code=404, detail="未找到绑定该邮箱的账号")
@@ -84,7 +85,7 @@ async def forget_password_send_service(conn, email: str) -> BaseResponse:
     # await smtp_send_email(email, verification_code)
     await db_save_verification_code(email, verification_code)
     return EmailResponse(
-        code=200, 
+        code=200,
         verification_code=verification_code
     )
 

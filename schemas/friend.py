@@ -16,7 +16,8 @@ class FriendApplyRequest(BaseModel):
 
 class FriendHandleRequest(BaseModel):
     request_id: int = Field(..., description="好友申请ID")
-    action: Literal["accepted", "rejected"] = Field(..., description="操作类型：accepted（同意）或 rejected（拒绝）")
+    action: Literal["accepted", "rejected"] = Field(
+        ..., description="操作类型：accepted（同意）或 rejected（拒绝）")
 
 
 class FriendInfo(BaseModel):

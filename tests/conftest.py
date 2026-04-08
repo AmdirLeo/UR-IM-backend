@@ -12,7 +12,8 @@ load_dotenv()
 TEST_DB_NAME = "test_im_db"
 
 # 优先读取 CI 注入的环境变量 DATABASE_URL，读不到再用本地的地址作为备胎
-TEST_DB_URL = os.getenv("DATABASE_URL", f"postgresql://postgres:123456@127.0.0.1:5432/{TEST_DB_NAME}")
+TEST_DB_URL = os.getenv(
+    "DATABASE_URL", f"postgresql://postgres:123456@127.0.0.1:5432/{TEST_DB_NAME}")
 
 # 同样使用 getenv 提供备胎。
 # 优先读取 CI 环境的默认库 URL，如果本地开发没配环境变量，则使用你本地暂存的稳妥地址
@@ -60,7 +61,8 @@ async def setup_test_database():
 
     # 3. 读取并执行建表 SQL
     current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sql_file_path = os.path.join(current_dir, "db", "migrations", "_init_tables.sql")
+    sql_file_path = os.path.join(
+        current_dir, "db", "migrations", "_init_tables.sql")
 
     try:
         conn = await asyncpg.connect(TEST_DB_URL)

@@ -60,10 +60,12 @@ async def search_message_service(
     """筛选历史消息记录"""
 
     if req.start_time is None and req.end_time is None and req.keyword is None:
-        raise MessageException(MessageErrors.InvalidRequest, "start_time, end_time, keyword 不能全为空")
+        raise MessageException(MessageErrors.InvalidRequest,
+                               "start_time, end_time, keyword 不能全为空")
 
     if req.conversation_id is None:
-        raise MessageException(MessageErrors.InvalidRequest, "conversation_id 不能为空")
+        raise MessageException(
+            MessageErrors.InvalidRequest, "conversation_id 不能为空")
 
     history = await db_filter_messages(
         conn=db_session,

@@ -40,7 +40,8 @@ async def test_conversation_journey_and_edge_cases():
     async for conn in get_db_conn():
         hashed_pw = get_password_hash("password123")
         # 1. 创建测试用户
-        user_id = await db_create_user(conn, "conv_tester", hashed_pw, "conv@test.com")  # type: ignore
+        # type: ignore
+        user_id = await db_create_user(conn, "conv_tester", hashed_pw, "conv@test.com")
 
         # 2. 强行在底层创建一个会话，并把该用户拉入会话
         conv_id = await conn.fetchval("INSERT INTO conversation (type) VALUES ('single') RETURNING conversation_id;")

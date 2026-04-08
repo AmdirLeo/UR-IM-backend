@@ -32,7 +32,7 @@ async def register(user_data: UserRegister, conn: DBConnection):
     return await user_service.register_service(conn, user_data)
 
 
-@router.post("/register/forgetpswdsend", response_model=BaseResponse, summary="忘记密码申请")
+@router.post("/register/forgetpswdsend", response_model=EmailResponse, summary="忘记密码申请")
 async def forget_password_send(request: EmailRequest, conn: DBConnection):
     return await user_service.forget_password_send_service(conn, request.email)
 

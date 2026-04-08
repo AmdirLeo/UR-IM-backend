@@ -17,7 +17,8 @@ class ConnectionManager:
         if user_id in self.active_connections:
             await self.disconnect(user_id)
 
-        self.active_connections[user_id] = {"ws": websocket, "last_active": time.time()}
+        self.active_connections[user_id] = {
+            "ws": websocket, "last_active": time.time()}
 
     async def disconnect(self, user_id: int):
         """主动断开并清理内存"""

@@ -258,7 +258,8 @@ async def db_get_message_history(
     else:
         # 第一次打开，没有游标
         rows = await conn.fetch(
-            query + f" ORDER BY cm.seq_id DESC LIMIT {limit};", user_id, conversation_id
+            query +
+            f" ORDER BY cm.seq_id DESC LIMIT {limit};", user_id, conversation_id
         )
 
     # 4. 格式化返回

@@ -14,7 +14,8 @@ async def init_db_pool():
 
     # 这个 URL 应该从 core/config.py 或 .env 文件中读取
     # 先写死
-    db_url = os.getenv("DATABASE_URL", "postgresql://postgres:123456@127.0.0.1:5432/im_db")
+    db_url = os.getenv(
+        "DATABASE_URL", "postgresql://postgres:123456@127.0.0.1:5432/im_db")
 
     try:
         db_pool = await asyncpg.create_pool(
@@ -47,7 +48,8 @@ def get_db_pool() -> asyncpg.Pool:
     """
     global db_pool
     if db_pool is None:
-        raise RuntimeError("数据库连接池尚未初始化！请确保在 FastAPI 的 lifespan 或测试 setup 中调用了 init_db_pool()")
+        raise RuntimeError(
+            "数据库连接池尚未初始化！请确保在 FastAPI 的 lifespan 或测试 setup 中调用了 init_db_pool()")
     return db_pool
 
 

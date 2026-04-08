@@ -13,7 +13,7 @@ from db.repositories.friend_repo import (
 from core.exceptions import BusinessException
 import asyncpg
 import time
-from core.ws_manager import manager # 1. 引入同事写的邮局
+from core.ws_manager import manager  # 1. 引入同事写的邮局
 
 
 async def apply_friend(
@@ -53,6 +53,7 @@ async def apply_friend(
     # 调用同事写的 manager，把通知发给 target_user_id
     # 注意：如果对方不在线，manager.send_personal_message 内部会自动处理（不会报错）
     await manager.send_personal_message(notification, target_user_id)
+
 
 async def handle_friend_request(
     db_session: asyncpg.Connection, current_user_id: int, request_id: int, action: str

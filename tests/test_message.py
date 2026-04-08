@@ -40,8 +40,10 @@ async def test_message_journey_and_edge_cases():
     async for conn in get_db_conn():
         hashed_pw = get_password_hash("password123")
         # 1. 创建两个用户
-        user_a_id = await db_create_user(conn, "msg_tester_A", hashed_pw, "msg_a@test.com")  # type: ignore
-        user_b_id = await db_create_user(conn, "msg_tester_B", hashed_pw, "msg_b@test.com")  # type: ignore
+        # type: ignore
+        user_a_id = await db_create_user(conn, "msg_tester_A", hashed_pw, "msg_a@test.com")
+        # type: ignore
+        user_b_id = await db_create_user(conn, "msg_tester_B", hashed_pw, "msg_b@test.com")
 
         # 2. 强行在底层创建一个会话，并把 A 和 B 拉入会话
         conv_id = await conn.fetchval("INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id;")
@@ -111,7 +113,8 @@ async def test_message_journey_and_edge_cases():
         assert len(history_data) >= 2
 
         # 验证引用关联是否正确
-        quote_msg = next((m for m in history_data if m.get("msg_id") == msg_2_id), None)
+        quote_msg = next(
+            (m for m in history_data if m.get("msg_id") == msg_2_id), None)
         assert quote_msg is not None
         assert quote_msg.get("quote_msg_id") == msg_1_id
 
