@@ -12,6 +12,8 @@ from db.repositories.friend_repo import (
 )
 from core.exceptions import BusinessException
 import asyncpg
+import time
+from core.ws_manager import manager # 1. 引入同事写的邮局
 
 
 async def apply_friend(
@@ -39,7 +41,18 @@ async def apply_friend(
         raise BusinessException(status_code=500, detail="好友申请发送失败")
 
     # 3. 可选：通过 WebSocket 实时通知目标用户（暂未实现）
+    notification = {
+        "type": "FRIEND_REQUEST_RECEIVED",  # 这是一个独特的类型标识
+        "data": {
+            "from_user_id": from_user_id,
+            "message": message or "请求添加你为好友",
+            "timestamp": int(time.time())  # 传个时间戳，方便前端排序或显示
+        }
+    }
 
+    # 调用同事写的 manager，把通知发给 target_user_id
+    # 注意：如果对方不在线，manager.send_personal_message 内部会自动处理（不会报错）
+    await manager.send_personal_message(notification, target_user_id)
 
 async def handle_friend_request(
     db_session: asyncpg.Connection, current_user_id: int, request_id: int, action: str

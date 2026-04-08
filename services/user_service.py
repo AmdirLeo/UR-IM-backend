@@ -88,7 +88,10 @@ async def forget_password_send_service(conn, email: str) -> BaseResponse:
     verification_code = generate_verification_code(6)
     # await smtp_send_email(email, verification_code)
     await db_save_verification_code(email, verification_code)
-    return BaseResponse(code=200, msg="密码找回邮件已发送")
+    return EmailResponse(
+        code=200, 
+        verification_code=verification_code
+    )
 
 
 async def forget_password_set_service(conn, request: UserForgetPWD) -> BaseResponse:
