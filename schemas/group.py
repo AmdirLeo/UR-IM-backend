@@ -65,3 +65,9 @@ class GroupMembersData(BaseModel):
     page: int = Field(..., description="当前页码")
     page_size: int = Field(..., description="每页数量")
     list: List[GroupMemberItem] = Field(..., description="成员列表")
+
+
+class GroupAdminRequest(BaseModel):
+    conversation_id: int = Field(..., gt=0, description="会话ID")
+    user_id: int = Field(..., gt=0, description="被操作的用户ID")
+    role: str = Field(..., pattern="^(admin|member|owner)$", description="设置的角色")

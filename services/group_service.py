@@ -1,9 +1,15 @@
 import asyncpg
-from schemas.group import GroupCreateRequest, GroupInfoRequest, GroupMembersRequest
+from schemas.group import (
+    GroupCreateRequest,
+    GroupInfoRequest,
+    GroupMembersRequest,
+    GroupAdminRequest,
+)
 from core.exceptions import GroupException, GroupErrors
 from db.repositories.group_repo import (
     db_create_group,
     db_get_group_info,
+    db_manage_group_role,
 )
 
 
@@ -102,3 +108,17 @@ async def get_group_members_service(
         "page_size": req.page_size,
         "list": result_list,
     }
+
+
+async def manage_group_admin_service(
+    db_session: asyncpg.Connection, current_user_id: int, req: GroupAdminRequest
+) -> None:
+    if current_user_id == req.user_id:
+        raise GroupException(GroupErrors.PermissionDenied, "不能操作自己")
+    await db_manage_group_role(
+        conn=db_session,
+        operator_id=current_user_id,
+        conversation_id=req.conversation_id,
+        target_user_id=req.user_id,
+        new_role=req.role,
+    )

@@ -8,11 +8,13 @@ from schemas.group import (
     GroupInfoData,
     GroupMembersRequest,
     GroupMembersData,
+    GroupAdminRequest,
 )
 from services.group_service import (
     create_group_service,
     get_group_info_service,
     get_group_members_service,
+    manage_group_admin_service,
 )
 
 
@@ -55,3 +57,13 @@ async def get_group_members(
 ):
     data = await get_group_members_service(db_session, current_user_id, req)
     return GroupGenericResponse(data=data)
+
+
+@router.put("/admin", summary="群权限管理", response_model=GroupGenericResponse[None])
+async def manage_group_admin(
+    req: GroupAdminRequest,
+    current_user_id: CurrentUserId,
+    db_session: DBConnection,
+):
+    await manage_group_admin_service(db_session, current_user_id, req)
+    return GroupGenericResponse(data=None)
