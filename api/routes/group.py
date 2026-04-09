@@ -18,6 +18,7 @@ from services.group_service import (
     manage_group_admin_service,
     remove_group_member_service,
     quit_group_service,
+    disband_group_service,
 )
 
 
@@ -89,4 +90,14 @@ async def quit_group(
     db_session: DBConnection,
 ):
     await quit_group_service(db_session, current_user_id, req)
+    return GroupGenericResponse(data=None)
+
+
+@router.post("/bomb", summary="解散群聊", response_model=GroupGenericResponse[None])
+async def bomb_group(
+    req: GroupGenericRequest,
+    current_user_id: CurrentUserId,
+    db_session: DBConnection,
+):
+    await disband_group_service(db_session, current_user_id, req)
     return GroupGenericResponse(data=None)

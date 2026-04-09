@@ -13,6 +13,7 @@ from db.repositories.group_repo import (
     db_manage_group_role,
     db_remove_group_member,
     db_quit_group,
+    db_disband_group,
 )
 
 
@@ -142,5 +143,13 @@ async def quit_group_service(
     db_session: asyncpg.Connection, current_user_id: int, req: GroupGenericRequest
 ) -> None:
     await db_quit_group(
+        conn=db_session, user_id=current_user_id, conversation_id=req.conversation_id
+    )
+
+
+async def disband_group_service(
+    db_session: asyncpg.Connection, current_user_id: int, req: GroupGenericRequest
+) -> None:
+    await db_disband_group(
         conn=db_session, user_id=current_user_id, conversation_id=req.conversation_id
     )
