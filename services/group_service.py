@@ -1,10 +1,13 @@
 import asyncpg
+import uuid
+from datetime import datetime, timezone
 from schemas.group import (
     GroupCreateRequest,
     GroupGenericRequest,
     GroupMembersRequest,
     GroupAdminRequest,
     GroupRemoveMemberRequest,
+    GroupAnnouncementRequest,
 )
 from core.exceptions import GroupException, GroupErrors
 from db.repositories.group_repo import (
@@ -14,7 +17,10 @@ from db.repositories.group_repo import (
     db_remove_group_member,
     db_quit_group,
     db_disband_group,
+    db_post_group_announcement,
 )
+from schemas.message import SendMessageRequest
+from services.message_service import send_message_service
 
 
 async def create_group_service(
@@ -153,3 +159,30 @@ async def disband_group_service(
     await db_disband_group(
         conn=db_session, user_id=current_user_id, conversation_id=req.conversation_id
     )
+
+
+async def post_group_announcement_service(
+    db_session: asyncpg.Connection, current_user_id: int, req: GroupAnnouncementRequest
+) -> dict:
+    # 插入公告到数据库
+    announcement_id = await db_post_group_announcement(
+        conn=db_session,
+        operator_id=current_user_id,
+        conversation_id=req.conversation_id,
+        content=req.msg,
+    )
+    # 构造发消息请求，将公告发到群里
+    msg_req = SendMessageRequest(
+        conversation_id=req.conversation_id,
+        local_id=str(uuid.uuid4()),
+        message_content=f"[群公告] {req.msg}",
+        msg_type="text",
+        quote_message_id=None,
+    )
+    # 调用 message 服务
+    send_res = await send_message_service(db_session, current_user_id, msg_req)
+    server_time = send_res.get("server_time") or datetime.now(timezone.utc)
+    return {
+        "time": server_time.isoformat(),
+        "announcement_id": announcement_id,
+    }

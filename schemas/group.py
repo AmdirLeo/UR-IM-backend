@@ -76,3 +76,13 @@ class GroupAdminRequest(BaseModel):
 class GroupRemoveMemberRequest(BaseModel):
     conversation_id: int = Field(..., gt=0, description="会话ID")
     user_id: int = Field(..., gt=0, description="被操作的用户ID")
+
+
+class GroupAnnouncementRequest(BaseModel):
+    conversation_id: int = Field(..., gt=0, description="会话ID")
+    msg: str = Field(..., min_length=1, description="公告内容")
+
+
+class GroupAnnouncementData(BaseModel):
+    time: str = Field(..., description="发布时间")
+    announcement_id: int = Field(..., description="公告ID")

@@ -10,6 +10,8 @@ from schemas.group import (
     GroupAdminRequest,
     GroupRemoveMemberRequest,
     GroupGenericRequest,
+    GroupAnnouncementRequest,
+    GroupAnnouncementData,
 )
 from services.group_service import (
     create_group_service,
@@ -19,6 +21,7 @@ from services.group_service import (
     remove_group_member_service,
     quit_group_service,
     disband_group_service,
+    post_group_announcement_service,
 )
 
 
@@ -101,3 +104,17 @@ async def bomb_group(
 ):
     await disband_group_service(db_session, current_user_id, req)
     return GroupGenericResponse(data=None)
+
+
+@router.post(
+    "/announcement",
+    summary="发布群公告",
+    response_model=GroupGenericResponse[GroupAnnouncementData],
+)
+async def post_group_announcement(
+    req: GroupAnnouncementRequest,
+    current_user_id: CurrentUserId,
+    db_session: DBConnection,
+):
+    data = await post_group_announcement_service(db_session, current_user_id, req)
+    return GroupGenericResponse(data=data)
