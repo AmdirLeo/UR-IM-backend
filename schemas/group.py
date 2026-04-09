@@ -95,3 +95,8 @@ class GroupInviteRequest(BaseModel):
 
 class GroupInviteData(BaseModel):
     apply_id: int = Field(..., description="邀请记录ID")
+
+
+class GroupInviteReviewRequest(BaseModel):
+    apply_id: int = Field(..., gt=0, description="邀请记录ID")
+    status: str = Field(..., pattern="^(APPROVED|IGNORED)$", description="审核操作")

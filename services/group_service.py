@@ -9,6 +9,7 @@ from schemas.group import (
     GroupRemoveMemberRequest,
     GroupAnnouncementRequest,
     GroupInviteRequest,
+    GroupInviteReviewRequest,
 )
 from core.exceptions import GroupException, GroupErrors
 from db.repositories.group_repo import (
@@ -20,6 +21,7 @@ from db.repositories.group_repo import (
     db_disband_group,
     db_post_group_announcement,
     db_invite_to_group,
+    db_review_group_invite,
 )
 from schemas.message import SendMessageRequest
 from services.message_service import send_message_service
@@ -200,3 +202,15 @@ async def invite_to_group_service(
         invitee_id=req.user_id,
     )
     return {"apply_id": invite_id}
+
+
+async def review_group_invite_service(
+    db_session: asyncpg.Connection, current_user_id: int, req: GroupInviteReviewRequest
+) -> None:
+    action = "approved" if req.status == "APPROVED" else "rejected"
+    await db_review_group_invite(
+        conn=db_session,
+        reviewer_id=current_user_id,
+        invite_id=req.apply_id,
+        action=action,
+    )
