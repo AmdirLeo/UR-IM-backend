@@ -63,7 +63,7 @@ async def get_group_info_service(
             top_members.append(
                 {
                     "user_id": m.get("member_user_id"),
-                    "user_name": m.get("user_name"),
+                    "user_name": m.get("username"),
                     "avatar_url": m.get("avatar_url"),
                     "role": m.get("role"),
                 }
@@ -74,10 +74,14 @@ async def get_group_info_service(
     latest_announcement = None
     if announcements:
         first_ann = announcements[0]
+
+        create_time_dt = first_ann.get("create_time")
+        create_time_int = int(create_time_dt.timestamp()) if create_time_dt else 0
+
         latest_announcement = {
             "announcement_id": first_ann.get("announcement_id"),
             "content": first_ann.get("content"),
-            "create_time": first_ann.get("create_time"),
+            "create_time": create_time_int,  # <--- 填入转换后的 int 变量
             "sender_name": first_ann.get("sender_name"),
         }
 
