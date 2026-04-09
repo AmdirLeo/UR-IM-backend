@@ -30,11 +30,11 @@ class GroupInfoRequest(BaseModel):
 class AnnouncementItem(BaseModel):
     announcement_id: int = Field(..., description="公告ID")
     content: str = Field(..., description="公告内容")
-    create_time: int = Field(..., description="创建时间(时间戳)") 
+    create_time: int = Field(..., description="创建时间(时间戳)")
     sender_name: str = Field(..., description="发送者名称")
 
 
-class TopMemberItem(BaseModel):
+class GroupMemberItem(BaseModel):
     user_id: int = Field(..., description="成员ID")
     user_name: str = Field(..., description="成员名称")
     avatar_url: Optional[str] = Field(None, description="头像地址")
@@ -51,4 +51,17 @@ class GroupInfoData(BaseModel):
     latest_announcement: Optional[AnnouncementItem] = Field(
         None, description="最新公告"
     )
-    top_members: List[TopMemberItem] = Field(..., description="前9成员")
+    top_members: List[GroupMemberItem] = Field(..., description="前9成员")
+
+
+class GroupMembersRequest(BaseModel):
+    conversation_id: int = Field(..., gt=0, description="会话ID")
+    page: int = Field(1, ge=1, description="当前页码")
+    page_size: int = Field(20, ge=1, le=100, description="每页数量")
+
+
+class GroupMembersData(BaseModel):
+    total: int = Field(..., description="总数")
+    page: int = Field(..., description="当前页码")
+    page_size: int = Field(..., description="每页数量")
+    list: List[GroupMemberItem] = Field(..., description="成员列表")

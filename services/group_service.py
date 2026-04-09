@@ -1,5 +1,5 @@
 import asyncpg
-from schemas.group import GroupCreateRequest, GroupInfoRequest
+from schemas.group import GroupCreateRequest, GroupInfoRequest, GroupMembersRequest
 from core.exceptions import GroupException, GroupErrors
 from db.repositories.group_repo import (
     db_create_group,
@@ -33,7 +33,7 @@ async def get_group_info_service(
     owner_id = 0
     my_role = ""
     top_members = []
-    
+
     for i, m in enumerate(members):
         if m.get("role") == "owner":
             owner_id = m.get("member_user_id")
@@ -70,4 +70,35 @@ async def get_group_info_service(
         "my_role": my_role,
         "latest_announcement": latest_announcement,
         "top_members": top_members,
+    }
+
+
+async def get_group_members_service(
+    db_session: asyncpg.Connection, current_user_id: int, req: GroupMembersRequest
+) -> dict:
+    # 复用 get_group_info 来获取成员列表
+    info = await db_get_group_info(db_session, current_user_id, req.conversation_id)
+    members = info.get("members", [])
+    total = len(members)
+    # 分页切片
+    start_idx = (req.page - 1) * req.page_size
+    end_idx = req.page * req.page_size
+    paged_members = members[start_idx:end_idx]
+    result_list = []
+
+    for m in paged_members:
+        result_list.append(
+            {
+                "user_id": m.get("member_user_id"),
+                "user_name": m.get("username"),
+                "avatar_url": m.get("avatar_url"),
+                "role": m.get("role"),
+            }
+        )
+
+    return {
+        "total": total,
+        "page": req.page,
+        "page_size": req.page_size,
+        "list": result_list,
     }

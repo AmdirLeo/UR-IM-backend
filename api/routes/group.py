@@ -6,10 +6,13 @@ from schemas.group import (
     GroupCreateData,
     GroupInfoRequest,
     GroupInfoData,
+    GroupMembersRequest,
+    GroupMembersData,
 )
 from services.group_service import (
     create_group_service,
     get_group_info_service,
+    get_group_members_service,
 )
 
 
@@ -37,4 +40,18 @@ async def get_group_info(
     db_session: DBConnection,
 ):
     data = await get_group_info_service(db_session, current_user_id, req)
+    return GroupGenericResponse(data=data)
+
+
+@router.post(
+    "/members",
+    summary="获取群聊成员列表",
+    response_model=GroupGenericResponse[GroupMembersData],
+)
+async def get_group_members(
+    req: GroupMembersRequest,
+    current_user_id: CurrentUserId,
+    db_session: DBConnection,
+):
+    data = await get_group_members_service(db_session, current_user_id, req)
     return GroupGenericResponse(data=data)
