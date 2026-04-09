@@ -86,3 +86,12 @@ class GroupAnnouncementRequest(BaseModel):
 class GroupAnnouncementData(BaseModel):
     time: str = Field(..., description="发布时间")
     announcement_id: int = Field(..., description="公告ID")
+
+
+class GroupInviteRequest(BaseModel):
+    conversation_id: int = Field(..., gt=0, description="会话ID")
+    user_id: int = Field(..., gt=0, description="被邀请的好友ID")
+
+
+class GroupInviteData(BaseModel):
+    apply_id: int = Field(..., description="邀请记录ID")

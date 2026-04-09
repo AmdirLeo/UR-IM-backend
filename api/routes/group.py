@@ -12,6 +12,8 @@ from schemas.group import (
     GroupGenericRequest,
     GroupAnnouncementRequest,
     GroupAnnouncementData,
+    GroupInviteRequest,
+    GroupInviteData,
 )
 from services.group_service import (
     create_group_service,
@@ -22,6 +24,7 @@ from services.group_service import (
     quit_group_service,
     disband_group_service,
     post_group_announcement_service,
+    invite_to_group_service,
 )
 
 
@@ -117,4 +120,16 @@ async def post_group_announcement(
     db_session: DBConnection,
 ):
     data = await post_group_announcement_service(db_session, current_user_id, req)
+    return GroupGenericResponse(data=data)
+
+
+@router.post(
+    "/invite", summary="成员邀请", response_model=GroupGenericResponse[GroupInviteData]
+)
+async def invite_to_group(
+    req: GroupInviteRequest,
+    current_user_id: CurrentUserId,
+    db_session: DBConnection,
+):
+    data = await invite_to_group_service(db_session, current_user_id, req)
     return GroupGenericResponse(data=data)

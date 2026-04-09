@@ -8,6 +8,7 @@ from schemas.group import (
     GroupAdminRequest,
     GroupRemoveMemberRequest,
     GroupAnnouncementRequest,
+    GroupInviteRequest,
 )
 from core.exceptions import GroupException, GroupErrors
 from db.repositories.group_repo import (
@@ -18,6 +19,7 @@ from db.repositories.group_repo import (
     db_quit_group,
     db_disband_group,
     db_post_group_announcement,
+    db_invite_to_group,
 )
 from schemas.message import SendMessageRequest
 from services.message_service import send_message_service
@@ -186,3 +188,15 @@ async def post_group_announcement_service(
         "time": server_time.isoformat(),
         "announcement_id": announcement_id,
     }
+
+
+async def invite_to_group_service(
+    db_session: asyncpg.Connection, current_user_id: int, req: GroupInviteRequest
+) -> dict:
+    invite_id = await db_invite_to_group(
+        conn=db_session,
+        inviter_id=current_user_id,
+        conversation_id=req.conversation_id,
+        invitee_id=req.user_id,
+    )
+    return {"apply_id": invite_id}
