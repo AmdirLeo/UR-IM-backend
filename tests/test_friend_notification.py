@@ -17,9 +17,9 @@ async def test_friend_request_realtime_notification():
         # 探测列名
         columns = await conn.fetch(
             "SELECT column_name FROM information_schema.columns WHERE table_name = 'user_account'"
-            )
-        print(
-            f"\n[DEBUG] user_account 表的列名有: {[col['column_name'] for col in columns]}")
+        )
+        print(f"\n[DEBUG] user_account 表的列名有: {
+            [col['column_name'] for col in columns]}")
         # ... 后面的代码
 
     # --- 【新增】造人逻辑：先在数据库里创建这两个用户 ---

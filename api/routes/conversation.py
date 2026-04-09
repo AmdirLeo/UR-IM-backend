@@ -31,7 +31,8 @@ async def sync(
     return ConversationGenericResponse(data=conversations)
 
 
-@router.post("/read_ack", summary="已读回执", response_model=ConversationGenericResponse[None])
+@router.post("/read_ack", summary="已读回执",
+             response_model=ConversationGenericResponse[None])
 async def read_acknowledgement(
     req: ReadAckRequest,
     current_user_id: CurrentUserId,
@@ -41,7 +42,8 @@ async def read_acknowledgement(
     return ConversationGenericResponse(data=None)
 
 
-@router.put("/mute", summary="消息免打扰", response_model=ConversationGenericResponse[None])
+@router.put("/mute", summary="消息免打扰",
+            response_model=ConversationGenericResponse[None])
 async def mute_conversation(
     req: ConversationMuteRequest,
     current_user_id: CurrentUserId,
@@ -51,7 +53,8 @@ async def mute_conversation(
     return ConversationGenericResponse(data=None)
 
 
-@router.put("/pin", summary="置顶会话", response_model=ConversationGenericResponse[None])
+@router.put("/pin", summary="置顶会话",
+            response_model=ConversationGenericResponse[None])
 async def pin_conversation(
     req: ConversationPinRequest,
     current_user_id: CurrentUserId,

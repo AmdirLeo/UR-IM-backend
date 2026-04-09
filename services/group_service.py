@@ -76,7 +76,8 @@ async def get_group_info_service(
         first_ann = announcements[0]
 
         create_time_dt = first_ann.get("create_time")
-        create_time_int = int(create_time_dt.timestamp()) if create_time_dt else 0
+        create_time_int = int(create_time_dt.timestamp()
+                              ) if create_time_dt else 0
 
         latest_announcement = {
             "announcement_id": first_ann.get("announcement_id"),

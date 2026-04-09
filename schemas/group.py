@@ -70,7 +70,9 @@ class GroupMembersData(BaseModel):
 class GroupAdminRequest(BaseModel):
     conversation_id: int = Field(..., gt=0, description="会话ID")
     user_id: int = Field(..., gt=0, description="被操作的用户ID")
-    role: str = Field(..., pattern="^(admin|member|owner)$", description="设置的角色")
+    role: str = Field(...,
+                      pattern="^(admin|member|owner)$",
+                      description="设置的角色")
 
 
 class GroupRemoveMemberRequest(BaseModel):
@@ -99,4 +101,6 @@ class GroupInviteData(BaseModel):
 
 class GroupInviteReviewRequest(BaseModel):
     apply_id: int = Field(..., gt=0, description="邀请记录ID")
-    status: str = Field(..., pattern="^(APPROVED|IGNORED)$", description="审核操作")
+    status: str = Field(...,
+                        pattern="^(APPROVED|IGNORED)$",
+                        description="审核操作")

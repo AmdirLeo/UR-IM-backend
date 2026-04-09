@@ -27,7 +27,9 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         if not is_valid:
             raise HTTPException(status_code=400, detail="密码错误")
     """
-    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+    return bcrypt.checkpw(
+        plain_password.encode("utf-8"),
+        hashed_password.encode("utf-8"))
 
 
 def get_password_hash(password: str) -> str:
@@ -46,7 +48,9 @@ def get_password_hash(password: str) -> str:
     return hashed_bytes.decode("utf-8")
 
 
-def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+def create_access_token(
+        data: dict,
+        expires_delta: timedelta | None = None) -> str:
     """
     生成 JWT Token。
 

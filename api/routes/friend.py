@@ -93,7 +93,9 @@ async def friend_handle(
     return FriendGenericResponse(code=200, msg=msg)
 
 
-@router.delete("/remove/{friend_user_id}", response_model=FriendGenericResponse, summary="删除好友")
+@router.delete("/remove/{friend_user_id}",
+               response_model=FriendGenericResponse,
+               summary="删除好友")
 async def delete_friend(
     # ⚠️ 同样，依赖前置，Path 参数后置
     current_user_id: CurrentUserId,
@@ -125,7 +127,9 @@ async def list_friends(
     return FriendListResponse(code=200, msg="获取成功", data=data)
 
 
-@router.post("/tag/new", response_model=FriendGenericResponse, summary="新建好友标签")
+@router.post("/tag/new",
+             response_model=FriendGenericResponse,
+             summary="新建好友标签")
 async def create_friend_tag(
     request: TagCreateRequest,
     current_user_id: CurrentUserId,
@@ -139,7 +143,9 @@ async def create_friend_tag(
     return FriendGenericResponse(code=200, msg="新建标签成功")
 
 
-@router.post("/tag/delete", response_model=FriendGenericResponse, summary="删除好友标签")
+@router.post("/tag/delete",
+             response_model=FriendGenericResponse,
+             summary="删除好友标签")
 async def delete_friend_tag(
     request: TagDeleteRequest,
     current_user_id: CurrentUserId,
@@ -153,7 +159,9 @@ async def delete_friend_tag(
     return FriendGenericResponse(code=200, msg="删除标签成功")
 
 
-@router.post("/tag/add", response_model=FriendGenericResponse, summary="将好友加入标签")
+@router.post("/tag/add",
+             response_model=FriendGenericResponse,
+             summary="将好友加入标签")
 async def add_friends_to_tag(
     request: TagAddFriendRequest,
     current_user_id: CurrentUserId,
@@ -168,7 +176,9 @@ async def add_friends_to_tag(
     return FriendGenericResponse(code=200, msg="添加好友到标签成功")
 
 
-@router.post("/tag/query", response_model=FriendTagQueryResponse, summary="查询标签内好友")
+@router.post("/tag/query",
+             response_model=FriendTagQueryResponse,
+             summary="查询标签内好友")
 async def query_friends_by_tag(
     request: TagQueryRequest,
     current_user_id: CurrentUserId,
@@ -182,7 +192,9 @@ async def query_friends_by_tag(
     return FriendTagQueryResponse(code=200, msg="查询成功", data=friends)
 
 
-@router.post("/tag/remove", response_model=FriendGenericResponse, summary="删除tag中的好友")
+@router.post("/tag/remove",
+             response_model=FriendGenericResponse,
+             summary="删除tag中的好友")
 async def remove_friend_from_tag(
     request: TagRemoveFriendRequest,
     current_user_id: CurrentUserId,

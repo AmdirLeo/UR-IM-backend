@@ -81,7 +81,8 @@ class FriendException(Exception):
 
 
 class MessageException(Exception):
-    def __init__(self, error_code: MessageErrors, message: Optional[str] = None):
+    def __init__(self, error_code: MessageErrors,
+                 message: Optional[str] = None):
         self.error_code = error_code
         self.message = message or error_code.value
 
@@ -187,7 +188,8 @@ def setup_exception_handlers(app):
             GroupErrors.InvalidReviewAction: (400, "无效的审核操作"),
             GroupErrors.InvalidRequest: (400, "请求参数不合法"),
         }
-        status_code, detail = error_mapping.get(exc.error_code, (500, "群模块未知错误"))
+        status_code, detail = error_mapping.get(
+            exc.error_code, (500, "群模块未知错误"))
 
         final_msg = exc.message if exc.message else detail
 
@@ -212,8 +214,11 @@ def setup_exception_handlers(app):
             error_detail = "数据格式错误"
 
         return JSONResponse(
-            status_code=422, content={"code": 422, "msg": error_detail, "data": None}
-        )
+            status_code=422,
+            content={
+                "code": 422,
+                "msg": error_detail,
+                "data": None})
 
     # 捕获所有未知的系统级崩溃 (兜底)
     @app.exception_handler(Exception)

@@ -154,7 +154,8 @@ async def test_group_journey_and_edge_cases():
             headers=headers_owner,
         )
         assert res_info.status_code == 200
-        assert res_info.json()["data"]["latest_announcement"]["content"] == "Assemble!"
+        assert res_info.json()[
+            "data"]["latest_announcement"]["content"] == "Assemble!"
         # ---------------------------------------------------------
         # 5. 管理员设置 (PUT /api/group/admin)
         # ---------------------------------------------------------

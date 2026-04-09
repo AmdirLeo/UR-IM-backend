@@ -46,7 +46,8 @@ async def db_get_conversation_list(
                 "conversation_name": row["conversation_name"],
                 # 格式化时间戳，防范新建群聊还没发消息导致 time 为 None 的情况
                 "last_msg_time": (
-                    row["last_msg_time"].isoformat() if row["last_msg_time"] else None
+                    row["last_msg_time"].isoformat(
+                    ) if row["last_msg_time"] else None
                 ),
                 "last_msg_preview": preview_text,
             }

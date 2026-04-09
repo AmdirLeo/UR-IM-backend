@@ -33,9 +33,8 @@ from services.group_service import (
 router = APIRouter()
 
 
-@router.post(
-    "/create", summary="创建群聊", response_model=GroupGenericResponse[GroupCreateData]
-)
+@router.post("/create", summary="创建群聊",
+             response_model=GroupGenericResponse[GroupCreateData])
 async def create_group(
     req: GroupCreateRequest,
     current_user_id: CurrentUserId,
@@ -45,9 +44,8 @@ async def create_group(
     return GroupGenericResponse(data=data)
 
 
-@router.post(
-    "/info", summary="获取群聊信息", response_model=GroupGenericResponse[GroupInfoData]
-)
+@router.post("/info", summary="获取群聊信息",
+             response_model=GroupGenericResponse[GroupInfoData])
 async def get_group_info(
     req: GroupGenericRequest,
     current_user_id: CurrentUserId,
@@ -71,7 +69,8 @@ async def get_group_members(
     return GroupGenericResponse(data=data)
 
 
-@router.put("/admin", summary="群权限管理", response_model=GroupGenericResponse[None])
+@router.put("/admin", summary="群权限管理",
+            response_model=GroupGenericResponse[None])
 async def manage_group_admin(
     req: GroupAdminRequest,
     current_user_id: CurrentUserId,
@@ -81,7 +80,8 @@ async def manage_group_admin(
     return GroupGenericResponse(data=None)
 
 
-@router.delete("/member", summary="移除群员", response_model=GroupGenericResponse[None])
+@router.delete("/member", summary="移除群员",
+               response_model=GroupGenericResponse[None])
 async def remove_group_member(
     req: GroupRemoveMemberRequest,
     current_user_id: CurrentUserId,
@@ -91,7 +91,8 @@ async def remove_group_member(
     return GroupGenericResponse(data=None)
 
 
-@router.post("/quit", summary="成员退出群聊", response_model=GroupGenericResponse[None])
+@router.post("/quit", summary="成员退出群聊",
+             response_model=GroupGenericResponse[None])
 async def quit_group(
     req: GroupGenericRequest,
     current_user_id: CurrentUserId,
@@ -101,7 +102,8 @@ async def quit_group(
     return GroupGenericResponse(data=None)
 
 
-@router.post("/bomb", summary="解散群聊", response_model=GroupGenericResponse[None])
+@router.post("/bomb", summary="解散群聊",
+             response_model=GroupGenericResponse[None])
 async def bomb_group(
     req: GroupGenericRequest,
     current_user_id: CurrentUserId,
@@ -125,9 +127,8 @@ async def post_group_announcement(
     return GroupGenericResponse(data=data)
 
 
-@router.post(
-    "/invite", summary="成员邀请", response_model=GroupGenericResponse[GroupInviteData]
-)
+@router.post("/invite", summary="成员邀请",
+             response_model=GroupGenericResponse[GroupInviteData])
 async def invite_to_group(
     req: GroupInviteRequest,
     current_user_id: CurrentUserId,

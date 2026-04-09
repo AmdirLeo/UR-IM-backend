@@ -21,7 +21,8 @@ from services.message_service import (
 router = APIRouter()
 
 
-@router.post("/send", summary="发送消息", response_model=MessageGenericResponse[SendMessageData])
+@router.post("/send", summary="发送消息",
+             response_model=MessageGenericResponse[SendMessageData])
 async def send_message(
     req: SendMessageRequest,
     current_user_id: CurrentUserId,

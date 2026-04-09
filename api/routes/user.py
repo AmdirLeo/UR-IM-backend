@@ -22,7 +22,9 @@ router = APIRouter()
 # ==========================================
 # 1. 注册与密码找回
 # ==========================================
-@router.post("/register/email", response_model=EmailResponse, summary="发送注册验证码")
+@router.post("/register/email",
+             response_model=EmailResponse,
+             summary="发送注册验证码")
 async def send_register_email(request: EmailRequest):
     return await user_service.send_register_email_service(request.email)
 
@@ -32,12 +34,16 @@ async def register(user_data: UserRegister, conn: DBConnection):
     return await user_service.register_service(conn, user_data)
 
 
-@router.post("/register/forgetpswdsend", response_model=EmailResponse, summary="忘记密码申请")
+@router.post("/register/forgetpswdsend",
+             response_model=EmailResponse,
+             summary="忘记密码申请")
 async def forget_password_send(request: EmailRequest, conn: DBConnection):
     return await user_service.forget_password_send_service(conn, request.email)
 
 
-@router.post("/register/forgetpswdset", response_model=BaseResponse, summary="忘记密码修改")
+@router.post("/register/forgetpswdset",
+             response_model=BaseResponse,
+             summary="忘记密码修改")
 async def forget_password_set(request: UserForgetPWD, conn: DBConnection):
     return await user_service.forget_password_set_service(conn, request)
 
