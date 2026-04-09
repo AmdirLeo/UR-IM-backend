@@ -23,7 +23,7 @@ class GroupCreateData(BaseModel):
     avatar: Optional[str] = Field(None, description="群头像")
 
 
-class GroupInfoRequest(BaseModel):
+class GroupGenericRequest(BaseModel):
     conversation_id: int = Field(..., gt=0, description="会话ID")
 
 

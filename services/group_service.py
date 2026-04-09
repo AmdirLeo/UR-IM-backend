@@ -1,7 +1,7 @@
 import asyncpg
 from schemas.group import (
     GroupCreateRequest,
-    GroupInfoRequest,
+    GroupGenericRequest,
     GroupMembersRequest,
     GroupAdminRequest,
     GroupRemoveMemberRequest,
@@ -12,6 +12,7 @@ from db.repositories.group_repo import (
     db_get_group_info,
     db_manage_group_role,
     db_remove_group_member,
+    db_quit_group,
 )
 
 
@@ -31,7 +32,7 @@ async def create_group_service(
 
 
 async def get_group_info_service(
-    db_session: asyncpg.Connection, current_user_id: int, req: GroupInfoRequest
+    db_session: asyncpg.Connection, current_user_id: int, req: GroupGenericRequest
 ) -> dict:
     # 调用底层接口，如果不在群里抛出 GroupErrors.NotInGroup
     info = await db_get_group_info(db_session, current_user_id, req.conversation_id)
@@ -134,4 +135,12 @@ async def remove_group_member_service(
         operator_id=current_user_id,
         conversation_id=req.conversation_id,
         target_user_id=req.user_id,
+    )
+
+
+async def quit_group_service(
+    db_session: asyncpg.Connection, current_user_id: int, req: GroupGenericRequest
+) -> None:
+    await db_quit_group(
+        conn=db_session, user_id=current_user_id, conversation_id=req.conversation_id
     )

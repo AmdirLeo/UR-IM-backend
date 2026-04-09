@@ -4,12 +4,12 @@ from schemas.group import (
     GroupGenericResponse,
     GroupCreateRequest,
     GroupCreateData,
-    GroupInfoRequest,
     GroupInfoData,
     GroupMembersRequest,
     GroupMembersData,
     GroupAdminRequest,
     GroupRemoveMemberRequest,
+    GroupGenericRequest,
 )
 from services.group_service import (
     create_group_service,
@@ -17,6 +17,7 @@ from services.group_service import (
     get_group_members_service,
     manage_group_admin_service,
     remove_group_member_service,
+    quit_group_service,
 )
 
 
@@ -39,7 +40,7 @@ async def create_group(
     "/info", summary="获取群聊信息", response_model=GroupGenericResponse[GroupInfoData]
 )
 async def get_group_info(
-    req: GroupInfoRequest,
+    req: GroupGenericRequest,
     current_user_id: CurrentUserId,
     db_session: DBConnection,
 ):
@@ -78,4 +79,14 @@ async def remove_group_member(
     db_session: DBConnection,
 ):
     await remove_group_member_service(db_session, current_user_id, req)
+    return GroupGenericResponse(data=None)
+
+
+@router.post("/quit", summary="成员退出群聊", response_model=GroupGenericResponse[None])
+async def quit_group(
+    req: GroupGenericRequest,
+    current_user_id: CurrentUserId,
+    db_session: DBConnection,
+):
+    await quit_group_service(db_session, current_user_id, req)
     return GroupGenericResponse(data=None)
