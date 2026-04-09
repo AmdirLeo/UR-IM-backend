@@ -71,3 +71,8 @@ class GroupAdminRequest(BaseModel):
     conversation_id: int = Field(..., gt=0, description="会话ID")
     user_id: int = Field(..., gt=0, description="被操作的用户ID")
     role: str = Field(..., pattern="^(admin|member|owner)$", description="设置的角色")
+
+
+class GroupRemoveMemberRequest(BaseModel):
+    conversation_id: int = Field(..., gt=0, description="会话ID")
+    user_id: int = Field(..., gt=0, description="被操作的用户ID")

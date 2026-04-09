@@ -9,12 +9,14 @@ from schemas.group import (
     GroupMembersRequest,
     GroupMembersData,
     GroupAdminRequest,
+    GroupRemoveMemberRequest,
 )
 from services.group_service import (
     create_group_service,
     get_group_info_service,
     get_group_members_service,
     manage_group_admin_service,
+    remove_group_member_service,
 )
 
 
@@ -66,4 +68,14 @@ async def manage_group_admin(
     db_session: DBConnection,
 ):
     await manage_group_admin_service(db_session, current_user_id, req)
+    return GroupGenericResponse(data=None)
+
+
+@router.delete("/member", summary="移除群员", response_model=GroupGenericResponse[None])
+async def remove_group_member(
+    req: GroupRemoveMemberRequest,
+    current_user_id: CurrentUserId,
+    db_session: DBConnection,
+):
+    await remove_group_member_service(db_session, current_user_id, req)
     return GroupGenericResponse(data=None)
