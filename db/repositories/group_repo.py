@@ -21,8 +21,8 @@ QUERY_GET_CONVERSATION_LIST = """
 
 
 async def db_get_conversation_list(
-        conn: asyncpg.Connection,
-        user_id: int) -> list[dict]:
+    conn: asyncpg.Connection, user_id: int
+) -> list[dict]:
     """
     获取用户的群聊列表 (按最新活跃时间排序，包含最后一条消息预览)
     """
@@ -45,7 +45,9 @@ async def db_get_conversation_list(
                 "conversation_id": row["conversation_id"],
                 "conversation_name": row["conversation_name"],
                 # 格式化时间戳，防范新建群聊还没发消息导致 time 为 None 的情况
-                "last_msg_time": (row["last_msg_time"].isoformat() if row["last_msg_time"] else None),
+                "last_msg_time": (
+                    row["last_msg_time"].isoformat() if row["last_msg_time"] else None
+                ),
                 "last_msg_preview": preview_text,
             }
         )
@@ -65,15 +67,11 @@ async def db_create_group(
     """
     async with conn.transaction():
         # 1. 插入会话基础信息
-        query_conv = (
-            "INSERT INTO conversation (type, conversation_name) VALUES ('group', $1) RETURNING conversation_id;"
-        )
+        query_conv = "INSERT INTO conversation (type, conversation_name) VALUES ('group', $1) RETURNING conversation_id;"
         conv_id = await conn.fetchval(query_conv, group_name)
 
         # 2. 插入群主 (owner)
-        query_owner = (
-            "INSERT INTO conversation_member (conversation_id, member_user_id, role) VALUES ($1, $2, 'owner');"
-        )
+        query_owner = "INSERT INTO conversation_member (conversation_id, member_user_id, role) VALUES ($1, $2, 'owner');"
         await conn.execute(query_owner, conv_id, creator_id)
 
         # 3. 批量插入普通群员
@@ -81,18 +79,15 @@ async def db_create_group(
         actual_members = list(set(member_ids) - {creator_id})
         if actual_members:
             records = [(conv_id, uid, "member") for uid in actual_members]
-            query_members = (
-                "INSERT INTO conversation_member (conversation_id, member_user_id, role) VALUES ($1, $2, $3);"
-            )
+            query_members = "INSERT INTO conversation_member (conversation_id, member_user_id, role) VALUES ($1, $2, $3);"
             await conn.executemany(query_members, records)
 
     return conv_id
 
 
 async def db_get_group_info(
-        conn: asyncpg.Connection,
-        user_id: int,
-        conversation_id: int) -> dict:
+    conn: asyncpg.Connection, user_id: int, conversation_id: int
+) -> dict:
     """
     获取群详细信息 (对应 POST /api/group/info)
     包含群基础信息、群成员列表和历史公告
@@ -120,7 +115,9 @@ async def db_get_group_info(
             CASE role WHEN 'owner' THEN 1 WHEN 'admin' THEN 2 ELSE 3 END,
             cm.join_time ASC;
     """
-    info["members"] = [dict(row) for row in await conn.fetch(query_members, conversation_id)]
+    info["members"] = [
+        dict(row) for row in await conn.fetch(query_members, conversation_id)
+    ]
 
     # 4. 拉取历史公告
     query_announcements = """
@@ -130,15 +127,16 @@ async def db_get_group_info(
         WHERE a.conversation_id = $1
         ORDER BY a.is_pinned DESC, a.create_time DESC;
     """
-    info["announcements"] = [dict(row) for row in await conn.fetch(query_announcements, conversation_id)]
+    info["announcements"] = [
+        dict(row) for row in await conn.fetch(query_announcements, conversation_id)
+    ]
 
     return info
 
 
 async def db_quit_group(
-        conn: asyncpg.Connection,
-        user_id: int,
-        conversation_id: int) -> None:
+    conn: asyncpg.Connection, user_id: int, conversation_id: int
+) -> None:
     """
     退出群聊 (对应 POST /api/group/quit)
     """
@@ -158,16 +156,17 @@ async def db_quit_group(
 
 
 async def db_disband_group(
-        conn: asyncpg.Connection,
-        user_id: int,
-        conversation_id: int) -> None:
+    conn: asyncpg.Connection, user_id: int, conversation_id: int
+) -> None:
     """
     解散群聊 (对应 POST /api/group/bomb)
     """
     role = await conn.fetchval(QUERY_GET_MEMBER_ROLE, conversation_id, user_id)
     if role != "owner":
         raise GroupException(GroupErrors.PermissionDenied)
-    await conn.execute("DELETE FROM conversation WHERE conversation_id = $1;", conversation_id)
+    await conn.execute(
+        "DELETE FROM conversation WHERE conversation_id = $1;", conversation_id
+    )
 
 
 async def db_remove_group_member(
@@ -230,12 +229,16 @@ async def db_manage_group_role(
         raise GroupException(GroupErrors.InvalidRole)
 
     # 1. 只有现任群主才有资格分配权限
-    operator_role = await conn.fetchval(QUERY_GET_MEMBER_ROLE, conversation_id, operator_id)
+    operator_role = await conn.fetchval(
+        QUERY_GET_MEMBER_ROLE, conversation_id, operator_id
+    )
     if operator_role != "owner":
         raise GroupException(GroupErrors.PermissionDenied)
 
     # 2. 确认目标在群里
-    target_role = await conn.fetchval(QUERY_GET_MEMBER_ROLE, conversation_id, target_user_id)
+    target_role = await conn.fetchval(
+        QUERY_GET_MEMBER_ROLE, conversation_id, target_user_id
+    )
     if not target_role:
         raise GroupException(GroupErrors.NotInGroup)
 
@@ -276,7 +279,9 @@ async def db_post_group_announcement(
     返回新生成的公告 ID
     """
     # 1. 鉴权：必须是 owner 或 admin
-    operator_role = await conn.fetchval(QUERY_GET_MEMBER_ROLE, conversation_id, operator_id)
+    operator_role = await conn.fetchval(
+        QUERY_GET_MEMBER_ROLE, conversation_id, operator_id
+    )
     if operator_role not in ("owner", "admin"):
         raise GroupException(GroupErrors.PermissionDenied)
 
@@ -286,15 +291,15 @@ async def db_post_group_announcement(
         VALUES ($1, $2, $3, $4)
         RETURNING announcement_id;
     """
-    announcement_id = await conn.fetchval(query, conversation_id, operator_id, content, is_pinned)
+    announcement_id = await conn.fetchval(
+        query, conversation_id, operator_id, content, is_pinned
+    )
     return announcement_id
 
 
 async def db_invite_to_group(
-        conn: asyncpg.Connection,
-        inviter_id: int,
-        conversation_id: int,
-        invitee_id: int) -> int:
+    conn: asyncpg.Connection, inviter_id: int, conversation_id: int, invitee_id: int
+) -> int:
     """
     邀请好友加入群聊 (对应 POST /api/group/invite)
     产生一条 pending 状态的邀请记录，等待审核
@@ -305,7 +310,9 @@ async def db_invite_to_group(
         raise GroupException(GroupErrors.CannotInviteSelf)
 
     # 2. 校验邀请人必须在群里
-    inviter_role = await conn.fetchval(QUERY_GET_MEMBER_ROLE, conversation_id, inviter_id)
+    inviter_role = await conn.fetchval(
+        QUERY_GET_MEMBER_ROLE, conversation_id, inviter_id
+    )
     if not inviter_role:
         raise GroupException(GroupErrors.NotInGroup)
 
@@ -341,10 +348,8 @@ async def db_invite_to_group(
 
 
 async def db_review_group_invite(
-        conn: asyncpg.Connection,
-        reviewer_id: int,
-        invite_id: int,
-        action: str) -> None:
+    conn: asyncpg.Connection, reviewer_id: int, invite_id: int, action: str
+) -> None:
     """
     审核群邀请 (对应 PUT /api/group/invite/review)
     action 必须是 'approved' 或 'rejected'
@@ -363,18 +368,23 @@ async def db_review_group_invite(
     invitee_id = invite_record["invitee_id"]
 
     # 2. 核心鉴权：审核人必须是这个群的 owner 或 admin
-    reviewer_role = await conn.fetchval(QUERY_GET_MEMBER_ROLE, conversation_id, reviewer_id)
+    reviewer_role = await conn.fetchval(
+        QUERY_GET_MEMBER_ROLE, conversation_id, reviewer_id
+    )
     if reviewer_role not in ("owner", "admin"):
         raise GroupException(GroupErrors.PermissionDenied)
 
     # 3. 开启强事务处理审核结果
     async with conn.transaction():
         # a. 更新邀请状态
-        await conn.execute(
-            "UPDATE group_invite SET status = $1 WHERE invite_id = $2;",
+        result = await conn.execute(
+            "UPDATE group_invite SET status = $1 WHERE invite_id = $2 AND status = 'pending';",
             action,
             invite_id,
         )
+
+        if result == "UPDATE 0":
+            raise GroupException(GroupErrors.InviteNotFound)
 
         # b. 如果通过了，就把人拉进群
         if action == "approved":
