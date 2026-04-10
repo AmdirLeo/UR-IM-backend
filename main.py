@@ -1,6 +1,6 @@
 import asyncio
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import uvicorn
@@ -10,6 +10,8 @@ from core.config import settings
 from core.exceptions import setup_exception_handlers
 from core.ws_manager import manager
 from api.routes import friend, message, user, websocket
+from api.dependencies import RateLimiter
+from api.middleware import MultiLayerRateLimitMiddleware
 
 # 导入数据库连接池生命周期函数
 from db.database import init_db_pool, close_db_pool, init_system_data
@@ -43,6 +45,8 @@ app = FastAPI(
 )
 
 # 跨域中间件
+app.add_middleware(MultiLayerRateLimitMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

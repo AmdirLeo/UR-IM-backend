@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, UploadFile, File
-from api.dependencies import CurrentUserId, DBConnection
+from api.dependencies import CurrentUserId, DBConnection, vcode_limit_check
 from schemas.user import (
     UserRegister,
     RegisterResponse,
@@ -22,7 +22,11 @@ router = APIRouter()
 # ==========================================
 # 1. 注册与密码找回
 # ==========================================
-@router.post("/register/email", response_model=EmailResponse, summary="发送注册验证码")
+@router.post(
+    "/register/email",
+    response_model=EmailResponse,
+    summary="发送注册验证码",
+    dependencies=[Depends(vcode_limit_check)])
 async def send_register_email(request: EmailRequest):
     return await user_service.send_register_email_service(request.email)
 

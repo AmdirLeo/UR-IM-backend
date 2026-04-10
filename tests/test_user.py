@@ -129,14 +129,14 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         # ---------------------------------------------------------
         response = await client.post(LOGIN_API_PATH, json={"id": VALID_EMAIL, "password": "wrong_password"})
         assert response.status_code == 400
-        assert response.json()["msg"] == "密码错误"
+        assert response.json()["msg"] == "账号不存在或密码错误"
 
         response = await client.post(
             LOGIN_API_PATH,
             json={"id": "nonexistent@example.com", "password": VALID_PASSWORD},
         )
         assert response.status_code == 400
-        assert response.json()["msg"] == "账号不存在"
+        assert response.json()["msg"] == "账号不存在或密码错误"
 
         # ---------------------------------------------------------
         # 6. Login successfully -> obtain JWT token
