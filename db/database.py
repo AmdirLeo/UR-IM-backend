@@ -5,6 +5,25 @@ import os
 db_pool: asyncpg.Pool | None = None
 
 
+async def init_system_data():
+    """在服务启动时自检并初始化系统账号"""
+    print("正在进行系统自检...")
+    # get_db_conn 通常是一个依赖生成器 (async generator)，拿一条连接用完即毁
+    async for conn in get_db_conn():
+        try:
+            # 这里的 ON CONFLICT (user_id) DO NOTHING 是灵魂！
+            # 保证了每次重启服务都不会重复插入，也不会报错。
+            await conn.execute("""
+                INSERT INTO user_account (user_id, username, password, email)
+                VALUES (10000, '系统通知助手', 'system_fake_password', 'system@ur-im.com')
+                ON CONFLICT (user_id) DO NOTHING;
+            """)
+            print("系统核心数据自检完毕：系统助手(10000)已就绪。")
+        except Exception as e:
+            print(f"系统核心数据自检失败: {e}")
+        break  # 取一次连接执行完毕就主动跳出循环
+
+
 async def init_db_pool():
     """
     初始化全局数据库连接池。

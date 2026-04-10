@@ -12,7 +12,7 @@ from core.ws_manager import manager
 from api.routes import friend, message, user, websocket
 
 # 导入数据库连接池生命周期函数
-from db.database import init_db_pool, close_db_pool
+from db.database import init_db_pool, close_db_pool, init_system_data
 
 
 @asynccontextmanager
@@ -20,6 +20,7 @@ async def lifespan(app: FastAPI):
     # ---------- 启动阶段 ----------
     # 1. 初始化数据库连接池（若失败则应用无法启动）
     await init_db_pool()
+    await init_system_data()
 
     # 2. 启动 WebSocket 心跳巡检后台任务
     heartbeat_task = asyncio.create_task(manager.check_heartbeats())

@@ -11,8 +11,12 @@ from db.repositories.friend_repo import (
     db_remove_friend_from_tag,
 )
 from core.exceptions import BusinessException
+from schemas.message import SendMessageRequest
+# 引入发消息服务（请根据你的实际项目结构调整导入路径）
+from services.message_service import send_message_service
 import asyncpg
 import time
+import uuid
 from core.ws_manager import manager  # 1. 引入同事写的邮局
 
 
@@ -59,19 +63,60 @@ async def handle_friend_request(
     db_session: asyncpg.Connection, current_user_id: int, request_id: int, action: str
 ) -> None:
     """
-    处理好友申请的业务逻辑。
+    处理好友申请的业务逻辑，并附带发送系统通知。
     """
 
     # 调用 repo 层的事务函数执行更新（同意或拒绝）
-    success = await db_handle_friend_request(
-        db_session,
+    db_result = await db_handle_friend_request(
+        conn=db_session,
         request_id=request_id,
         current_user_id=current_user_id,
         action=action,
     )
-    if not success:
+    if not db_result:
         # 如果失败（例如申请状态已变更或不存在），抛出异常
         raise BusinessException(status_code=400, detail="处理失败，请稍后重试")
+
+    # 提取最初发起好友申请的人的 ID
+    sender_id = db_result["friend_id"]
+
+    # ==========================================
+    # 2. 查找对方与系统助手(10000号)的专属会话
+    # ==========================================
+    find_system_conv_query = """
+        SELECT c.conversation_id
+        FROM conversation c
+        JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
+        JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+        WHERE c.type = 'private'
+          AND cm1.member_user_id = $1
+          AND cm2.member_user_id = 10000;
+    """
+    system_conv_id = await db_session.fetchval(find_system_conv_query, sender_id)
+
+    # ==========================================
+    # 3. 如果找到了系统会话，立刻推送 WebSocket 通知！
+    # ==========================================
+    if system_conv_id:
+        # 根据用户的操作，定制不同的系统提示语
+        if action == "accepted":
+            msg_content = f"好消息！用户ID: {current_user_id} 已同意你的好友申请，快去打个招呼吧！"
+        else:
+            msg_content = f"很遗憾，用户ID: {current_user_id} 拒绝了你的好友申请。"
+
+        system_req = SendMessageRequest(
+            conversation_id=system_conv_id,
+            message_content=msg_content,
+            msg_type="text",
+            local_id=str(uuid.uuid4())  # 后端随机生成一个临时包 ID 即可
+        )
+
+        # 调起我们写好的发消息接口，身份为上帝账号 (10000)
+        await send_message_service(
+            db_session=db_session,
+            user_id=10000,
+            req=system_req
+        )
 
 
 async def remove_friend(db_session: asyncpg.Connection, current_user_id: int, friend_user_id: int) -> None:

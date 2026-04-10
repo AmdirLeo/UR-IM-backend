@@ -55,6 +55,14 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
     全量用户的 E2E 测试。必须使用 AsyncClient。
     """
 
+    async for conn in get_db_conn():
+        await conn.execute("""
+            INSERT INTO user_account (user_id, username, password, email)
+            VALUES (10000, '系统通知助手', 'system_fake_password', 'system@ur-im.com')
+            ON CONFLICT (user_id) DO NOTHING;
+        """)
+        break
+
     # 核心：使用 AsyncClient 替代 TestClient
     async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:
 
