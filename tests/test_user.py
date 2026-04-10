@@ -225,12 +225,12 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         assert response.status_code == 200
 
         response = await client.put(
-        "/api/users/edit",
-        json={
-            "old_password": "wrong_password_haha",
-            "new_password": "new_password123",
-        },
-        headers=auth_headers,
+            "/api/users/edit",
+            json={
+                "old_password": "wrong_password_haha",
+                "new_password": "new_password123",
+            },
+            headers=auth_headers,
         )
         assert response.status_code == 400
         assert "密码错误" in response.text
@@ -239,11 +239,11 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
             "/api/users/edit/email",  # 注意核对一下你的真实路由是不是这个
             json={
                 "password": "password123",               # 补上必填的密码
-                "new-email": "new_email@tsinghua.edu.cn" # 使用 alias 规定的键名
+                "new-email": "new_email@tsinghua.edu.cn"  # 使用 alias 规定的键名
             },
             headers=auth_headers,
         )
-        
+
         # 兼容路由可能叫单数形式的情况
         if response.status_code == 404:
             response = await client.put(
@@ -366,7 +366,6 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
             if os.path.exists(saved_path):
                 os.remove(saved_path)  # 清理测试产生的图片
 
-
         # 测试上传超过 2MB 的超大文件会被拒绝
         # 1. 伪造一个大于 2MB 的垃圾数据 (2MB + 1KB)
         large_file_content = b"0" * (2 * 1024 * 1024 + 1024)
@@ -382,10 +381,13 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         # 4. 断言结果：期望被拦截，并返回 400 状态码
         assert response.status_code == 400
         assert "不能超过 2MB" in response.text
-        
-        
+
         # 上传 txt 文件作为头像
-        files = {"file": ("test.txt", b"Hello, I am a text file", "text/plain")}
+        files = {
+            "file": (
+                "test.txt",
+                b"Hello, I am a text file",
+                "text/plain")}
         response = await client.put("/api/user/edit/portrait", files=files, headers=auth_headers)
 
         assert response.status_code == 400

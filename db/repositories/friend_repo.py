@@ -181,8 +181,8 @@ async def db_get_friend_requests(
     # 动态拼接游标
     if cursor_req_id:
         query = (
-            base_query + " AND fr.request_id < $2 ORDER BY fr.request_id DESC LIMIT $3;"
-        )
+            base_query +
+            " AND fr.request_id < $2 ORDER BY fr.request_id DESC LIMIT $3;")
         rows = await conn.fetch(query, user_id, cursor_req_id, limit)
     else:
         query = base_query + " ORDER BY fr.request_id DESC LIMIT $2;"
