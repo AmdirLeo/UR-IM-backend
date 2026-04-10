@@ -39,16 +39,18 @@ class ConnectionManager:
 
     async def send_personal_message(self, message: dict, user_id: int):
         if user_id in self.active_connections:
-            ws = self.active_connections[user_id]["ws"]
+            ws: WebSocket = self.active_connections[user_id]["ws"]
             try:
                 await ws.send_json(message)
-            except Exception:
+            except Exception as e:
                 # 发送失败说明连接已断，直接清理
+                print(f"❌ 给用户 {user_id} 发送消息失败: {e}")
                 await self.disconnect(user_id)
 
     async def broadcast(self, message: dict):
         # 为了避免在遍历字典时修改字典引发报错，先拷贝一份 user_id 列表
-        for user_id in self.active_connections.keys():
+        user_ids = list(self.active_connections.keys())
+        for user_id in user_ids:
             await self.send_personal_message(message, user_id)
 
     async def purge_timeouts(self):
