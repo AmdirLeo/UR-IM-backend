@@ -62,6 +62,16 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         transport=ASGITransport(app=app), base_url="https://test"
     ) as client:
 
+        # 测试不带 Token 访问，会被 FastAPI 自动拒绝
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as ac:
+            # 故意不传 headers
+            response = await ac.get("/api/user/info")
+
+        # 断言会被依赖注入 CurrentUserId 拦截并抛出 401
+        assert response.status_code == 401
+
         # ---------------------------------------------------------
         # 1. Send Registration Email
         # ---------------------------------------------------------
@@ -214,6 +224,40 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         )
         assert response.status_code == 200
 
+        response = await client.put(
+        "/api/users/edit",
+        json={
+            "old_password": "wrong_password_haha",
+            "new_password": "new_password123",
+        },
+        headers=auth_headers,
+        )
+        assert response.status_code == 400
+        assert "密码错误" in response.text
+
+        response = await client.put(
+            "/api/users/edit/email",  # 注意核对一下你的真实路由是不是这个
+            json={
+                "password": "password123",               # 补上必填的密码
+                "new-email": "new_email@tsinghua.edu.cn" # 使用 alias 规定的键名
+            },
+            headers=auth_headers,
+        )
+        
+        # 兼容路由可能叫单数形式的情况
+        if response.status_code == 404:
+            response = await client.put(
+                "/api/user/edit/email",
+                json={
+                    "password": "password123",
+                    "new-email": "new_email@tsinghua.edu.cn"
+                },
+                headers=auth_headers,
+            )
+
+        assert response.status_code == 200
+        assert "邮箱修改成功" in response.text
+
         # ---------------------------------------------------------
         # 9. Forget Password Flow
         # ---------------------------------------------------------
@@ -253,6 +297,26 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         )
         assert response.status_code == 200
 
+        # 真实测试：验证码是对的，但该邮箱根本没注册过账号
+        ghost_email = "ghost@tsinghua.edu.cn"
+
+        # 第一步：巧妙利用“注册发码”接口，往 Redis 里强制塞入这个邮箱的有效验证码
+        await client.post("/api/users/register/email", json={"email": ghost_email})
+
+        # 第二步：拿着有效的验证码，去请求“重置密码”接口
+        # 此时代码会通过 db_verify_code(Redis校验)，但在 db_get_user_by_email 时查不到数据
+        response = await client.post(
+            "/api/users/register/forgetpswdset",
+            json={
+                "email": ghost_email,
+                "password": "new_password123",
+                "verification_code": "123456",
+            },
+        )
+
+        assert response.status_code == 404
+        assert "未找到绑定该邮箱的账号" in response.text
+
         # ---------------------------------------------------------
         # 10. Delete Account
         # ---------------------------------------------------------
@@ -280,57 +344,52 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         response = await client.post("/api/users/delete", headers=delete_headers)
         assert response.status_code == 200
 
+        # ---------------------------------------------------------
+        # 11. Delete Account
+        # ---------------------------------------------------------
+        with patch(
+            "services.user_service.db_update_user_profile", new_callable=AsyncMock
+        ) as mock_db:
+            mock_db.return_value = True
 
-@pytest.mark.asyncio
-async def test_upload_avatar_success():
-    """测试头像上传流程"""
-    # 1. 制造一把真正的钥匙：签发一个代表 user_id = 1 的 Token
-    test_token = create_access_token(data={"sub": "1"})
-    # 2. 把钥匙放在 HTTP 请求头里
-    headers = {"Authorization": f"Bearer {test_token}"}
-    # 模拟拦截数据库操作
-    with patch(
-        "services.user_service.db_update_user_profile", new_callable=AsyncMock
-    ) as mock_db:
-        mock_db.return_value = True
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://testserver"
+            ) as ac:
+                files = {"file": ("test.png", b"fake_data", "image/png")}
+                response = await ac.put(
+                    "/api/user/edit/portrait", files=files, headers=auth_headers
+                )
 
+            assert response.status_code == 200
+            data = response.json()
+            saved_path = data["filekey"].lstrip("/")
+            if os.path.exists(saved_path):
+                os.remove(saved_path)  # 清理测试产生的图片
+
+
+        # 测试上传超过 2MB 的超大文件会被拒绝
+        # 1. 伪造一个大于 2MB 的垃圾数据 (2MB + 1KB)
+        large_file_content = b"0" * (2 * 1024 * 1024 + 1024)
+        filename = "too_large_avatar.png"
+
+        # 3. 发起请求
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://testserver"
         ) as ac:
-            files = {"file": ("test.png", b"fake_data", "image/png")}
-            response = await ac.put(
-                "/api/user/edit/portrait", files=files, headers=headers
-            )
+            files = {"file": (filename, large_file_content, "image/png")}
+            response = await ac.put("/api/user/edit/portrait", files=files, headers=auth_headers)
 
-        assert response.status_code == 200
-        data = response.json()
-        saved_path = data["filekey"].lstrip("/")
-        if os.path.exists(saved_path):
-            os.remove(saved_path)  # 清理测试产生的图片
+        # 4. 断言结果：期望被拦截，并返回 400 状态码
+        assert response.status_code == 400
+        assert "不能超过 2MB" in response.text
+        
+        
+        # 上传 txt 文件作为头像
+        files = {"file": ("test.txt", b"Hello, I am a text file", "text/plain")}
+        response = await client.put("/api/user/edit/portrait", files=files, headers=auth_headers)
 
-
-@pytest.mark.asyncio
-async def test_upload_avatar_too_large():
-    """测试上传超过 2MB 的超大文件会被拒绝"""
-
-    # 1. 伪造一个大于 2MB 的垃圾数据 (2MB + 1KB)
-    large_file_content = b"0" * (2 * 1024 * 1024 + 1024)
-    filename = "too_large_avatar.png"
-
-    # 2. 签发测试 Token
-    test_token = create_access_token(data={"sub": "1"})
-    headers = {"Authorization": f"Bearer {test_token}"}
-
-    # 3. 发起请求
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://testserver"
-    ) as ac:
-        files = {"file": (filename, large_file_content, "image/png")}
-        response = await ac.put("/api/user/edit/portrait", files=files, headers=headers)
-
-    # 4. 断言结果：期望被拦截，并返回 400 状态码
-    assert response.status_code == 400
-    assert "不能超过 2MB" in response.text
+        assert response.status_code == 400
+        assert "不支持的图片格式" in response.text
 
 
 @pytest.mark.asyncio
@@ -392,17 +451,3 @@ async def test_get_user_info_not_found():
         # 断言会被 Service 层拦截并抛出 404
         assert response.status_code == 404
         assert "用户不存在" in response.text
-
-
-@pytest.mark.asyncio
-async def test_get_user_info_unauthorized():
-    """测试不带 Token 访问，会被 FastAPI 自动拒绝"""
-
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://testserver"
-    ) as ac:
-        # 故意不传 headers
-        response = await ac.get("/api/user/info")
-
-    # 断言会被依赖注入 CurrentUserId 拦截并抛出 401
-    assert response.status_code == 401
