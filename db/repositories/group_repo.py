@@ -70,12 +70,15 @@ async def db_create_group(
     async with conn.transaction():
         # 1. 插入会话基础信息
         query_conv = (
-            "INSERT INTO conversation (type, conversation_name, avatar_url) VALUES ('group', $1, $2) RETURNING conversation_id;"
+            "INSERT INTO conversation (type, conversation_name, avatar_url) "
+            "VALUES ('group', $1, $2) RETURNING conversation_id;"
         )
         conv_id = await conn.fetchval(query_conv, group_name, avatar_url)
 
         # 2. 插入群主 (owner)
-        query_owner = "INSERT INTO conversation_member (conversation_id, member_user_id, role) VALUES ($1, $2, 'owner');"
+        query_owner = (
+            "INSERT INTO conversation_member (conversation_id, member_user_id, role) "
+            "VALUES ($1, $2, 'owner');")
         await conn.execute(query_owner, conv_id, creator_id)
 
         # 3. 批量插入普通群员
@@ -83,7 +86,9 @@ async def db_create_group(
         actual_members = list(set(member_ids) - {creator_id})
         if actual_members:
             records = [(conv_id, uid, "member") for uid in actual_members]
-            query_members = "INSERT INTO conversation_member (conversation_id, member_user_id, role) VALUES ($1, $2, $3);"
+            query_members = (
+                "INSERT INTO conversation_member (conversation_id, member_user_id, role) "
+                "VALUES ($1, $2, $3);")
             await conn.executemany(query_members, records)
 
     return conv_id

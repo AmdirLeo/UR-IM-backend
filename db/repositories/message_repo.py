@@ -508,7 +508,9 @@ async def db_sync_conversations(conn: asyncpg.Connection, user_id: int) -> list[
 
         -- 剩下的连表逻辑不变，为了获取最后一条消息的内容
         LEFT JOIN message m ON c.last_msg_id = m.msg_id
-        LEFT JOIN conversation_message cm_last ON m.msg_id = cm_last.msg_id AND cm_last.conversation_id = c.conversation_id
+        LEFT JOIN conversation_message cm_last
+            ON m.msg_id = cm_last.msg_id
+            AND cm_last.conversation_id = c.conversation_id
 
         ORDER BY c.last_msg_time DESC NULLS LAST;
     """
