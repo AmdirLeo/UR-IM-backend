@@ -143,14 +143,14 @@ async def login_service(conn, login_data: UserLogin) -> LoginResponse:
             user["password"] = await db_get_password_by_id(conn, user_id)
 
     if not user:
-        raise BusinessException(status_code=400, detail="账号不存在")
+        raise BusinessException(status_code=400, detail="账号不存在或密码错误")
 
     hashed_pwd = user["password"]
     if not hashed_pwd:
         raise BusinessException(status_code=400, detail="账号数据异常，请联系管理员")
 
     if not verify_password(login_data.password, hashed_pwd):
-        raise BusinessException(status_code=400, detail="密码错误")
+        raise BusinessException(status_code=400, detail="账号不存在或密码错误")
 
     await db_update_user_login_time(conn, user["user_id"])
     access_token = create_access_token(data={"sub": str(user["user_id"])})
