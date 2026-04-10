@@ -44,6 +44,7 @@ CREATE TABLE conversation (
     conversation_id BIGSERIAL PRIMARY KEY,
     type VARCHAR(20) NOT NULL,             -- 会话类型：'private' (单聊) 或 'group' (群聊)
     conversation_name VARCHAR(255),        -- 群名称（私聊可为空）
+    avatar_url VARCHAR(1024),
     announcement TEXT,                     -- 群公告
     create_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     last_msg_id BIGINT,                    -- 全局id
