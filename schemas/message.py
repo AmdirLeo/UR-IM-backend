@@ -1,8 +1,16 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, TypeVar, Generic
+from enum import Enum
 
 T = TypeVar("T")
+
+
+class MessageType(str, Enum):
+    TEXT = "text"
+    IMAGE = "image"
+    FRIEND_APPLY = "friend_apply"   # 好友申请卡片
+    SYSTEM_NOTICE = "system_notice"  # 纯文本系统提示（如：XXX已退出群聊）
 
 
 class MessageGenericResponse(BaseModel, Generic[T]):
@@ -21,8 +29,8 @@ class SendMessageRequest(BaseModel):
         description="客户端生成的本地消息 ID",
     )
     message_content: str = Field(..., min_length=1,
-                                 max_length=1000, description="消息内容")
-    msg_type: str = Field(..., pattern="^(text|image)$", description="消息类型")
+                                 max_length=5000, description="消息内容")
+    msg_type: MessageType = Field(default=MessageType.TEXT, description="消息类型")
     quote_message_id: Optional[int] = Field(None, description="当前信息所引用的信息的id")
 
 
@@ -45,7 +53,7 @@ class MessageHistoryRequest(BaseModel):
 
 class MessageHistoryItem(BaseModel):
     msg_id: int = Field(..., gt=0, description="全局唯一的消息 ID")
-    msg_type: str = Field(..., pattern="^(text|image)$", description="消息类型")
+    msg_type: MessageType = Field(default=MessageType.TEXT, description="消息类型")
     sender_id: int = Field(..., gt=0, description="发送者的用户 ID")
     msg_content: str = Field(..., description="消息主体内容")
     create_time: datetime = Field(..., description="消息在服务端的落库时间")

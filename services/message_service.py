@@ -5,6 +5,7 @@ from schemas.message import (
     SendMessageRequest,
     MessageSearchRequest,
     DeleteMessageRequest,
+    MessageType,
 )
 from core.exceptions import MessageException, MessageErrors
 from db.repositories.message_repo import (
@@ -42,7 +43,7 @@ async def send_message_service(db_session: asyncpg.Connection, user_id: int, req
             "conversation_id": req.conversation_id,
             "msg_id": real_msg_id,
             "sender_id": user_id,
-            "msg_type": req.msg_type,
+            "msg_type": req.msg_type.value,
             "content": req.message_content,
             "create_time": server_time.isoformat(),
             "quote_message_id": req.quote_message_id

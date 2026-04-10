@@ -11,12 +11,13 @@ from db.repositories.friend_repo import (
     db_remove_friend_from_tag,
 )
 from core.exceptions import BusinessException
-from schemas.message import SendMessageRequest
+from schemas.message import SendMessageRequest, MessageType
 # 引入发消息服务（请根据你的实际项目结构调整导入路径）
 from services.message_service import send_message_service
 import asyncpg
 import time
 import uuid
+import json
 from core.ws_manager import manager  # 1. 引入同事写的邮局
 
 
@@ -34,29 +35,52 @@ async def apply_friend(
         raise BusinessException(status_code=400, detail="不能添加自己为好友")
 
     # 2. 创建申请记录（调用 repo 层提供的函数）
-    success = await db_create_friend_request(
+    request_id = await db_create_friend_request(
         db_session,
         sender_id=from_user_id,
         receiver_id=target_user_id,
         message=message or "",  # 确保 message 为字符串，防止 None 导致类型问题
     )
-    if not success:
+    if not request_id:
         # 理论上外层已做所有检查，此处为兜底
         raise BusinessException(status_code=500, detail="好友申请发送失败")
 
-    # 3. 可选：通过 WebSocket 实时通知目标用户（暂未实现）
-    notification = {
-        "type": "FRIEND_REQUEST_RECEIVED",  # 这是一个独特的类型标识
-        "data": {
-            "from_user_id": from_user_id,
-            "message": message or "请求添加你为好友",
-            "timestamp": int(time.time())  # 传个时间戳，方便前端排序或显示
-        }
-    }
+    # 3. 查找目标用户与系统助手(10000号)的私聊会话 ID
+    system_conv_query = """
+        SELECT c.conversation_id
+        FROM conversation c
+        JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
+        JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+        WHERE c.type = 'private'
+          AND cm1.member_user_id = $1
+          AND cm2.member_user_id = 10000
+    """
+    system_conv_id = await db_session.fetchval(system_conv_query, target_user_id)
 
-    # 调用同事写的 manager，把通知发给 target_user_id
-    # 注意：如果对方不在线，manager.send_personal_message 内部会自动处理（不会报错）
-    await manager.send_personal_message(notification, target_user_id)
+    # 4. 如果目标用户有系统会话，则发送通知卡片
+    if system_conv_id:
+        # 4.1 构造卡片 JSON 数据
+        card_data = {
+            "request_id": request_id,           # 前端同意/拒绝时必须用到的 ID
+            "sender_id": from_user_id,          # 申请人的 ID
+            "reason": message or "",            # 申请理由
+            "status": "pending"                 # 初始状态为待处理
+        }
+
+        # 4.2 构造消息请求体
+        msg_req = SendMessageRequest(
+            conversation_id=system_conv_id,
+            local_id=str(uuid.uuid4()),         # 系统生成一个随机本地ID
+            message_content=json.dumps(card_data),  # 字典转成 JSON 字符串塞进内容里
+            msg_type=MessageType.FRIEND_APPLY,  # 贴上我们新定义的包裹标签
+        )
+
+        # 4.3 调用消息模块，以 10000 号的身份发信
+        await send_message_service(
+            db_session=db_session,
+            user_id=10000,
+            req=msg_req
+        )
 
 
 async def handle_friend_request(
