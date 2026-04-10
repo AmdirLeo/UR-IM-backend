@@ -131,16 +131,17 @@ async def db_handle_friend_request(
 
     return {"status": action, "friend_id": sender_id}
 
+
 async def db_get_friend_requests(
-    conn: asyncpg.Connection, 
-    user_id: int, 
-    cursor_req_id: int | None = None, 
+    conn: asyncpg.Connection,
+    user_id: int,
+    cursor_req_id: int | None = None,
     limit: int = 20
 ) -> list[dict]:
     """
     获取当前用户的所有好友申请记录（包含我发出的 + 我收到的，游标分页）
     """
-    
+
     # 核心 SQL：动态判断方向，并始终 JOIN “对方”的账户信息
     base_query = """
         SELECT 
@@ -171,7 +172,7 @@ async def db_get_friend_requests(
         )
         WHERE (fr.sender_id = $1 OR fr.receiver_id = $1)
     """
-    
+
     # 动态拼接游标
     if cursor_req_id:
         query = base_query + " AND fr.request_id < $2 ORDER BY fr.request_id DESC LIMIT $3;"
@@ -185,16 +186,19 @@ async def db_get_friend_requests(
     for row in rows:
         result.append({
             "request_id": row['request_id'],
-            "direction": row['direction'],               # 新增：'inbound' (收到) 或 'outbound' (发出)
+            # 新增：'inbound' (收到) 或 'outbound' (发出)
+            "direction": row['direction'],
             "target_user_id": row['target_user_id'],     # 替代原 sender_id
-            "target_user_name": row['target_user_name'], # 替代原 sender_name
-            "target_user_avatar": row['target_user_avatar'], # 替代原 sender_avatar
+            "target_user_name": row['target_user_name'],  # 替代原 sender_name
+            # 替代原 sender_avatar
+            "target_user_avatar": row['target_user_avatar'],
             "reason": row['reason'],
             "status": row['status'],
             "create_time": row['create_time']            # datetime 对象
         })
-        
+
     return result
+
 
 async def db_get_friend_list(conn: asyncpg.Connection, user_id: int) -> list[dict]:
     """

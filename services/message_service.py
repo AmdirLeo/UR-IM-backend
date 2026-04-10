@@ -1,5 +1,6 @@
 import asyncpg
 from datetime import datetime, timezone
+from core.ws_manager import manager  # 引入 WebSocket 邮局
 from schemas.message import (
     SendMessageRequest,
     MessageSearchRequest,
@@ -28,11 +29,35 @@ async def send_message_service(db_session: asyncpg.Connection, user_id: int, req
 
     # 从字典中提取出真正的 msg_id
     real_msg_id = db_result["msg_id"]
+    # 提前获取一下服务器时间，因为推送和返回都要用到
+    server_time = datetime.now(timezone.utc)
+
+    # 去数据库查一下，这个 conversation_id 里面到底有哪几个人的 ID
+    members_query = "SELECT member_user_id FROM conversation_member WHERE conversation_id = $1"
+    members = await db_session.fetch(members_query, req.conversation_id)
+
+    ws_notification = {
+        "type": "NEW_CHAT_MESSAGE",
+        "data": {
+            "conversation_id": req.conversation_id,
+            "msg_id": real_msg_id,
+            "sender_id": user_id,
+            "msg_type": req.msg_type,
+            "content": req.message_content,
+            "create_time": server_time.isoformat(),
+            "quote_message_id": req.quote_message_id
+        }
+    }
+
+    for record in members:
+        target_user_id = record["member_user_id"]
+        # manager 会自动判断这个人当前在不在线，在线就秒推，离线就静默丢弃
+        await manager.send_personal_message(ws_notification, target_user_id)
 
     # 3. 构造返回结构
     return {
         "msg_id": real_msg_id,  # 这里填入提取出来的整数
-        "server_time": datetime.now(timezone.utc),
+        "server_time": server_time,
         "local_id": req.local_id,
     }
 

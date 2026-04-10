@@ -10,6 +10,7 @@ from core.exceptions import setup_exception_handlers
 from core.security import get_password_hash, create_access_token
 from db.database import get_db_conn
 from db.repositories.user_repo import db_create_user
+from unittest.mock import patch
 
 # ==========================================
 # 1. Setup FastAPI App
@@ -25,7 +26,9 @@ def get_auth_headers(token: str) -> Dict[str, str]:
 
 # 强制将测试函数绑定到 session 级别的事件循环
 @pytest.mark.asyncio(loop_scope="session")
-async def test_message_journey_and_edge_cases():
+# 【新增改动 1】拦截 core.ws_manager 里的 manager.send_personal_message 方法
+@patch("core.ws_manager.manager.send_personal_message")
+async def test_message_journey_and_edge_cases(mock_ws_send):
     """
     全量消息功能的 E2E 测试。
     不使用任何 Mock，完全基于真实的测试数据库和数据流转！
@@ -82,6 +85,20 @@ async def test_message_journey_and_edge_cases():
         msg_1_id = res.json()["data"]["msg_id"]
         assert msg_1_id > 0
 
+        # 【新增改动 3】验证 WebSocket 是否成功触发！
+        assert mock_ws_send.called, "WebSocket 推送函数没有被调用！"
+
+        # 因为会话里有 A 和 B 两个人，所以应该循环发送了 2 次
+        assert mock_ws_send.call_count == 2
+
+        # 第一次调用的第一个参数 (发送给 A 自己的多端同步消息)
+        sent_ws_data = mock_ws_send.call_args_list[0][0][0]
+        assert sent_ws_data["type"] == "NEW_CHAT_MESSAGE"
+        assert sent_ws_data["data"]["content"] == "Hello B! This is a test message."
+
+        # 清空 mock 的记录，以免影响下面测试用例的断言
+        mock_ws_send.reset_mock()
+
         # ---------------------------------------------------------
         # 2. 发送引用消息 (B -> 会话，引用 A 的消息)
         # ---------------------------------------------------------
@@ -99,6 +116,11 @@ async def test_message_journey_and_edge_cases():
         assert res.status_code == 200
         msg_2_id = res.json()["data"]["msg_id"]
         assert msg_2_id > msg_1_id
+
+        # 【新增改动 4】再次验证引用消息的推送
+        assert mock_ws_send.call_count == 2
+        sent_quote_data = mock_ws_send.call_args_list[0][0][0]
+        assert sent_quote_data["data"]["quote_message_id"] == msg_1_id
 
         # ---------------------------------------------------------
         # 3. 获取历史消息 (History)
