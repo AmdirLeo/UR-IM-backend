@@ -70,7 +70,7 @@ async def db_create_group(
     async with conn.transaction():
         # 1. 插入会话基础信息
         query_conv = (
-            "INSERT INTO conversation (type, conversation_name, avatar_url) VALUES ('group', $1) RETURNING conversation_id;"
+            "INSERT INTO conversation (type, conversation_name, avatar_url) VALUES ('group', $1, $2) RETURNING conversation_id;"
         )
         conv_id = await conn.fetchval(query_conv, group_name, avatar_url)
 

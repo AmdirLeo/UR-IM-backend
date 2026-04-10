@@ -37,6 +37,7 @@ async def create_group_service(
         conn=db_session,
         creator_id=current_user_id,
         member_ids=req.user_ids,
+        avatar_url=req.avatar,
         group_name=req.name,
     )
     return {"conversation_id": conv_id, "name": req.name, "avatar": req.avatar}
@@ -212,7 +213,7 @@ async def invite_to_group_service(
 async def review_group_invite_service(
     db_session: asyncpg.Connection, current_user_id: int, req: GroupInviteReviewRequest
 ) -> None:
-    action = "approved" if req.status == "APPROVED" else "rejected"
+    action = "approved" if req.status == "APPROVED" else "ignored"
     await db_review_group_invite(
         conn=db_session,
         reviewer_id=current_user_id,
