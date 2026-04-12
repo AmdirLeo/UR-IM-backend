@@ -111,12 +111,7 @@ async def search_message_service(
         conn=db_session,
         user_id=current_user_id,
         conversation_id=req.conversation_id,
-        keyword=req.keyword,
-        sender_id=req.user_id,
-        start_time=req.start_time,
-        end_time=req.end_time,
-        cursor_msg_id=req.offset,
-        limit=req.limit,
+        filters=req,
     )
 
     result = []

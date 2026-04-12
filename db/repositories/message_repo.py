@@ -3,6 +3,7 @@ import json
 from datetime import datetime
 from core.exceptions import MessageException, MessageErrors
 from typing import Optional, Any
+from schemas.message import MessageFilterParams
 
 # Sonar
 QUERY_CHECK_MEMBER_EXISTS = "SELECT 1 FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;"
@@ -357,12 +358,7 @@ async def db_filter_messages(
     conn: asyncpg.Connection,
     user_id: int,
     conversation_id: int,
-    keyword: str | None = None,
-    sender_id: int | None = None,
-    start_time: datetime | None = None,
-    end_time: datetime | None = None,
-    cursor_msg_id: int | None = None,
-    limit: int = 20,
+    filters: MessageFilterParams,  # 👈 核心变化：将 7 个动态参数合并为一个对象
 ) -> list[dict]:
     """
     群聊消息全能筛选器 (支持动态条件 + 游标分页 + 尊重本地删除逻辑)
@@ -391,29 +387,29 @@ async def db_filter_messages(
     # len(params) + 1 就是下一个 $N 的占位符编号
 
     # A. 关键词模糊匹配 (针对 JSONB 里的 text 字段)
-    if keyword:
-        params.append(f"%{keyword}%")
+    if filters.keyword:
+        params.append(f"%{filters.keyword}%")
         # 使用 ->> 提取 JSONB 中的字符串进行模糊匹配
         conditions.append(f"m.msg_body->>'content' ILIKE ${len(params)}")
 
     # B. 发送者筛选
-    if sender_id is not None:
-        params.append(sender_id)
+    if filters.sender_id is not None:
+        params.append(filters.sender_id)
         conditions.append(f"cm.sender_id = ${len(params)}")
 
     # C. 时间段筛选 (开始时间)
-    if start_time:
-        params.append(start_time)
+    if filters.start_time:
+        params.append(filters.start_time)
         conditions.append(f"cm.create_time >= ${len(params)}")
 
     # D. 时间段筛选 (结束时间)
-    if end_time:
-        params.append(end_time)
+    if filters.end_time:
+        params.append(filters.end_time)
         conditions.append(f"cm.create_time <= ${len(params)}")
 
     # E. 游标分页 (极其重要，滑动加载历史搜索结果)
-    if cursor_msg_id:
-        params.append(cursor_msg_id)
+    if filters.cursor_msg_id:
+        params.append(filters.cursor_msg_id)
         conditions.append(f"m.msg_id < ${len(params)}")
 
     # 3. 组装最终的 SQL 语句
@@ -424,7 +420,8 @@ async def db_filter_messages(
         final_query = base_query
 
     # 加上强制排序和分页截断
-    final_query += f" ORDER BY m.msg_id DESC LIMIT {limit};"
+    params.append(filters.limit)
+    final_query += f" ORDER BY m.msg_id DESC LIMIT ${len(params)};"
 
     # 4. 执行极其安全的参数化查询
     records = await conn.fetch(final_query, *params)

@@ -70,12 +70,12 @@ class MessageHistoryItem(BaseModel):
 
 class MessageSearchRequest(BaseModel):
     conversation_id: Optional[int] = Field(None, gt=0)
-    user_id: Optional[int] = Field(None, gt=0, description="发送者 ID")
+    sender_id: Optional[int] = Field(None, gt=0, description="发送者 ID")
     start_time: Optional[datetime] = Field(None, description="起始时间")
     end_time: Optional[datetime] = Field(None, description="结束时间")
     keyword: Optional[str] = Field(None, description="搜索关键词")
     limit: int = Field(20, ge=1, le=100, description="限制返回数量")
-    offset: Optional[int] = Field(None, ge=0, description="偏移量/游标消息ID")
+    cursor_msg_id: Optional[int] = Field(None, ge=0, description="偏移量/游标消息ID")
 
 
 class MessageSearchItem(BaseModel):
@@ -89,3 +89,13 @@ class MessageSearchItem(BaseModel):
 class DeleteMessageRequest(BaseModel):
     conversation_id: int = Field(..., gt=0)
     message_id: int = Field(..., gt=0, description="消息 ID")
+
+
+class MessageFilterParams(BaseModel):
+    """将散落在外的 9 个参数打包成一个‘包裹’"""
+    keyword: Optional[str] = None
+    sender_id: Optional[int] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    cursor_msg_id: Optional[int] = None
+    limit: int = 20
