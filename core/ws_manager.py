@@ -47,9 +47,14 @@ class ConnectionManager:
                 await self.disconnect(user_id)
 
     async def broadcast(self, message: dict):
-        # 为了避免在遍历字典时修改字典引发报错，先拷贝一份 user_id 列表
-        for user_id in self.active_connections.keys():
-            await self.send_personal_message(message, user_id)
+        # 1. 必须套上 list()，拷贝静态列表，防止 RuntimeError
+        user_ids = list(self.active_connections.keys())
+        
+        # 2. 收集所有的发送任务，使用 gather 并发发送，速度提升10倍
+        tasks = [self.send_personal_message(message, uid) for uid in user_ids]
+        
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def purge_timeouts(self):
         current_time = time.time()

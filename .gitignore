@@ -17,3 +17,6 @@ env/
 .coverage
 htmlcov/
 coverage.xml
+
+#头像存储
+static/avatars/

@@ -1,4 +1,5 @@
 import jwt
+import json
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, status
 from core.ws_manager import manager
 from core.config import settings
@@ -37,7 +38,15 @@ async def websocket_endpoint(
 
     try:
         while True:
-            data = await websocket.receive_json()
+            # 【修改点 1】：加一层 try-except 防止前端发错数据导致你的后端直接崩溃断开
+            try:
+                data = await websocket.receive_json()
+            except json.JSONDecodeError:
+                await manager.send_personal_message({"type": "error", "message": "请发送 JSON 格式"}, user_id)
+                continue
+            except Exception as e:
+                print(f"WebSocket 接收异常: {e}")
+                break
 
             # 拦截心跳包
             if data.get("type") == "ping":
@@ -46,8 +55,11 @@ async def websocket_endpoint(
                 continue
 
             # 聊天分发逻辑
-            target_id = data.get("target_id")
+            target_id_raw = data.get("target_id")
             content = data.get("content")
+
+            # 【修改点 2】：安全强转 target_id 为 int，匹配字典的 Key
+            target_id = int(target_id_raw) if target_id_raw is not None and str(target_id_raw).isdigit() else None
 
             if target_id:
                 await manager.send_personal_message({"type": "private", "from": user_id, "content": content}, target_id)
