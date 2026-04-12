@@ -7,7 +7,8 @@ from schemas.user import (
     LoginResponse,
     EmailRequest,
     EmailResponse,
-    UserEdit,
+    UsernameEdit,
+    PasswordEdit,
     EmailEdit,
     BaseResponse,
     UserForgetPWD,
@@ -72,9 +73,14 @@ async def delete_account(
 # ==========================================
 # 3. 个人信息修改 (必须携带 Token)
 # ==========================================
-@router.put("/edit", response_model=BaseResponse, summary="修改基本信息")
-async def edit_profile(edit_data: UserEdit, current_user_id: CurrentUserId, conn: DBConnection):
-    return await user_service.edit_profile_service(conn, current_user_id, edit_data)
+@router.put("/edit/username", response_model=BaseResponse, summary="修改用户名")
+async def edit_username(edit_data: UsernameEdit, current_user_id: CurrentUserId, conn: DBConnection):
+    return await user_service.edit_username_service(conn, current_user_id, edit_data)
+
+
+@router.put("/edit/password", response_model=BaseResponse, summary="修改密码")
+async def edit_password(edit_data: PasswordEdit, current_user_id: CurrentUserId, conn: DBConnection):
+    return await user_service.edit_password_service(conn, current_user_id, edit_data)
 
 
 @router.put("/edit/email", response_model=BaseResponse, summary="修改邮箱")

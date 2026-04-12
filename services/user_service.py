@@ -24,8 +24,9 @@ from schemas.user import (
     UserLogin,
     LoginResponse,
     EmailRequest,
+    UsernameEdit,
+    PasswordEdit,
     EmailResponse,
-    UserEdit,
     EmailEdit,
     BaseResponse,
     UserForgetPWD,
@@ -189,26 +190,63 @@ async def delete_account_service(conn, current_user_id: int, plain_password: str
     return BaseResponse(code=200, msg="账号已彻底注销")
 
 
-async def edit_profile_service(conn, current_user_id: int, edit_data: UserEdit) -> BaseResponse:
-    if edit_data.old_password and edit_data.new_password:
-        hashed_pwd = await db_get_password_by_id(conn, current_user_id)
-        if not hashed_pwd:
-            raise BusinessException(status_code=400, detail="账号数据异常，请联系管理员")
-        if not verify_password(edit_data.old_password, hashed_pwd):
-            raise BusinessException(status_code=400, detail="密码错误")
-        hashed_new = get_password_hash(edit_data.new_password)
-        await db_update_user_password(conn, current_user_id, hashed_new)
+async def _verify_current_password(conn, user_id: int, plain_password: str):
+    """
+    业务层辅助函数：整合查库、验密、抛异常三大步骤
+    """
+    # 1. 查数据库拿到密文
+    hashed_pwd = await db_get_password_by_id(conn, user_id)
+    if not hashed_pwd:
+        raise BusinessException(status_code=400, detail="账号数据异常，无法验证身份")
 
-    if edit_data.user_name or edit_data.email:
-        await db_update_user_profile(conn, current_user_id, username=edit_data.user_name, email=edit_data.email)
-    return BaseResponse(code=200, msg="信息修改成功")
+    # 2. 🌟 调用你在 core/security.py 里写的函数进行比对 🌟
+    if not verify_password(plain_password, hashed_pwd):
+        raise BusinessException(status_code=400, detail="密码验证失败")
 
 
+# ----------------------------------------
+# 修改用户名 Service (不需要密码)
+# ----------------------------------------
+async def edit_username_service(conn, current_user_id: int, edit_data: UsernameEdit) -> BaseResponse:
+    success = await db_update_user_profile(conn, current_user_id, username=edit_data.new_username)
+    if not success:
+        raise BusinessException(status_code=400, detail="用户名更新失败")
+    return BaseResponse(code=200, msg="用户名修改成功")
+
+
+# ----------------------------------------
+# 修改密码 Service
+# ----------------------------------------
+async def edit_password_service(conn, current_user_id: int, edit_data: PasswordEdit) -> BaseResponse:
+    # 1. 直接调用辅助函数，一行代码完成验证！
+    await _verify_current_password(conn, current_user_id, edit_data.old_password)
+
+    # 2. 验证通过，执行更新
+    hashed_new = get_password_hash(edit_data.new_password)
+    # 3. 安全更新
+    success = await db_update_user_password(conn, current_user_id, hashed_new)
+
+    if not success:
+        # 如果返回了 False，说明刚才发生了可怕的“静默失败”！
+        raise BusinessException(status_code=500, detail="密码更新失败，该账号可能状态异常")
+
+    return BaseResponse(code=200, msg="密码修改成功")
+
+
+# ----------------------------------------
+# 修改邮箱 Service (现在需要密码了)
+# ----------------------------------------
 async def edit_email_service(conn, current_user_id: int, edit_data: EmailEdit) -> BaseResponse:
+    # 1. 同样调用辅助函数，先验密码！
+    await _verify_current_password(conn, current_user_id, edit_data.password)
+
+    # 2. 密码对了，才允许改邮箱
     success = await db_update_user_profile(conn, current_user_id, email=edit_data.new_email)
     if not success:
         raise BusinessException(status_code=400, detail="邮箱更新失败")
+
     return BaseResponse(code=200, msg="邮箱修改成功")
+
 
 # ==========================================
 # 头像存储的本地相对路径配置

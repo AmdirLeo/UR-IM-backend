@@ -24,7 +24,9 @@ VALID_USERNAME = "tester"
 VALID_PASSWORD = "password123"
 REGISTER_API_PATH = "/api/users/register"
 LOGIN_API_PATH = "/api/users/login"
-EDIT_PROFILE_API_PATH = "/api/users/edit"
+EDIT_USERNAME_API_PATH = "/api/users/edit/username"
+EDIT_PASSWORD_API_PATH = "/api/users/edit/password"
+EDIT_EMAIL_API_PATH = "/api/users/edit/email"
 
 
 def get_auth_headers(token: str) -> Dict[str, str]:
@@ -151,12 +153,13 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         # ---------------------------------------------------------
         # 7. Access protected route with invalid/missing JWT (401)
         # ---------------------------------------------------------
-        response = await client.put(EDIT_PROFILE_API_PATH, json={"user_name": "new_name"})
+        # 用编辑用户名接口来做鉴权测试
+        response = await client.put(EDIT_USERNAME_API_PATH, json={"new_username": "new_name"})
         assert response.status_code == 401
 
         response = await client.put(
-            EDIT_PROFILE_API_PATH,
-            json={"user_name": "new_name"},
+            EDIT_USERNAME_API_PATH,
+            json={"new_username": "new_name"},
             headers=get_auth_headers("invalid_token"),
         )
         assert response.status_code == 401
@@ -167,8 +170,8 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
             algorithm=getattr(settings, "ALGORITHM", "HS256"),
         )
         response = await client.put(
-            EDIT_PROFILE_API_PATH,
-            json={"user_name": "new_name"},
+            EDIT_USERNAME_API_PATH,
+            json={"new_username": "new_name"},
             headers=get_auth_headers(expired_token),
         )
         assert response.status_code == 401
@@ -179,8 +182,8 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
             algorithm=getattr(settings, "ALGORITHM", "HS256"),
         )
         response = await client.put(
-            EDIT_PROFILE_API_PATH,
-            json={"user_name": "new_name"},
+            EDIT_USERNAME_API_PATH,
+            json={"new_username": "new_name"},
             headers=get_auth_headers(no_sub_token),
         )
         assert response.status_code == 401
@@ -190,21 +193,35 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         # ---------------------------------------------------------
         auth_headers = get_auth_headers(token)
 
-        # 第一次请求：修改邮箱
-        new_email = "new_email@tsinghua.edu.cn"
+        # 8a. 第一次请求：修改用户名
         response = await client.put(
-            EDIT_PROFILE_API_PATH,
-            json={"user_name": "new_tester", "email": new_email},
+            EDIT_USERNAME_API_PATH,
+            json={"new_username": "new_tester"},
             headers=auth_headers,
         )
         assert response.status_code == 200
 
-        # 第二次请求：继续用原来的 auth_headers 修改密码
+        # 8b. 第二次请求：修改邮箱
+        # ⚠️ 注意这里：必须携带 password，且邮箱字段名必须是 new-email (对应 Pydantic 的 alias)
+        new_email = "new_email@tsinghua.edu.cn"
+        response = await client.put(
+            EDIT_EMAIL_API_PATH,
+            json={
+                "password": VALID_PASSWORD,
+                "new-email": new_email
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+
+        # 8c. 第三次请求：修改密码
         new_password = "newpassword456"
         response = await client.put(
-            EDIT_PROFILE_API_PATH,
-            json={"old_password": VALID_PASSWORD,
-                  "new_password": new_password},
+            EDIT_PASSWORD_API_PATH,
+            json={
+                "old_password": VALID_PASSWORD,
+                "new_password": new_password
+            },
             headers=auth_headers,
         )
         assert response.status_code == 200
