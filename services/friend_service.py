@@ -59,23 +59,24 @@ async def apply_friend(
 
     # 4. 如果目标用户有系统会话，则发送通知卡片
     if system_conv_id:
-        # 4.1 构造卡片 JSON 数据
-        card_data = {
-            "request_id": request_id,           # 前端同意/拒绝时必须用到的 ID
-            "sender_id": from_user_id,          # 申请人的 ID
-            "reason": message or "",            # 申请理由
-            "status": "pending"                 # 初始状态为待处理
-        }
 
-        # 4.2 构造消息请求体
+        # 4.1 构造消息请求体
         msg_req = SendMessageRequest(
             conversation_id=system_conv_id,
-            local_id=str(uuid.uuid4()),         # 系统生成一个随机本地ID
-            message_content=json.dumps(card_data),  # 字典转成 JSON 字符串塞进内容里
-            msg_type=MessageType.FRIEND_APPLY,  # 贴上我们新定义的包裹标签
+            local_id=str(uuid.uuid4()),        # 系统生成一个随机本地ID
+            # message_content 用作手机弹窗或列表的简短预览
+            message_content="[收到一条好友申请]",  # 字典转成 JSON 字符串塞进内容里
+            msg_type=MessageType.CARD,           # 贴上我们新定义的包裹标签
+            extra_data={                        # 👈 真正的结构化数据全放这里
+                "card_type": "friend_apply",
+                "request_id": request_id,
+                "sender_id": from_user_id,
+                "reason": message or "",
+                "status": "pending"
+            }
         )
 
-        # 4.3 调用消息模块，以 10000 号的身份发信
+        # 4.2 调用消息模块，以 10000 号的身份发信
         await send_message_service(
             db_session=db_session,
             user_id=10000,
@@ -124,15 +125,27 @@ async def handle_friend_request(
     if system_conv_id:
         # 根据用户的操作，定制不同的系统提示语
         if action == "accepted":
-            msg_content = f"好消息！用户ID: {current_user_id} 已同意你的好友申请，快去打个招呼吧！"
+            msg_content = "[好友申请已通过]"
+            extra_data = {
+                "action": "friend_accept",
+                "tips": f"用户 {current_user_id} 已同意你的好友申请，快去打个招呼吧！",
+                # 💡 假设你的 db_result 里返回了新建的两人私聊会话ID
+                # 如果底层还没写这块逻辑，前端拿到 None 就只给个提示框，不自动跳
+                "new_conversation_id": db_result.get("new_conversation_id")
+            }
         else:
-            msg_content = f"很遗憾，用户ID: {current_user_id} 拒绝了你的好友申请。"
+            msg_content = "[好友申请被拒绝]"
+            extra_data = {
+                "action": "friend_reject",
+                "tips": f"用户 {current_user_id} 拒绝了你的好友申请。"
+            }
 
         system_req = SendMessageRequest(
             conversation_id=system_conv_id,
+            local_id=str(uuid.uuid4()),
             message_content=msg_content,
-            msg_type="text",
-            local_id=str(uuid.uuid4())  # 后端随机生成一个临时包 ID 即可
+            msg_type=MessageType.NOTIFY,  # 👈 使用系统通知指令类型
+            extra_data=extra_data         # 👈 将指令参数丢进附件包
         )
 
         # 调起我们写好的发消息接口，身份为上帝账号 (10000)
@@ -155,6 +168,34 @@ async def remove_friend(db_session: asyncpg.Connection, current_user_id: int, fr
 
     # 2. 调用 repo 层删除好友（同时删除双向记录）
     await db_remove_friend(db_session, current_user_id, friend_user_id)
+
+    # ==========================================
+    # 3. 找到被删除人的系统助手会话，发一条解绑指令
+    # ==========================================
+    find_system_conv_query = """
+        SELECT c.conversation_id
+        FROM conversation c
+        JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
+        JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+        WHERE c.type = 'private'
+          AND cm1.member_user_id = $1
+          AND cm2.member_user_id = 10000;
+    """
+    friend_system_conv_id = await db_session.fetchval(find_system_conv_query, friend_user_id)
+
+    if friend_system_conv_id:
+        notify_req = SendMessageRequest(
+            conversation_id=friend_system_conv_id,
+            local_id=str(uuid.uuid4()),
+            message_content="[好友关系解除]",
+            msg_type=MessageType.NOTIFY,
+            extra_data={
+                "action": "friend_deleted",
+                "trigger_user_id": current_user_id,  # 告诉前端是谁删了你
+                "tips": "对方已解除与你的好友关系，你无法再发送新消息。"
+            }
+        )
+        await send_message_service(db_session, 10000, notify_req)
 
 
 async def get_friend_list(db_session: asyncpg.Connection, current_user_id: int) -> List[Dict]:
