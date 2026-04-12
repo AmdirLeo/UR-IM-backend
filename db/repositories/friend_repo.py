@@ -144,27 +144,27 @@ async def db_get_friend_requests(
 
     # 核心 SQL：动态判断方向，并始终 JOIN “对方”的账户信息
     base_query = """
-        SELECT 
+        SELECT
             fr.request_id,
             fr.reason,
             fr.status,
             fr.create_time,
-            
+
             -- 【魔法 1：判断方向】
-            CASE 
-                WHEN fr.sender_id = $1 THEN 'outbound' 
-                ELSE 'inbound' 
+            CASE
+                WHEN fr.sender_id = $1 THEN 'outbound'
+                ELSE 'inbound'
             END AS direction,
-            
+
             -- 【魔法 2：获取对方 ID】我发的对方就是 receiver，别人发给我的对方就是 sender
-            CASE 
-                WHEN fr.sender_id = $1 THEN fr.receiver_id 
-                ELSE fr.sender_id 
+            CASE
+                WHEN fr.sender_id = $1 THEN fr.receiver_id
+                ELSE fr.sender_id
             END AS target_user_id,
-            
+
             u.username AS target_user_name,
             u.avatar_url AS target_user_avatar
-            
+
         FROM friend_request fr
         -- 根据魔法 2 的逻辑，精准 JOIN 对方的用户表
         JOIN user_account u ON u.user_id = (

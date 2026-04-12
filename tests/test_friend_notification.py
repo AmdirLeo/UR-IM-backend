@@ -29,8 +29,8 @@ async def test_friend_request_triggers_system_card(mock_ws_send):
 
             # 1.1 插入系统助手 10000 (如果已存在则跳过)
             await conn.execute("""
-                INSERT INTO user_account (user_id, username, password, email) 
-                VALUES ($1, '系统助手', 'nopass', 'sys_bot@ur-im.com') 
+                INSERT INTO user_account (user_id, username, password, email)
+                VALUES ($1, '系统助手', 'nopass', 'sys_bot@ur-im.com')
                 ON CONFLICT (user_id) DO NOTHING
             """, SYSTEM_ID)
 
