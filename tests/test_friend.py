@@ -135,13 +135,93 @@ async def test_friend_journey_and_edge_cases():
         res = await client.post("/api/friend/tag/delete", json={"tag_name": tag_name}, headers=headers_a)
         assert res.status_code == 200
 
-        # 6. 删除好友 (Remove) - 此处触发硬删除
-        res = await client.delete(f"/api/friend/remove/{user_b_id}", headers=headers_a)
+        # ---------------------------------------------------------
+        # 5.5. 模拟两人聊天 (生成 conv_id 和历史记录)
+        # ---------------------------------------------------------
+
+        # 1. 直接从数据库查询两人已经建好的私聊会话 ID
+        conv_id = None
+        async for conn in get_db_conn():
+            conv_id = await conn.fetchval("""
+                SELECT c.conversation_id
+                FROM conversation c
+                JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
+                JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+                WHERE c.type = 'private'
+                  AND cm1.member_user_id = $1
+                  AND cm2.member_user_id = $2;
+            """, user_a_id, user_b_id)
+            break
+
+        assert conv_id is not None, "A和B加完好友后没有生成私聊会话！"
+
+        # 2. A 给 B (即这个私聊会话) 发一条消息
+        res_msg = await client.post(
+            "/api/message/send",
+            json={
+                "conversation_id": conv_id,  # 👈 改为标准传参
+                "local_id": "local_test_123",
+                "message_content": "你好，这是删好友前的测试消息",
+                "msg_type": "text",
+            },
+            headers=headers_a
+        )
+        assert res_msg.status_code == 200
+
+        # 3. B 也给 A 回复一条消息
+        res_msg_b = await client.post(
+            "/api/message/send",
+            json={
+                "conversation_id": conv_id,  # 👈 同理
+                "local_id": "local_test_456",
+                "message_content": "收到了",
+                "msg_type": "text",
+            },
+            headers=headers_b
+        )
+        assert res_msg_b.status_code == 200
+
+        # ---------------------------------------------------------
+        # 6. 删除好友 (Remove) - 测试带删除历史的选项
+        # ---------------------------------------------------------
+        # A 翻脸无情，删除了 B，并且勾选了“删除聊天记录”
+        res = await client.post(
+            url="/api/friend/remove",
+            json={                                  # 👈 传入 JSON Body
+                "friend_user_id": user_b_id,
+                "delete_history": True
+            },
+            headers=headers_a
+        )
         assert res.status_code == 200
 
+        # 验证 A 的好友列表确实空了
         res = await client.get("/api/friend", headers=headers_a)
         friends = res.json()["data"]
         assert not any(f["user_id"] == user_b_id for f in friends)
+
+        # ---------------------------------------------------------
+        # 7. 终极验证：检查双端收件箱的“物理隔离”删除效果
+        # ---------------------------------------------------------
+
+        # 验证 1：A 勾选了删除历史，所以 A 拉取该会话的历史消息应该为空
+        res_history_a = await client.post(
+            "/api/message/history",
+            json={"conversation_id": conv_id, "limit": 20},
+            headers=headers_a,
+        )
+        # 💡 核心修改：预期状态码就是 403，证明 A 无权再看该房间信息
+        assert res_history_a.status_code == 403, "安全漏洞：A 被移出房间后仍能访问接口！"
+
+        # 验证 2：B 作为被动方，Ta 的历史记录必须毫发无损！
+        res_history_b = await client.post(
+            "/api/message/history",
+            json={"conversation_id": conv_id, "limit": 20},
+            headers=headers_b,
+        )
+        assert res_history_b.status_code == 200
+        # 断言 B 依然能拉取到之前发的那 2 条消息
+        assert len(res_history_b.json()["data"]) >= 2, "严重 Bug：B 的聊天记录被误删了！"
 
 
 # ==========================================

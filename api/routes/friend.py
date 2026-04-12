@@ -18,6 +18,7 @@ from schemas.friend import (
     TagQueryRequest,
     FriendTagQueryResponse,
     TagRemoveFriendRequest,
+    RemoveFriendRequest,
 )
 
 router = APIRouter(prefix="/friend", tags=["好友"])
@@ -93,12 +94,13 @@ async def friend_handle(
     return FriendGenericResponse(code=200, msg=msg)
 
 
-@router.delete("/remove/{friend_user_id}", response_model=FriendGenericResponse, summary="删除好友")
-async def delete_friend(
+@router.post("/remove", response_model=FriendGenericResponse, summary="删除好友")
+async def delete_friend_api(
     # ⚠️ 同样，依赖前置，Path 参数后置
     current_user_id: CurrentUserId,
     db_session: DBSession,
-    friend_user_id: Annotated[int, Path(description="要删除的好友用户ID")],
+    # 🎯 核心修改：用 req 对象替换掉原来的 friend_user_id (Path)
+    req: RemoveFriendRequest,
 ):
     """
     删除好友，同时解除双向关系。
@@ -106,7 +108,8 @@ async def delete_friend(
     await friend_service.remove_friend(
         db_session=db_session,
         current_user_id=current_user_id,
-        friend_user_id=friend_user_id,
+        friend_user_id=req.friend_user_id,
+        delete_history=req.delete_history,
     )
     return FriendGenericResponse(code=200, msg="好友删除成功")
 

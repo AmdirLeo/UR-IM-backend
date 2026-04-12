@@ -219,7 +219,12 @@ async def db_get_friend_list(conn: asyncpg.Connection, user_id: int) -> list[dic
     return [dict(row) for row in rows]
 
 
-async def db_remove_friend(conn: asyncpg.Connection, user_id: int, friend_user_id: int) -> None:
+async def db_remove_friend(
+    conn: asyncpg.Connection,
+    user_id: int,
+    friend_user_id: int,
+    delete_history: bool
+) -> None:
     """
     删除好友 (对应 DELETE /api/friend/remove)
     需要同时斩断双向联系
@@ -238,9 +243,19 @@ async def db_remove_friend(conn: asyncpg.Connection, user_id: int, friend_user_i
         # 第三步：精准找到属于他们两人的“私聊房间”
         direct_conv_id = await conn.fetchval(QUERY_FIND_DIRECT_CONV, user_id, friend_user_id)
 
-        # 第四步：如果他们曾经聊过天，直接炸毁这个房间对应的所有收件箱记录
         if direct_conv_id:
-            await conn.execute(QUERY_WIPE_INBOX, direct_conv_id)
+            # 4. 退群：操作者主动退出私聊房间
+            await conn.execute("""
+                DELETE FROM conversation_member
+                WHERE conversation_id = $1 AND member_user_id = $2
+            """, direct_conv_id, user_id)
+            # 5. 【清空历史记录】
+            if delete_history:
+                # 💡 只删操作者自己 (user_id) 的收件箱，绝不影响对方 (friend_user_id) 的消息记录！
+                await conn.execute("""
+                    DELETE FROM user_inbox
+                    WHERE conversation_id = $1 AND user_id = $2
+                """, direct_conv_id, user_id)
 
 
 async def db_create_friend_tag(conn: asyncpg.Connection, user_id: int, tag_name: str) -> None:

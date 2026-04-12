@@ -58,3 +58,9 @@ class FriendTagQueryResponse(BaseModel):
 class TagRemoveFriendRequest(BaseModel):
     tag_name: str = Field(..., description="标签名称")
     friend_id: int = Field(..., description="好友ID")
+
+
+class RemoveFriendRequest(BaseModel):
+    """删除好友的请求体"""
+    friend_user_id: int = Field(..., description="要删除的好友的用户 ID")
+    delete_history: bool = Field(False, description="是否同时清空与该好友的聊天记录")

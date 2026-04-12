@@ -156,7 +156,12 @@ async def handle_friend_request(
         )
 
 
-async def remove_friend(db_session: asyncpg.Connection, current_user_id: int, friend_user_id: int) -> None:
+async def remove_friend(
+    db_session: asyncpg.Connection,
+    current_user_id: int,
+    friend_user_id: int,
+    delete_history: bool = False
+) -> None:
     """
     删除好友的业务逻辑。
     - 不能删除自己
@@ -166,8 +171,8 @@ async def remove_friend(db_session: asyncpg.Connection, current_user_id: int, fr
     if current_user_id == friend_user_id:
         raise BusinessException(status_code=400, detail="不能删除自己")
 
-    # 2. 调用 repo 层删除好友（同时删除双向记录）
-    await db_remove_friend(db_session, current_user_id, friend_user_id)
+    # 2. 核心调度：全权委托给 Repo 层的底层事务处理数据变更
+    await db_remove_friend(db_session, current_user_id, friend_user_id, delete_history)
 
     # ==========================================
     # 3. 找到被删除人的系统助手会话，发一条解绑指令
