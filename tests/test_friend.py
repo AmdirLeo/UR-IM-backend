@@ -108,13 +108,29 @@ async def test_friend_journey_and_edge_cases():
 
         # 5. 好友分组标签流转 (Tag Journey)
         tag_name = "BestFriends"
-        res = await client.post("/api/friend/tag/new", json={"tag_name": tag_name}, headers=headers_a)
+        res = await client.post(
+            "/api/friend/tag/new",
+            json={"tag_name": tag_name},
+            headers=headers_a
+        )
         assert res.status_code == 200
-        res = await client.post("/api/friend/tag/add", json={"tag_name": tag_name, "friend_ids": [user_b_id]}, headers=headers_a)
+        res = await client.post(
+            "/api/friend/tag/add",
+            json={"tag_name": tag_name, "friend_ids": [user_b_id]},
+            headers=headers_a
+        )
         assert res.status_code == 200
-        res = await client.post("/api/friend/tag/query", json={"tag_name": tag_name}, headers=headers_a)
+        res = await client.post(
+            "/api/friend/tag/query",
+            json={"tag_name": tag_name},
+            headers=headers_a
+        )
         assert res.status_code == 200
-        res = await client.post("/api/friend/tag/remove", json={"tag_name": tag_name, "friend_id": user_b_id}, headers=headers_a)
+        res = await client.post(
+            "/api/friend/tag/remove",
+            json={"tag_name": tag_name, "friend_id": user_b_id},
+            headers=headers_a
+        )
         assert res.status_code == 200
         res = await client.post("/api/friend/tag/delete", json={"tag_name": tag_name}, headers=headers_a)
         assert res.status_code == 200
@@ -151,12 +167,15 @@ async def test_friend_request_triggers_system_card(mock_ws_send):
             user_a_id = u_a['user_id']
 
             u_b = await conn.fetchrow(
-                "INSERT INTO user_account (username, password, email) VALUES ('UserB_Receiver', $1, $2) RETURNING user_id",
+                "INSERT INTO user_account (username, password, email) "
+                "VALUES ('UserB_Receiver', $1, $2) RETURNING user_id",
                 hashed_pw, TEST_USER_B_EMAIL
             )
             user_b_id = u_b['user_id']
 
-            sys_conv_id = await conn.fetchval("INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id")
+            sys_conv_id = await conn.fetchval(
+                "INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id"
+            )
             await conn.execute(
                 "INSERT INTO conversation_member (conversation_id, member_user_id) VALUES ($1, $2), ($1, $3)",
                 sys_conv_id, user_b_id, SYSTEM_ID
@@ -214,23 +233,36 @@ async def test_friend_accept_triggers_system_notification(mock_ws_send):
         async for conn in get_db_conn():
             hashed_pw = get_password_hash("pw")
             u_a = await conn.fetchrow(
-                "INSERT INTO user_account (username, password, email) VALUES ('UserA_Accept', $1, $2) RETURNING user_id",
+                "INSERT INTO user_account (username, password, email) "
+                "VALUES ('UserA_Accept', $1, $2) RETURNING user_id",
                 hashed_pw, "a_accept@ur-im.com"
             )
             u_b = await conn.fetchrow(
-                "INSERT INTO user_account (username, password, email) VALUES ('UserB_Accept', $1, $2) RETURNING user_id",
+                "INSERT INTO user_account (username, password, email) "
+                "VALUES ('UserB_Accept', $1, $2) RETURNING user_id",
                 hashed_pw, "b_accept@ur-im.com"
             )
             user_a_id, user_b_id = u_a['user_id'], u_b['user_id']
 
-            await conn.execute("INSERT INTO user_account (user_id, username, password, email) VALUES ($1, 'sys', '1', 'sys2@ur.im') ON CONFLICT DO NOTHING", SYSTEM_ID)
+            await conn.execute(
+                "INSERT INTO user_account (user_id, username, password, email) "
+                "VALUES ($1, 'sys', '1', 'sys2@ur.im') ON CONFLICT DO NOTHING",
+                SYSTEM_ID
+            )
 
             # 为 User A 创建系统会话 (因为 A 是发起方，A 将收到同意指令)
-            sys_conv_id = await conn.fetchval("INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id")
-            await conn.execute("INSERT INTO conversation_member (conversation_id, member_user_id) VALUES ($1, $2), ($1, $3)", sys_conv_id, user_a_id, SYSTEM_ID)
+            sys_conv_id = await conn.fetchval(
+                "INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id"
+            )
+            await conn.execute(
+                "INSERT INTO conversation_member (conversation_id, member_user_id) "
+                "VALUES ($1, $2), ($1, $3)",
+                sys_conv_id, user_a_id, SYSTEM_ID
+            )
 
             req_id = await conn.fetchval(
-                "INSERT INTO friend_request (sender_id, receiver_id, status) VALUES ($1, $2, 'pending') RETURNING request_id",
+                "INSERT INTO friend_request (sender_id, receiver_id, status) "
+                "VALUES ($1, $2, 'pending') RETURNING request_id",
                 user_a_id, user_b_id
             )
             break
