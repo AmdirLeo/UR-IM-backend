@@ -44,6 +44,8 @@ async def websocket_endpoint(
             except json.JSONDecodeError:
                 await manager.send_personal_message({"type": "error", "message": "请发送 JSON 格式"}, user_id)
                 continue
+            except WebSocketDisconnect:    # 👈 新增：精准拦截断开连接的异常
+                raise                      # 👈 新增：直接往上抛，交给外层的正常离线逻辑处理
             except Exception as e:
                 print(f"WebSocket 接收异常: {e}")
                 break
@@ -59,7 +61,8 @@ async def websocket_endpoint(
             content = data.get("content")
 
             # 【修改点 2】：安全强转 target_id 为 int，匹配字典的 Key
-            target_id = int(target_id_raw) if target_id_raw is not None and str(target_id_raw).isdigit() else None
+            target_id = int(target_id_raw) if target_id_raw is not None and str(
+                target_id_raw).isdigit() else None
 
             if target_id:
                 await manager.send_personal_message({"type": "private", "from": user_id, "content": content}, target_id)

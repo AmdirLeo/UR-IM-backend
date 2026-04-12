@@ -127,6 +127,7 @@ def test_client(scope="session"):
     with TestClient(app) as client:
         yield client
 
+
 @pytest.fixture(autouse=True)
 def toggle_rate_limit_for_tests(request):
     """

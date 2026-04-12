@@ -49,10 +49,10 @@ class ConnectionManager:
     async def broadcast(self, message: dict):
         # 1. 必须套上 list()，拷贝静态列表，防止 RuntimeError
         user_ids = list(self.active_connections.keys())
-        
+
         # 2. 收集所有的发送任务，使用 gather 并发发送，速度提升10倍
         tasks = [self.send_personal_message(message, uid) for uid in user_ids]
-        
+
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
