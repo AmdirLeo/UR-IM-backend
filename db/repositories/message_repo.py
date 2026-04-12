@@ -468,50 +468,50 @@ async def db_sync_conversations(conn: asyncpg.Connection, user_id: int) -> list[
             -- 来源 2：我曾经收到过消息的会话 (即使我现在已经被踢了，但在收件箱里还有记录)
             SELECT conversation_id FROM user_inbox WHERE user_id = $1
         )
-        
-        SELECT 
+
+        SELECT
             c.conversation_id,
             c.type,
             c.conversation_name,
             c.avatar_url,
             -- 动态判断存活状态
             -- 如果左连表能连上 member 表，说明我还在里面；连不上，说明我被踢了/退群了
-            CASE 
-                WHEN cm.member_user_id IS NOT NULL THEN 'active' 
-                ELSE 'kicked' 
+            CASE
+                WHEN cm.member_user_id IS NOT NULL THEN 'active'
+                ELSE 'kicked'
             END AS my_status,
-            
+
             cm.read_index AS last_ack_msg_id,
             c.last_msg_id,
-            
+
             m.msg_body->>'type' AS last_msg_type,
             m.msg_body->>'content' AS last_msg_content,
-            
+
             cm_last.sender_id AS last_msg_sender_id,
             cm_last.create_time AS last_msg_send_time,
-            
+
             -- 动态统计当前会话的未读数
             (
-                SELECT COUNT(1) 
-                FROM user_inbox ui 
-                WHERE ui.user_id = $1 
-                  AND ui.conversation_id = c.conversation_id 
+                SELECT COUNT(1)
+                FROM user_inbox ui
+                WHERE ui.user_id = $1
+                  AND ui.conversation_id = c.conversation_id
                   AND ui.is_read = false
             ) AS unread_count
-            
+
         -- 从我们计算出的全集出发
         FROM my_all_convs mc
         JOIN conversation c ON mc.conversation_id = c.conversation_id
-        
+
         -- 使用 LEFT JOIN 试探性地去 member 表里找我
         LEFT JOIN conversation_member cm ON c.conversation_id = cm.conversation_id AND cm.member_user_id = $1
-        
+
         -- 剩下的连表逻辑不变，为了获取最后一条消息的内容
         LEFT JOIN message m ON c.last_msg_id = m.msg_id
         LEFT JOIN conversation_message cm_last ON m.msg_id = cm_last.msg_id AND cm_last.conversation_id = c.conversation_id
-        
+
         ORDER BY c.last_msg_time DESC NULLS LAST;
     """
-    
+
     rows = await conn.fetch(query, user_id)
     return [dict(row) for row in rows]

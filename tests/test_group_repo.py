@@ -876,7 +876,7 @@ async def test_review_invite_reject_success(mock_conn):
     """测试成功拒绝邀请"""
     reviewer_id = 1
     invite_id = 2001
-    action = 'rejected'
+    action = 'ignored'
 
     mock_conn.fetchrow.return_value = {
         'conversation_id': 101,
