@@ -265,6 +265,26 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         new_token_for_delete = response.json()["token"]
         delete_headers = get_auth_headers(new_token_for_delete)
 
-        # 彻底注销账号
-        response = await client.post("/api/users/delete", headers=delete_headers)
+        # 10a. 测试密码错误的情况 (400)
+        response = await client.post(
+            "/api/users/delete", 
+            headers=delete_headers,
+            json={"password": "wrong_password_here"} # 故意传错
+        )
+        assert response.status_code == 400
+        assert "密码错误" in response.json()["msg"]
+
+        # 10b. 彻底注销账号 (携带正确密码)
+        response = await client.post(
+            "/api/users/delete", 
+            headers=delete_headers,
+            json={"password": "recoveredpassword"} # 传入注销所需的确认密码
+        )
         assert response.status_code == 200
+
+        # 验证注销后无法再次登录
+        response = await client.post(
+            LOGIN_API_PATH,
+            json={"id": str(user_id), "password": "recoveredpassword"},
+        )
+        assert response.status_code == 404

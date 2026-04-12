@@ -13,6 +13,7 @@ from schemas.user import (
     UserForgetPWD,
     PortraitResponse,
     UserInfoResponse,
+    DeleteAccountRequest,
 )
 from services import user_service
 
@@ -60,8 +61,12 @@ async def logout(current_user_id: CurrentUserId):
 
 
 @router.post("/delete", response_model=BaseResponse, summary="用户注销")
-async def delete_account(current_user_id: CurrentUserId, conn: DBConnection):
-    return await user_service.delete_account_service(conn, current_user_id)
+async def delete_account(
+    req: DeleteAccountRequest, # 👈 接收请求体
+    current_user_id: CurrentUserId,
+    conn: DBConnection
+):
+    return await user_service.delete_account_service(conn, current_user_id, req.password)
 
 
 # ==========================================

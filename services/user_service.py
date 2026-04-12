@@ -163,7 +163,28 @@ async def logout_service(current_user_id: int) -> BaseResponse:
     return BaseResponse(code=200, msg="登出成功")
 
 
-async def delete_account_service(conn, current_user_id: int) -> BaseResponse:
+async def delete_account_service(conn, current_user_id: int,plain_password: str) -> BaseResponse:
+    # 1. 尝试获取用户信息
+    user = await db_get_user_by_id(conn, current_user_id)
+    
+    # 2. 检查用户是否存在（虽然有 Token 鉴权，但为了健壮性建议保留）
+    if not user:
+        raise BusinessException(status_code=404, detail="用户不存在")
+
+    # 3. 获取该用户的加密密码
+    # 参考你登录时的逻辑：db_get_password_by_id
+    hashed_pwd = await db_get_password_by_id(conn, current_user_id)
+    
+    if not hashed_pwd:
+        raise BusinessException(status_code=400, detail="账号数据异常，无法验证身份")
+
+    # 4. 验证用户输入的密码是否匹配
+    if not verify_password(plain_password, hashed_pwd):
+        # 为了安全，注销时的密码错误可以直接提示“密码错误”
+        raise BusinessException(status_code=400, detail="注销失败：验证密码错误")
+
+    # 5. 验证通过，执行注销逻辑
+    # 这里的 db_delete_user 就是你之前写的那个 DELETE SQL
     await db_delete_user(conn, current_user_id)
     return BaseResponse(code=200, msg="账号已彻底注销")
 
