@@ -455,52 +455,63 @@ async def db_filter_messages(
     return result
 
 
-async def db_sync_conversations(
-        conn: asyncpg.Connection,
-        user_id: int) -> list[dict]:
+async def db_sync_conversations(conn: asyncpg.Connection, user_id: int) -> list[dict]:
     """
-    同步会话列表及未读信息 (对应移动端/前端首屏拉取)
-    完美契合前端同事的 ConversationSyncItem Pydantic 模型
+    同步会话列表及未读信息 (支持“被踢出群聊依然保留入口”的高级特性)
     """
     query = """
-        SELECT
+        -- 定义一个临时结果集，包含我所有相关的会话ID（无论我现在还在不在里面）
+        WITH my_all_convs AS (
+            -- 来源 1：我当前依然在里面的会话 (包括还没人发过消息的新群)
+            SELECT conversation_id FROM conversation_member WHERE member_user_id = $1
+            UNION
+            -- 来源 2：我曾经收到过消息的会话 (即使我现在已经被踢了，但在收件箱里还有记录)
+            SELECT conversation_id FROM user_inbox WHERE user_id = $1
+        )
+        
+        SELECT 
             c.conversation_id,
             c.type,
+            c.conversation_name,
+            c.avatar_url,
+            -- 动态判断存活状态
+            -- 如果左连表能连上 member 表，说明我还在里面；连不上，说明我被踢了/退群了
+            CASE 
+                WHEN cm.member_user_id IS NOT NULL THEN 'active' 
+                ELSE 'kicked' 
+            END AS my_status,
+            
             cm.read_index AS last_ack_msg_id,
             c.last_msg_id,
-
-            -- 【核心魔法】：使用 ->> 操作符，直接从 JSONB 内部提取纯文本值
-            -- 如果 m.msg_body 是 NULL，或者里面没有 'type' 键，它会极其安全地返回 NULL
+            
             m.msg_body->>'type' AS last_msg_type,
             m.msg_body->>'content' AS last_msg_content,
-
+            
             cm_last.sender_id AS last_msg_sender_id,
             cm_last.create_time AS last_msg_send_time,
-
-            -- 动态统计当前会话的未读数 (仅限收件箱内未读的消息)
+            
+            -- 动态统计当前会话的未读数
             (
-                SELECT COUNT(1)
-                FROM user_inbox ui
-                WHERE ui.user_id = $1
-                  AND ui.conversation_id = c.conversation_id
+                SELECT COUNT(1) 
+                FROM user_inbox ui 
+                WHERE ui.user_id = $1 
+                  AND ui.conversation_id = c.conversation_id 
                   AND ui.is_read = false
             ) AS unread_count
-
-        FROM conversation_member cm
-        JOIN conversation c ON cm.conversation_id = c.conversation_id
-
-        -- 左连表：根据会话表记录的 last_msg_id，去 message 表找消息本体
+            
+        -- 从我们计算出的全集出发
+        FROM my_all_convs mc
+        JOIN conversation c ON mc.conversation_id = c.conversation_id
+        
+        -- 使用 LEFT JOIN 试探性地去 member 表里找我
+        LEFT JOIN conversation_member cm ON c.conversation_id = cm.conversation_id AND cm.member_user_id = $1
+        
+        -- 剩下的连表逻辑不变，为了获取最后一条消息的内容
         LEFT JOIN message m ON c.last_msg_id = m.msg_id
-
-        -- 左连表：去映射表找这条最后的消息是谁发的、什么时候发的
-        LEFT JOIN conversation_message cm_last
-        ON m.msg_id = cm_last.msg_id AND cm_last.conversation_id = c.conversation_id
-
-        WHERE cm.member_user_id = $1
+        LEFT JOIN conversation_message cm_last ON m.msg_id = cm_last.msg_id AND cm_last.conversation_id = c.conversation_id
+        
         ORDER BY c.last_msg_time DESC NULLS LAST;
     """
-
+    
     rows = await conn.fetch(query, user_id)
-
-    # 将 asyncpg 的 Record 对象转换为标准字典，直接返回给 FastAPI 路由
     return [dict(row) for row in rows]

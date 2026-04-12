@@ -57,6 +57,7 @@ async def db_create_group(
     conn: asyncpg.Connection,
     creator_id: int,
     member_ids: list[int],
+    avatar_url: str | None = None,
     group_name: str = "未命名群聊",
 ) -> int:
     """
@@ -66,9 +67,9 @@ async def db_create_group(
     async with conn.transaction():
         # 1. 插入会话基础信息
         query_conv = (
-            "INSERT INTO conversation (type, conversation_name) VALUES ('group', $1) RETURNING conversation_id;"
+            "INSERT INTO conversation (type, conversation_name, avatar_url) VALUES ('group', $1) RETURNING conversation_id;"
         )
-        conv_id = await conn.fetchval(query_conv, group_name)
+        conv_id = await conn.fetchval(query_conv, group_name, avatar_url)
 
         # 2. 插入群主 (owner)
         query_owner = (
@@ -347,9 +348,9 @@ async def db_review_group_invite(
         action: str) -> None:
     """
     审核群邀请 (对应 PUT /api/group/invite/review)
-    action 必须是 'approved' 或 'rejected'
+    action 必须是 'approved' 或 'ignored'
     """
-    if action not in ("approved", "rejected"):
+    if action not in ("approved", "ignored"):
         raise GroupException(GroupErrors.InvalidReviewAction)
 
     # 1. 查找这条邀请记录
