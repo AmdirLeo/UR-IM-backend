@@ -94,16 +94,35 @@ def test_websocket_ping_pong_heartbeat():
 
 
 def test_websocket_single_sign_on_kick():
-    """测试单点登录机制：同 ID 异地登录，旧连接被断开"""
+    """测试单点登录机制：同 ID 异地登录，旧连接先收到踢出通知，随后被断开"""
+    # 为了防止其他测试用例的残留数据干扰，先清空连接池
+    manager.active_connections.clear()
+
     url = get_ws_url(1)
+
     with client.websocket_connect(url) as ws_device_a:
+        # 消耗掉设备 A 自己的上线系统广播
         ws_device_a.receive_json()
 
+        # 此时设备 B 携带相同的 Token (相同的 user_id) 尝试连接
         with client.websocket_connect(url) as ws_device_b:
+            # 消耗掉设备 B 的上线系统广播
             ws_device_b.receive_json()
 
-            with pytest.raises(WebSocketDisconnect):
-                ws_device_a.receive_json()
+            # --- 核心测试逻辑开始 ---
+
+            # 1. 验证设备 A 是否收到了特定的踢出 JSON 通知
+            kick_msg = ws_device_a.receive_json()
+            assert kick_msg["type"] == "system"
+            assert kick_msg["msg_type"] == "kicked_out"
+            assert "其他设备" in kick_msg["message"]
+
+            # 2. 验证发送完通知后，设备 A 的底层连接是否被后端以 1008 状态码强行关闭
+            with pytest.raises(WebSocketDisconnect) as exc:
+                ws_device_a.receive_json()  # 再次尝试接收会触发断开异常
+            assert exc.value.code == 1008
+
+            # --- 核心测试逻辑结束 ---
 
 
 @pytest.mark.asyncio

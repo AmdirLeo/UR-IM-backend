@@ -47,7 +47,7 @@ class UserForgetPWD(BaseModel):
     verification_code: str = Field(..., description="邮箱验证码")
 
 
-#注销账号
+# 注销账号
 class DeleteAccountRequest(BaseModel):
     password: str = Field(..., description="注销确认密码")
 

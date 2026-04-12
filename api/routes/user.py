@@ -62,7 +62,7 @@ async def logout(current_user_id: CurrentUserId):
 
 @router.post("/delete", response_model=BaseResponse, summary="用户注销")
 async def delete_account(
-    req: DeleteAccountRequest, # 👈 接收请求体
+    req: DeleteAccountRequest,  # 👈 接收请求体
     current_user_id: CurrentUserId,
     conn: DBConnection
 ):

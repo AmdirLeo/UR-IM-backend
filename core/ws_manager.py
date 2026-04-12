@@ -15,6 +15,22 @@ class ConnectionManager:
         await websocket.accept()
         # 如果该用户已经在其他设备登录，先踢掉旧的连接（单点登录逻辑）
         if user_id in self.active_connections:
+            old_ws = self.active_connections[user_id]["ws"]
+
+            # 👇 --- 新增的核心逻辑：在断开前发通知 ---
+            try:
+                # 1. 抢在断开前，给旧设备发一条专属的“被踢”消息
+                await old_ws.send_json({
+                    "type": "system",
+                    "msg_type": "kicked_out",
+                    "message": "您的账号已在其他设备登录，您已被强制下线。"
+                })
+                # 2. 强制关闭旧连接，并带上 1008 状态码（表示违反策略）
+                await old_ws.close(code=1008)
+            except Exception as e:
+                print(f"发送踢出通知时出现异常: {e}")
+            # 👆 --------------------------------------
+
             await self.disconnect(user_id)
 
         self.active_connections[user_id] = {

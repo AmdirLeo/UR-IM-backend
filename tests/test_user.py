@@ -267,18 +267,18 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
 
         # 10a. 测试密码错误的情况 (400)
         response = await client.post(
-            "/api/users/delete", 
+            "/api/users/delete",
             headers=delete_headers,
-            json={"password": "wrong_password_here"} # 故意传错
+            json={"password": "wrong_password_here"}  # 故意传错
         )
         assert response.status_code == 400
         assert "密码错误" in response.json()["msg"]
 
         # 10b. 彻底注销账号 (携带正确密码)
         response = await client.post(
-            "/api/users/delete", 
+            "/api/users/delete",
             headers=delete_headers,
-            json={"password": "recoveredpassword"} # 传入注销所需的确认密码
+            json={"password": "recoveredpassword"}  # 传入注销所需的确认密码
         )
         assert response.status_code == 200
 
