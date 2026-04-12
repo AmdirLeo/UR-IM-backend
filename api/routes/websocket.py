@@ -1,5 +1,4 @@
 import jwt
-import json
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, status
 from core.ws_manager import manager
 from core.config import settings
@@ -38,16 +37,7 @@ async def websocket_endpoint(
 
     try:
         while True:
-            # 1. 增加容错：防止前端发来纯文本导致 receive_json 崩溃
-            try:
-                data = await websocket.receive_json()
-            except json.JSONDecodeError:
-                await manager.send_personal_message({"type": "error", "message": "必须发送 JSON 格式的数据"}, user_id)
-                continue
-            except Exception as e:
-                # 捕获其他可能的接收错误
-                print(f"接收数据异常: {e}")
-                break 
+            data = await websocket.receive_json()
 
             # 拦截心跳包
             if data.get("type") == "ping":
@@ -56,22 +46,13 @@ async def websocket_endpoint(
                 continue
 
             # 聊天分发逻辑
-            target_id_raw = data.get("target_id")
+            target_id = data.get("target_id")
             content = data.get("content")
 
             if target_id:
                 await manager.send_personal_message({"type": "private", "from": user_id, "content": content}, target_id)
             else:
                 await manager.broadcast({"type": "broadcast", "from": user_id, "content": content})
-            
-            # 2. 致命 Bug 修复：将前端传来的 target_id 强转为 int
-            target_id = int(target_id_raw) if target_id_raw is not None and str(target_id_raw).isdigit() else None
-
-            if target_id:
-                await manager.send_personal_message({"type": "private", "from": user_id, "content": content}, target_id)
-            else:
-                await manager.broadcast({"type": "broadcast", "from": user_id, "content": content})
-
 
     except WebSocketDisconnect:
         await manager.disconnect(user_id)
