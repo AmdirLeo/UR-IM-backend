@@ -40,15 +40,26 @@ async def test_friend_accept_triggers_system_notification(mock_ws_send):
             user_b_id = u_b['user_id']
 
             # 注入系统助手
-            await conn.execute("INSERT INTO user_account (user_id, username, password, email) VALUES ($1, '系统助手', 'nopass', 'sys@ur.im') ON CONFLICT DO NOTHING", SYSTEM_ID)
+            await conn.execute(
+                "INSERT INTO user_account (user_id, username, password, email) "
+                "VALUES ($1, '系统助手', 'nopass', 'sys@ur.im') ON CONFLICT DO NOTHING", SYSTEM_ID
+            )
 
             # 为 User A 创建系统会话（模拟注册时的逻辑）
-            sys_conv_id = await conn.fetchval("INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id")
-            await conn.execute("INSERT INTO conversation_member (conversation_id, member_user_id) VALUES ($1, $2), ($1, $3)", sys_conv_id, user_a_id, SYSTEM_ID)
+            sys_conv_id = await conn.fetchval(
+                "INSERT INTO conversation (type) VALUES ('private') "
+                "RETURNING conversation_id"
+            )
+            await conn.execute(
+                "INSERT INTO conversation_member (conversation_id, member_user_id) "
+                "VALUES ($1, $2), ($1, $3)",
+                sys_conv_id, user_a_id, SYSTEM_ID
+            )
 
             # 创建一条 A -> B 的待处理申请
             req_id = await conn.fetchval(
-                "INSERT INTO friend_request (sender_id, receiver_id, status) VALUES ($1, $2, 'pending') RETURNING request_id",
+                "INSERT INTO friend_request (sender_id, receiver_id, status) "
+                "VALUES ($1, $2, 'pending') RETURNING request_id",
                 user_a_id, user_b_id
             )
             break

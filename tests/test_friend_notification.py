@@ -43,15 +43,20 @@ async def test_friend_request_triggers_system_card(mock_ws_send):
 
             # 1.3 创建 User B (接收方)
             u_b = await conn.fetchrow(
-                "INSERT INTO user_account (username, password, email) VALUES ('UserB_Receiver', $1, $2) RETURNING user_id",
+                "INSERT INTO user_account (username, password, email) "
+                "VALUES ('UserB_Receiver', $1, $2) RETURNING user_id",
                 hashed_pw, TEST_USER_B_EMAIL
             )
             user_b_id = u_b['user_id']
 
             # 1.4 为 User B 创建与 10000 号的系统会话
-            sys_conv_id = await conn.fetchval("INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id")
+            sys_conv_id = await conn.fetchval(
+                "INSERT INTO conversation (type) "
+                "VALUES ('private') RETURNING conversation_id"
+            )
             await conn.execute(
-                "INSERT INTO conversation_member (conversation_id, member_user_id, role) VALUES ($1, $2, 'member'), ($1, $3, 'member')",
+                "INSERT INTO conversation_member (conversation_id, member_user_id, role) "
+                "VALUES ($1, $2, 'member'), ($1, $3, 'member')",
                 sys_conv_id, user_b_id, SYSTEM_ID
             )
             break  # 释放连接
