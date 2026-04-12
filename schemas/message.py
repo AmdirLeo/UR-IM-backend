@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Optional, TypeVar, Generic
+from typing import Optional, TypeVar, Generic, Dict, Any
 from enum import Enum
 
 T = TypeVar("T")
@@ -9,8 +9,8 @@ T = TypeVar("T")
 class MessageType(str, Enum):
     TEXT = "text"
     IMAGE = "image"
-    FRIEND_APPLY = "friend_apply"   # 好友申请卡片
-    SYSTEM_NOTICE = "system_notice"  # 纯文本系统提示（如：XXX已退出群聊）
+    CARD = "card"     # 互动卡片（如好友申请）
+    NOTIFY = "notify"  # 系统指令（前端静默处理或显示小灰条）
 
 
 class MessageGenericResponse(BaseModel, Generic[T]):
@@ -28,9 +28,16 @@ class SendMessageRequest(BaseModel):
         max_length=64,
         description="客户端生成的本地消息 ID",
     )
-    message_content: str = Field(..., min_length=1,
-                                 max_length=5000, description="消息内容")
+    message_content: str = Field(
+        ...,
+        min_length=1,
+        max_length=5000,
+        description="消息内容/摘要展示文案"
+    )
     msg_type: MessageType = Field(default=MessageType.TEXT, description="消息类型")
+    # 💡 核心新增：用来装 JSON 参数的万能口袋
+    extra_data: Optional[Dict[str, Any]] = Field(default=None, description="附加结构化数据")
+
     quote_message_id: Optional[int] = Field(None, description="当前信息所引用的信息的id")
 
 
