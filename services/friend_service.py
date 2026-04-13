@@ -221,23 +221,14 @@ async def create_friend_tag(db_session: asyncpg.Connection, user_id: int, tag_na
     """
     新建好友分组
     """
-    try:
-        await db_create_friend_tag(db_session, user_id, tag_name)
-    except Exception as e:
-        # Assuming the database exception string contains some clue, or we rely on the specific exception class
-        # According to the prompt: 409-该分组已存在
-        raise BusinessException(status_code=409, detail="该分组已存在") from e
+    await db_create_friend_tag(db_session, user_id, tag_name)
 
 
 async def delete_friend_tag(db_session: asyncpg.Connection, user_id: int, tag_name: str) -> None:
     """
     删除好友分组
     """
-    try:
-        await db_delete_friend_tag(db_session, user_id, tag_name)
-    except Exception as e:
-        # According to the prompt: 404-分组不存在
-        raise BusinessException(status_code=404, detail="分组不存在") from e
+    await db_delete_friend_tag(db_session, user_id, tag_name)
 
 
 async def add_friends_to_tag(
@@ -246,10 +237,7 @@ async def add_friends_to_tag(
     """
     将好友移入分组
     """
-    try:
-        await db_add_friends_to_tag(db_session, user_id, tag_name, friend_ids)
-    except Exception as e:
-        raise BusinessException(status_code=404, detail="分组不存在") from e
+    await db_add_friends_to_tag(db_session, user_id, tag_name, friend_ids)
 
 
 async def get_friends_by_tag(db_session: asyncpg.Connection, user_id: int, tag_name: str) -> list[dict]:
@@ -265,10 +253,7 @@ async def remove_friend_from_tag(
     """
     将特定好友移出分组
     """
-    try:
-        await db_remove_friend_from_tag(db_session, user_id, friend_user_id, tag_name)
-    except Exception as e:
-        raise BusinessException(status_code=404, detail="该好友不在当前分组中") from e
+    await db_remove_friend_from_tag(db_session, user_id, friend_user_id, tag_name)
 
 
 # services/user_service.py

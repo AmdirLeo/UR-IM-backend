@@ -305,6 +305,13 @@ async def db_get_friends_by_tag(conn: asyncpg.Connection, user_id: int, tag_name
     """
     获取某个分组下的所有好友信息 (对应 POST /api/friend/tag/query)
     """
+    # 1. 先查这个分组到底存不存在
+    tag_exists = await conn.fetchval(
+        "SELECT 1 FROM user_friend_tag WHERE user_id = $1 AND tag_name = $2",
+        user_id, tag_name
+    )
+    if not tag_exists:
+        raise BusinessException(status_code=404, detail="分组不存在")
     query = """
         SELECT u.user_id, u.username, u.avatar_url
         FROM friend_tag_mapping m

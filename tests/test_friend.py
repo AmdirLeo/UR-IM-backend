@@ -128,34 +128,36 @@ async def test_friend_journey_and_edge_cases():
         friends = res.json()["data"]
         assert any(f["user_id"] == user_b_id for f in friends)
 
-        # 5. 好友分组标签流转 (Tag Journey)
-        tag_name = "BestFriends"
-        res = await client.post(
-            "/api/friend/tag/new",
-            json={"tag_name": tag_name},
-            headers=headers_a
-        )
-        assert res.status_code == 200
-        res = await client.post(
-            "/api/friend/tag/add",
-            json={"tag_name": tag_name, "friend_ids": [user_b_id]},
-            headers=headers_a
-        )
-        assert res.status_code == 200
-        res = await client.post(
-            "/api/friend/tag/query",
-            json={"tag_name": tag_name},
-            headers=headers_a
-        )
-        assert res.status_code == 200
-        res = await client.post(
-            "/api/friend/tag/remove",
-            json={"tag_name": tag_name, "friend_id": user_b_id},
-            headers=headers_a
-        )
-        assert res.status_code == 200
-        res = await client.post("/api/friend/tag/delete", json={"tag_name": tag_name}, headers=headers_a)
-        assert res.status_code == 200
+        # ---------------------------------------------------------
+        # 5. 好友分组标签流转 (Tag Journey) - 多标签版
+        # ---------------------------------------------------------
+        tag_1 = "BestFriends"
+        tag_2 = "Colleagues"
+
+        # 创建两个标签
+        await client.post("/api/friend/tag/new", json={"tag_name": tag_1}, headers=headers_a)
+        await client.post("/api/friend/tag/new", json={"tag_name": tag_2}, headers=headers_a)
+
+        # 把 user_b 同时加入两个标签
+        await client.post("/api/friend/tag/add", json={"tag_name": tag_1, "friend_ids": [user_b_id]}, headers=headers_a)
+        await client.post("/api/friend/tag/add", json={"tag_name": tag_2, "friend_ids": [user_b_id]}, headers=headers_a)
+
+        # 🚨 验证多标签功能：拉取好友列表并检查 Pydantic 模型是否能正确序列化数组
+        res_list = await client.get("/api/friend", headers=headers_a)
+        assert res_list.status_code == 200
+        friends_data = res_list.json()["data"]
+
+        # 找出 user_b 的数据
+        user_b_data = next(f for f in friends_data if f["user_id"] == user_b_id)
+
+        # 断言：user_b 的 tags 字段必须是一个列表，并且同时包含这两个标签
+        assert isinstance(user_b_data["tags"], list)
+        assert tag_1 in user_b_data["tags"]
+        assert tag_2 in user_b_data["tags"]
+
+        # 后续的清理测试（可以只清理其中一个，测一下删除功能）
+        await client.post("/api/friend/tag/remove", json={"tag_name": tag_1, "friend_id": user_b_id}, headers=headers_a)
+        await client.post("/api/friend/tag/delete", json={"tag_name": tag_1}, headers=headers_a)
 
         # ---------------------------------------------------------
         # 5.5. 模拟两人聊天 (生成 conv_id 和历史记录)

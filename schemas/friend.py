@@ -24,7 +24,7 @@ class FriendInfo(BaseModel):
     user_id: int = Field(..., description="好友用户ID")
     username: str = Field(..., description="好友用户名")
     avatar_url: Optional[str] = Field(None, description="好友头像URL")
-    tag: Optional[str] = Field(None, description="好友分组标签（如'同学','同事'）")
+    tags: list[str] = Field(default_factory=list, description="好友分组标签列表（无标签时为空数组）")
     be_friend_time: datetime = Field(..., description="成为好友的时间")
 
 
