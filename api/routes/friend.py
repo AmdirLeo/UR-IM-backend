@@ -21,7 +21,6 @@ from schemas.friend import (
     RemoveFriendRequest,
 )
 
-router = APIRouter(prefix="/friend", tags=["好友"])
 
 # ==========================================
 # 定义 Annotated 依赖别名 (最优雅的做法)
