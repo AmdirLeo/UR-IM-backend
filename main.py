@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from core.config import settings
 from core.exceptions import setup_exception_handlers
 from core.ws_manager import manager
-from api.routes import friend, message, user, websocket
+from api.routes import friend, message, user, websocket, conversation
 from api.dependencies import RateLimiter
 from api.middleware import MultiLayerRateLimitMiddleware
 
@@ -68,6 +68,11 @@ app.include_router(websocket.router, prefix="/websocket",
 app.include_router(message.router, prefix="/api/message", tags=["Message API"])
 app.include_router(friend.router, prefix="/api/friend",
                    tags=["Manage friendship"])
+app.include_router(
+    conversation.router,
+    prefix="/api/conversation",  # 推荐：给这些接口统一加上 /conversation 前缀
+    tags=["Conversation"]    # 推荐：在 Swagger UI 中将它们归类到 "Conversation" 标签下，方便查找
+)
 
 
 @app.get("/health")
