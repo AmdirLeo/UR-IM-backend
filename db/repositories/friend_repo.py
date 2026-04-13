@@ -29,6 +29,9 @@ QUERY_WIPE_INBOX = """
     WHERE conversation_id = $1;
 """
 
+ERR_TAG_NOT_FOUND = "分组不存在"
+ERR_TAG_CONFLICT = "该分组已存在"
+
 
 async def db_create_friend_request(conn: asyncpg.Connection, sender_id: int, receiver_id: int, message: str) -> int:
     """
@@ -267,7 +270,7 @@ async def db_create_friend_tag(conn: asyncpg.Connection, user_id: int, tag_name:
     """
     status = await conn.execute(query, user_id, tag_name)
     if status != INSERT_ONE:
-        raise BusinessException(status_code=409, detail="该分组已存在")
+        raise BusinessException(status_code=409, detail=ERR_TAG_CONFLICT)
 
 
 async def db_delete_friend_tag(conn: asyncpg.Connection, user_id: int, tag_name: str) -> None:
@@ -277,7 +280,7 @@ async def db_delete_friend_tag(conn: asyncpg.Connection, user_id: int, tag_name:
     query = "DELETE FROM user_friend_tag WHERE user_id = $1 AND tag_name = $2;"
     status = await conn.execute(query, user_id, tag_name)
     if status != DELETE_ONE:
-        raise BusinessException(status_code=404, detail="分组不存在")
+        raise BusinessException(status_code=404, detail=ERR_TAG_NOT_FOUND)
 
 
 async def db_add_friends_to_tag(conn: asyncpg.Connection, user_id: int, tag_name: str, friend_ids: list[int]) -> None:
@@ -287,7 +290,7 @@ async def db_add_friends_to_tag(conn: asyncpg.Connection, user_id: int, tag_name
         tag_name,
     )
     if not check_tag:
-        raise BusinessException(status_code=404, detail="分组不存在")
+        raise BusinessException(status_code=404, detail=ERR_TAG_NOT_FOUND)
 
     # 组装批量插入的数据: [(user_id, friend_id_1, tag), (user_id, friend_id_2, tag)...]
     records = [(user_id, fid, tag_name) for fid in friend_ids]
@@ -311,7 +314,7 @@ async def db_get_friends_by_tag(conn: asyncpg.Connection, user_id: int, tag_name
         user_id, tag_name
     )
     if not tag_exists:
-        raise BusinessException(status_code=404, detail="分组不存在")
+        raise BusinessException(status_code=404, detail=ERR_TAG_NOT_FOUND)
     query = """
         SELECT u.user_id, u.username, u.avatar_url
         FROM friend_tag_mapping m
