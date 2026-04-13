@@ -10,10 +10,15 @@ from db.repositories.friend_repo import (
     db_get_friends_by_tag,
     db_remove_friend_from_tag,
 )
+from db.repositories.user_repo import (
+    db_get_user_by_id,
+)
 from core.exceptions import BusinessException
 from schemas.message import SendMessageRequest, MessageType
+from schemas.user import UserInfoResponse
 # 引入发消息服务（请根据你的实际项目结构调整导入路径）
 from services.message_service import send_message_service
+from services.user_service import get_user_info_service
 import asyncpg
 import time
 import uuid
@@ -264,3 +269,41 @@ async def remove_friend_from_tag(
         await db_remove_friend_from_tag(db_session, user_id, friend_user_id, tag_name)
     except Exception as e:
         raise BusinessException(status_code=404, detail="该好友不在当前分组中") from e
+
+
+# services/user_service.py
+
+async def get_other_user_info_service(
+    conn,
+    current_user_id: int,
+    target_user_id: int
+) -> UserInfoResponse:
+    """
+    获取其他用户个人信息的业务逻辑
+    """
+    # 0. 边缘情况处理：如果他查的是自己，可以直接复用之前的逻辑（可选）
+    if current_user_id == target_user_id:
+        return await get_user_info_service(conn, current_user_id)
+
+    # 1. 去数据库查询目标用户信息
+    user = await db_get_user_by_id(conn, target_user_id)
+
+    # 2. 安全校验
+    if not user:
+        raise BusinessException(status_code=404, detail="目标用户不存在")
+
+    # 3.  进阶权限校验 (未来可以在这里加逻辑)
+    # 比如：判断 target_user_id 是否在 current_user_id 的黑名单里？
+    # 比如：如果不是好友，是不是只能看基础信息，不能看详细资料？
+
+    # 4. 封装返回类
+    # 注意：真实项目中，给别人看的信息通常少于给自己看的信息。
+    # 这里暂时复用 UserInfoResponse，后续建议新建一个 TargetUserInfoResponse
+    return UserInfoResponse(
+        code=200,
+        id=user["user_id"],
+        username=user["username"],
+        avatar_url=user.get("avatar_url"),
+        # 如果是隐私要求高的系统，非好友查询时，邮箱可能需要打码处理，如 a***@gmail.com
+        email=user["email"]
+    )

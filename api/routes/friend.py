@@ -1,11 +1,12 @@
 from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query, Path
+from api.dependencies import CurrentUserId, DBConnection
 
 from api.dependencies import get_current_user_id
 from db.database import get_db_conn
 from services.user_service import search_users
 from services import friend_service
-from schemas.user import SearchUserResponse
+from schemas.user import SearchUserResponse, UserInfoResponse
 from schemas.friend import (
     FriendGenericResponse,
     FriendApplyRequest,
@@ -198,3 +199,18 @@ async def remove_friend_from_tag(
         tag_name=request.tag_name,
     )
     return FriendGenericResponse(code=200, msg="移出好友成功")
+
+
+@router.get(
+    "/info/{target_user_id}",
+    response_model=UserInfoResponse,  # 建议后期换成专门针对"其他用户"的 Schema
+    summary="获取其他用户信息"
+)
+async def get_other_user_info(
+    # Path(...) 用于校验路径参数，必须是大于 0 的整数
+    target_user_id: int = Path(..., description="目标用户的 ID", gt=0),
+    current_user_id: CurrentUserId = None,  # 依然需要这个，拦截未登录请求
+    conn: DBConnection = None
+):
+    # 呼叫 Service 层，注意这里把 current_user_id 也传进去了，方便后续做权限控制
+    return await friend_service.get_other_user_info_service(conn, current_user_id, target_user_id)

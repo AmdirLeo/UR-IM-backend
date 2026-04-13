@@ -67,6 +67,28 @@ async def test_friend_journey_and_edge_cases():
         assert len(data) >= 1
         assert data[0]["username"] == "friend_user_B"
 
+        # ==========================================
+        # 👇 这是为你新增的：测试获取其他用户信息功能
+        # ==========================================
+        # 1.5 查看目标用户详细信息 (Get Other User Info)
+        # 注意：如果你的路由前缀不同，请将 /api/user/info 替换为你实际的路径 (比如 /api/friend/info)
+        res_info = await client.get(f"/api/friend/info/{user_b_id}", headers=headers_a)
+        assert res_info.status_code == 200
+        user_info = res_info.json()
+
+        # 根据你之前定义的 UserInfoResponse 结构进行断言
+        assert user_info["id"] == user_b_id
+        assert user_info["username"] == "friend_user_B"
+        assert "email" in user_info  # 验证返回了邮箱字段
+
+        # 1.6 边界情况 (Edge Case)：查询一个根本不存在的 user_id
+        res_404 = await client.get("/api/friend/info/9999999", headers=headers_a)
+        # 验证 Service 层抛出的 BusinessException(status_code=404) 被正确处理
+        assert res_404.status_code == 404
+        # ==========================================
+        # 👆 新增结束
+        # ==========================================
+
         # 2. 发送好友申请 (Apply)
         res = await client.post(
             "/api/friend/apply",
