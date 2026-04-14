@@ -22,7 +22,7 @@ class Settings(BaseSettings):
 
     # --- 安全与 JWT 配置 ---
     JWT_SECRET_KEY: str = Field(
-        default="your_super_secret_safe_key_2026"
+        default="ur_im_super_secret_key_2026_secoder_bypass"
     )
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30  # 默认为30分钟
