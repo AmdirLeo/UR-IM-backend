@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     # --- 数据库配置 ---
     # Pydantic 会自动从 .env 中读取 DATABASE_URL 变量
     DATABASE_URL: str = Field(
-        default="postgresql://postgres:123456@ur_im_db:5432/postgres?ssl=disable"
+        default="postgresql://postgres:123456@ur_im_db.Default.secoder.local:5432/postgres?ssl=disable"
     )
 
     # 🌟 Redis 也是同理
