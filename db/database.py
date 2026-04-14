@@ -46,6 +46,7 @@ async def init_db_pool():
             dsn=settings.DATABASE_URL,
             min_size=5,  # 池子里最少保持 5 个常驻连接
             max_size=20,  # 最多允许同时建立 20 个连接
+            ssl=False,
             command_timeout=60.0,  # 任何 SQL 执行超过 60 秒自动掐断，防止死锁拖垮整个系统
         )
         print("数据库连接池初始化成功")
