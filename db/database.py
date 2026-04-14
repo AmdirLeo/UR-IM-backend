@@ -1,6 +1,7 @@
 import asyncpg
 from typing import AsyncGenerator
 import os
+from core.config import settings
 
 db_pool: asyncpg.Pool | None = None
 
@@ -32,13 +33,11 @@ async def init_db_pool():
     global db_pool
 
     # 这个 URL 应该从 core/config.py 或 .env 文件中读取
-    # 先写死
-    db_url = os.getenv(
-        "DATABASE_URL", "postgresql://postgres:123456@127.0.0.1:5432/im_db")
+    global db_pool
 
     try:
         db_pool = await asyncpg.create_pool(
-            dsn=db_url,
+            dsn=settings.DATABASE_URL,
             min_size=5,  # 池子里最少保持 5 个常驻连接
             max_size=20,  # 最多允许同时建立 20 个连接
             command_timeout=60.0,  # 任何 SQL 执行超过 60 秒自动掐断，防止死锁拖垮整个系统
