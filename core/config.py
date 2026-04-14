@@ -9,6 +9,13 @@ class Settings(BaseSettings):
     VERSION: str = "0.1.0"
     DEBUG: bool = True
 
+    # 这行代码告诉 Pydantic 去当前目录下找 .env 文件
+    model_config = SettingsConfigDict(
+        env_file=".env", 
+        env_file_encoding='utf-8',
+        extra='ignore' # 忽略环境变量中多余的变量，防止报错
+    )
+
     # --- 数据库配置 ---
     # Pydantic 会自动从 .env 中读取 DATABASE_URL 变量
     DATABASE_URL: str = Field(
