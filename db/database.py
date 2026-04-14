@@ -1,17 +1,22 @@
 import asyncpg
+import asyncio
 from typing import AsyncGenerator
 import os
 from core.config import settings
 
 db_pool: asyncpg.Pool | None = None
 
+background_tasks = set()
 
 async def init_system_data():
     """在服务启动时自检并初始化系统账号"""
+    global db_pool
+    if db_pool is None:
+        return
     print("正在进行系统自检...")
     # get_db_conn 通常是一个依赖生成器 (async generator)，拿一条连接用完即毁
-    async for conn in get_db_conn():
-        try:
+    try:
+        async with db_pool.acquire() as conn:
             # 这里的 ON CONFLICT (user_id) DO NOTHING 是灵魂！
             # 保证了每次重启服务都不会重复插入，也不会报错。
             await conn.execute("""
@@ -20,9 +25,9 @@ async def init_system_data():
                 ON CONFLICT (user_id) DO NOTHING;
             """)
             print("系统核心数据自检完毕：系统助手(10000)已就绪。")
-        except Exception as e:
-            print(f"系统核心数据自检失败: {e}")
-        break  # 取一次连接执行完毕就主动跳出循环
+    except Exception as e:
+        print(f"系统核心数据自检失败: {e}")
+        #break  # 取一次连接执行完毕就主动跳出循环
 
 
 async def init_db_pool():
@@ -44,6 +49,19 @@ async def init_db_pool():
             command_timeout=60.0,  # 任何 SQL 执行超过 60 秒自动掐断，防止死锁拖垮整个系统
         )
         print("数据库连接池初始化成功")
+
+        # --- 修正 S7502 警告的写法 ---
+        task = asyncio.create_task(init_system_data())
+        
+        # 将任务添加到集合中，保持引用
+        background_tasks.add(task)
+
+        # 任务完成后自动从集合中移除，防止内存泄漏
+        task.add_done_callback(background_tasks.discard)
+
+        print("系统数据自检任务已后台启动（已保留引用）")
+
+
     except Exception as e:
         print(f"数据库连接池初始化失败: {e}")
         raise e
