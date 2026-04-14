@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     # 🌟 Redis 也是同理
     REDIS_URL: str = Field(
-        default="redis://ur_im_redis.Default.secoder.local:6379/0"
+        default="redis://im_redis.Default.secoder.local:6379/0"
     )
 
     # --- 安全与 JWT 配置 ---
