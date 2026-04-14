@@ -11,10 +11,19 @@ class Settings(BaseSettings):
 
     # --- 数据库配置 ---
     # Pydantic 会自动从 .env 中读取 DATABASE_URL 变量
-    DATABASE_URL: str = Field(default=...)
+    DATABASE_URL: str = Field(
+        default="postgresql://postgres:123456@ur_im_db.Default.secoder.local:5432/im_db"
+    )
+
+    # 🌟 Redis 也是同理
+    REDIS_URL: str = Field(
+        default="redis://im_redis.Default.secoder.local:6379/0"
+    )
 
     # --- 安全与 JWT 配置 ---
-    JWT_SECRET_KEY: str = Field(default=...)
+    JWT_SECRET_KEY: str = Field(
+        default="your_super_secret_safe_key_2026"
+    )
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30  # 默认为30分钟
 
