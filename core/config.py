@@ -11,7 +11,7 @@ class Settings(BaseSettings):
 
     # 这行代码告诉 Pydantic 去当前目录下找 .env 文件
     model_config = SettingsConfigDict(
-        env_file=".env", 
+        env_file="/app/.env", 
         env_file_encoding='utf-8',
         extra='ignore' # 忽略环境变量中多余的变量，防止报错
     )

@@ -32,8 +32,9 @@ async def init_db_pool():
     """
     global db_pool
 
-    # 这个 URL 应该从 core/config.py 或 .env 文件中读取
-    global db_pool
+    # --- 新增调试代码：确认当前到底在用哪个 URL ---
+    print(f"DEBUG: 准备连接数据库，当前 URL 为: {settings.DATABASE_URL}")
+    # ------------------------------------------
 
     try:
         db_pool = await asyncpg.create_pool(
