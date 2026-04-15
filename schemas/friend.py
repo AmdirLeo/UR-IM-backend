@@ -80,3 +80,11 @@ class RemoveFriendRequest(BaseModel):
     """删除好友的请求体"""
     friend_user_id: int = Field(..., description="要删除的好友的用户 ID")
     delete_history: bool = Field(False, description="是否同时清空与该好友的聊天记录")
+
+
+class TagListResponse(BaseResponse):
+    """
+    获取好友分组/标签列表的响应
+    对应 GET /api/friend/tag/list
+    """
+    data: list[str] = Field(default_factory=list, description="标签名称列表")

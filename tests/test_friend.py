@@ -143,6 +143,25 @@ async def test_friend_journey_and_edge_cases():
         await client.post("/api/friend/tag/new", json={"tag_name": tag_1}, headers=headers_a)
         await client.post("/api/friend/tag/new", json={"tag_name": tag_2}, headers=headers_a)
 
+        # ==========================================
+        # 👇 这是为你新增的：测试获取标签列表功能
+        # ==========================================
+        res_tag_list = await client.get("/api/friend/tag/list", headers=headers_a)
+        assert res_tag_list.status_code == 200
+        tag_list_data = res_tag_list.json().get("data", [])
+
+        # 断言返回的是列表，并且刚刚创建的两个标签都在列表内
+        assert isinstance(tag_list_data, list), "返回的 data 应该是一个列表"
+        assert tag_1 in tag_list_data, f"标签列表中缺少刚创建的 {tag_1}"
+        assert tag_2 in tag_list_data, f"标签列表中缺少刚创建的 {tag_2}"
+        # ==========================================
+        # 👆 新增结束
+        # ==========================================
+
+        # 创建两个标签
+        await client.post("/api/friend/tag/new", json={"tag_name": tag_1}, headers=headers_a)
+        await client.post("/api/friend/tag/new", json={"tag_name": tag_2}, headers=headers_a)
+
         # 把 user_b 同时加入两个标签
         await client.post("/api/friend/tag/add", json={"tag_name": tag_1, "friend_ids": [user_b_id]}, headers=headers_a)
         await client.post("/api/friend/tag/add", json={"tag_name": tag_2, "friend_ids": [user_b_id]}, headers=headers_a)
@@ -164,6 +183,16 @@ async def test_friend_journey_and_edge_cases():
         # 后续的清理测试（可以只清理其中一个，测一下删除功能）
         await client.post("/api/friend/tag/remove", json={"tag_name": tag_1, "friend_id": user_b_id}, headers=headers_a)
         await client.post("/api/friend/tag/delete", json={"tag_name": tag_1}, headers=headers_a)
+
+        # ==========================================
+        # 👇 可选新增：验证删除后，tag_1 确实从标签列表中消失了
+        # ==========================================
+        res_tag_list_after_delete = await client.get("/api/friend/tag/list", headers=headers_a)
+        assert res_tag_list_after_delete.status_code == 200
+        tag_list_data_after = res_tag_list_after_delete.json().get("data", [])
+        assert tag_1 not in tag_list_data_after, f"删除失败，{tag_1} 仍然存在于列表中"
+        assert tag_2 in tag_list_data_after, f"误删，{tag_2} 应该还在列表中"
+        # ==========================================
 
         # ---------------------------------------------------------
         # 5.5. 模拟两人聊天 (生成 conv_id 和历史记录)

@@ -296,6 +296,21 @@ async def db_delete_friend_tag(
         raise BusinessException(status_code=404, detail=ERR_TAG_NOT_FOUND)
 
 
+async def db_get_friend_tags(
+    conn: asyncpg.Connection, user_id: int
+) -> list[str]:
+    """
+    获取好友分组/标签列表 (对应 GET /api/friend/tag/list)
+    """
+    query = "SELECT tag_name FROM user_friend_tag WHERE user_id = $1 ORDER BY tag_name;"
+
+    # fetch 返回的是一个 asyncpg.Record 的列表
+    records = await conn.fetch(query, user_id)
+
+    # 提取 tag_name 组成一个普通的 Python 字符串列表
+    return [record["tag_name"] for record in records]
+
+
 async def db_add_friends_to_tag(
     conn: asyncpg.Connection, user_id: int, tag_name: str, friend_ids: list[int]
 ) -> None:

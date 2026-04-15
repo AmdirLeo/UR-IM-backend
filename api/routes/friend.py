@@ -22,6 +22,7 @@ from schemas.friend import (
     RemoveFriendRequest,
     FriendHandleResponse,
     FriendHandleData,
+    TagListResponse,
 )
 
 router = APIRouter()
@@ -239,3 +240,21 @@ async def get_other_user_info(
 ):
     # 呼叫 Service 层，注意这里把 current_user_id 也传进去了，方便后续做权限控制
     return await friend_service.get_other_user_info_service(conn, current_user_id, target_user_id)
+
+
+@router.get("/tag/list",
+            response_model=TagListResponse,
+            summary="获取好友标签列表")
+async def get_tag_list(
+    current_user_id: CurrentUserId,
+    db_session: DBSession,  # 保持和你上面 POST 接口一致的依赖名称
+):
+    # 调用我们在 service 层写好的方法
+    tags = await friend_service.get_friend_tag_list(
+        db_session=db_session,
+        current_user_id=current_user_id,
+    )
+
+    # 封装成你定义好的 TagListResponse 格式返回
+    # 因为继承了 BaseResponse，code 和 msg 也可以省略不写（如果模型里有默认值的话）
+    return TagListResponse(code=200, msg="获取标签列表成功", data=tags)

@@ -9,6 +9,7 @@ from db.repositories.friend_repo import (
     db_add_friends_to_tag,
     db_get_friends_by_tag,
     db_remove_friend_from_tag,
+    db_get_friend_tags,
 )
 from db.repositories.user_repo import (
     db_get_user_by_id,
@@ -295,3 +296,12 @@ async def get_other_user_info_service(
         # 如果是隐私要求高的系统，非好友查询时，邮箱可能需要打码处理，如 a***@gmail.com
         email=user["email"]
     )
+
+
+async def get_friend_tag_list(db_session: asyncpg.Connection, current_user_id: int) -> list[str]:
+    """
+    获取当前用户的所有好友分组标签列表。
+    """
+    # 调用之前定义的数据库层函数
+    tags = await db_get_friend_tags(db_session, current_user_id)
+    return tags
