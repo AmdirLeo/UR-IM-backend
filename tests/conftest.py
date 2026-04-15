@@ -127,3 +127,18 @@ def test_client(scope="session"):
     """提供一个测试专用的 FastAPI Client"""
     with TestClient(app) as client:
         yield client
+
+
+@pytest.fixture(autouse=True)
+def toggle_rate_limit_for_tests(request):
+    """
+    自动管理限流开关的魔法 Fixture：
+    如果是测试限流的文件，就移除白名单让限流真实生效；
+    如果是其他所有的业务测试，统统开启白名单，防止 429 误伤。
+    """
+    if "test_rate_limits" in request.node.name or "test_rate_limits.py" in str(request.node.path):
+        # 正在测试限流护甲，关闭白名单
+        os.environ.pop("DISABLE_RATE_LIMIT", None)
+    else:
+        # 正在测试其他业务，开启白名单，一路绿灯
+        os.environ["DISABLE_RATE_LIMIT"] = "1"

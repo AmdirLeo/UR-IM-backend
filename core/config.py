@@ -9,12 +9,28 @@ class Settings(BaseSettings):
     VERSION: str = "0.1.0"
     DEBUG: bool = True
 
+    # 这行代码告诉 Pydantic 去当前目录下找 .env 文件
+    model_config = SettingsConfigDict(
+        env_file=".env", 
+        env_file_encoding='utf-8',
+        extra='ignore' # 忽略环境变量中多余的变量，防止报错
+    )
+
     # --- 数据库配置 ---
     # Pydantic 会自动从 .env 中读取 DATABASE_URL 变量
-    DATABASE_URL: str = Field(default=...)
+    DATABASE_URL: str = Field(
+        default="postgresql://postgres:123456@ur_im_db.Default.secoder.local:5432/postgres"
+    )
+
+    # 🌟 Redis 也是同理
+    REDIS_URL: str = Field(
+        default="redis://im_redis.Default.secoder.local:6379/0"
+    )
 
     # --- 安全与 JWT 配置 ---
-    JWT_SECRET_KEY: str = Field(default=...)
+    JWT_SECRET_KEY: str = Field(
+        default="ur_im_super_secret_key_2026_secoder_bypass"
+    )
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30  # 默认为30分钟
 

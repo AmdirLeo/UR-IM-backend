@@ -15,6 +15,22 @@ class ConnectionManager:
         await websocket.accept()
         # 如果该用户已经在其他设备登录，先踢掉旧的连接（单点登录逻辑）
         if user_id in self.active_connections:
+            old_ws = self.active_connections[user_id]["ws"]
+
+            # 👇 --- 新增的核心逻辑：在断开前发通知 ---
+            try:
+                # 1. 抢在断开前，给旧设备发一条专属的“被踢”消息
+                await old_ws.send_json({
+                    "type": "system",
+                    "msg_type": "kicked_out",
+                    "message": "您的账号已在其他设备登录，您已被强制下线。"
+                })
+                # 2. 强制关闭旧连接，并带上 1008 状态码（表示违反策略）
+                await old_ws.close(code=1008)
+            except Exception as e:
+                print(f"发送踢出通知时出现异常: {e}")
+            # 👆 --------------------------------------
+
             await self.disconnect(user_id)
 
         self.active_connections[user_id] = {
@@ -47,9 +63,14 @@ class ConnectionManager:
                 await self.disconnect(user_id)
 
     async def broadcast(self, message: dict):
-        # 为了避免在遍历字典时修改字典引发报错，先拷贝一份 user_id 列表
-        for user_id in self.active_connections.keys():
-            await self.send_personal_message(message, user_id)
+        # 1. 必须套上 list()，拷贝静态列表，防止 RuntimeError
+        user_ids = list(self.active_connections.keys())
+
+        # 2. 收集所有的发送任务，使用 gather 并发发送，速度提升10倍
+        tasks = [self.send_personal_message(message, uid) for uid in user_ids]
+
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def purge_timeouts(self):
         current_time = time.time()

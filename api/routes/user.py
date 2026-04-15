@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, UploadFile, File
-from api.dependencies import CurrentUserId, DBConnection
+from api.dependencies import CurrentUserId, DBConnection, vcode_limit_check
 from schemas.user import (
     UserRegister,
     RegisterResponse,
@@ -7,12 +7,14 @@ from schemas.user import (
     LoginResponse,
     EmailRequest,
     EmailResponse,
-    UserEdit,
+    UsernameEdit,
+    PasswordEdit,
     EmailEdit,
     BaseResponse,
     UserForgetPWD,
     PortraitResponse,
     UserInfoResponse,
+    DeleteAccountRequest,
 )
 from services import user_service
 
@@ -22,9 +24,11 @@ router = APIRouter()
 # ==========================================
 # 1. 注册与密码找回
 # ==========================================
-@router.post("/register/email",
-             response_model=EmailResponse,
-             summary="发送注册验证码")
+@router.post(
+    "/register/email",
+    response_model=EmailResponse,
+    summary="发送注册验证码",
+    dependencies=[Depends(vcode_limit_check)])
 async def send_register_email(request: EmailRequest):
     return await user_service.send_register_email_service(request.email)
 
@@ -62,16 +66,25 @@ async def logout(current_user_id: CurrentUserId):
 
 
 @router.post("/delete", response_model=BaseResponse, summary="用户注销")
-async def delete_account(current_user_id: CurrentUserId, conn: DBConnection):
-    return await user_service.delete_account_service(conn, current_user_id)
+async def delete_account(
+    req: DeleteAccountRequest,  # 👈 接收请求体
+    current_user_id: CurrentUserId,
+    conn: DBConnection
+):
+    return await user_service.delete_account_service(conn, current_user_id, req.password)
 
 
 # ==========================================
 # 3. 个人信息修改 (必须携带 Token)
 # ==========================================
-@router.put("/edit", response_model=BaseResponse, summary="修改基本信息")
-async def edit_profile(edit_data: UserEdit, current_user_id: CurrentUserId, conn: DBConnection):
-    return await user_service.edit_profile_service(conn, current_user_id, edit_data)
+@router.put("/edit/username", response_model=BaseResponse, summary="修改用户名")
+async def edit_username(edit_data: UsernameEdit, current_user_id: CurrentUserId, conn: DBConnection):
+    return await user_service.edit_username_service(conn, current_user_id, edit_data)
+
+
+@router.put("/edit/password", response_model=BaseResponse, summary="修改密码")
+async def edit_password(edit_data: PasswordEdit, current_user_id: CurrentUserId, conn: DBConnection):
+    return await user_service.edit_password_service(conn, current_user_id, edit_data)
 
 
 @router.put("/edit/email", response_model=BaseResponse, summary="修改邮箱")

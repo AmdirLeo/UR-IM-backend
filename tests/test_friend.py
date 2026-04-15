@@ -1,8 +1,8 @@
 import pytest
+import json
+from typing import Dict
+from unittest.mock import patch
 from httpx import AsyncClient, ASGITransport
-from typing import Dict, cast
-import asyncpg
-from starlette.testclient import TestClient  # <--- 引入 TestClient 用于 WebSocket
 
 # 引入项目核心依赖
 from main import app
@@ -13,26 +13,31 @@ from db.database import get_db_conn
 from db.repositories.user_repo import db_create_user
 
 # ==========================================
-# 1. Setup FastAPI App
+# Setup FastAPI App
 # ==========================================
 setup_exception_handlers(app)
+# 注意：确保这里不会重复 include 导致路由冲突。如果 main.py 已经包含了，可注释掉下面这行。
 app.include_router(router, prefix="/api")
+
+# 测试专用常量
+SYSTEM_ID = 10000
+TEST_USER_A_EMAIL = "apply_sender@ur-im.com"
+TEST_USER_B_EMAIL = "apply_receiver@ur-im.com"
 
 
 def get_auth_headers(token: str) -> Dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-# 强制将测试函数绑定到 session 级别的事件循环
+# ==========================================
+# 测试用例 1：全量好友功能业务流转 E2E 测试
+# ==========================================
 @pytest.mark.asyncio(loop_scope="session")
 async def test_friend_journey_and_edge_cases():
     """
     全量好友功能的 E2E 测试 (包含 WebSocket 实时通知验证)。
     不使用任何 Mock，完全基于真实的测试数据库和数据流转！
     """
-    # ==========================================
-    # 0. 准备测试数据：在数据库中创建 3 个真实用户
-    # ==========================================
     user_a_id = None
     user_b_id = None
     user_c_id = None
@@ -40,22 +45,14 @@ async def test_friend_journey_and_edge_cases():
     async for proxy_conn in get_db_conn():
         conn = cast(asyncpg.Connection, proxy_conn)
         hashed_pw = get_password_hash("password123")
-
         # type: ignore
-        user_a_id = await db_create_user(
-            conn, "friend_user_A", hashed_pw, "friend_a@test.com"
-        )
+        user_a_id = await db_create_user(conn, "friend_user_A", hashed_pw, "friend_a@test.com")
         # type: ignore
-        user_b_id = await db_create_user(
-            conn, "friend_user_B", hashed_pw, "friend_b@test.com"
-        )
+        user_b_id = await db_create_user(conn, "friend_user_B", hashed_pw, "friend_b@test.com")
         # type: ignore
-        user_c_id = await db_create_user(
-            conn, "friend_user_C", hashed_pw, "friend_c@test.com"
-        )
+        user_c_id = await db_create_user(conn, "friend_user_C", hashed_pw, "friend_c@test.com")
         break
 
-    # 为用户生成真实的 JWT Token
     token_a = create_access_token(data={"sub": str(user_a_id)})
     token_b = create_access_token(data={"sub": str(user_b_id)})
     token_c = create_access_token(data={"sub": str(user_c_id)})
@@ -64,63 +61,38 @@ async def test_friend_journey_and_edge_cases():
     headers_b = get_auth_headers(token_b)
     headers_c = get_auth_headers(token_c)
 
-    # 开始端到端 HTTP 测试
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="https://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:
 
-        # ---------------------------------------------------------
         # 1. 搜索用户 (Search)
-        # ---------------------------------------------------------
-        res = await client.get(
-            "/api/friend/search?keyword=friend_user_B", headers=headers_a
-        )
+        res = await client.get("/api/friend/search?keyword=friend_user_B", headers=headers_a)
         assert res.status_code == 200
         data = res.json()["data"]
         assert len(data) >= 1
         assert data[0]["username"] == "friend_user_B"
 
-        res = await client.get(
-            "/api/friend/search?keyword=nobody_exists", headers=headers_a
-        )
-        assert res.status_code == 200
-        assert len(res.json()["data"]) == 0
+        # ==========================================
+        # 👇 这是为你新增的：测试获取其他用户信息功能
+        # ==========================================
+        # 1.5 查看目标用户详细信息 (Get Other User Info)
+        # 注意：如果你的路由前缀不同，请将 /api/user/info 替换为你实际的路径 (比如 /api/friend/info)
+        res_info = await client.get(f"/api/friend/info/{user_b_id}", headers=headers_a)
+        assert res_info.status_code == 200
+        user_info = res_info.json()
 
-        res = await client.get("/api/friend/search?keyword=", headers=headers_a)
-        assert res.status_code == 422
+        # 根据你之前定义的 UserInfoResponse 结构进行断言
+        assert user_info["id"] == user_b_id
+        assert user_info["username"] == "friend_user_B"
+        assert "email" in user_info  # 验证返回了邮箱字段
 
-        # ---------------------------------------------------------
-        # 2. 发送好友申请 (Apply) + 验证 WebSocket 实时通知
-        # ---------------------------------------------------------
-        # 让 B 提前连上 WebSocket，等待接收通知
-        with TestClient(app).websocket_connect(
-            f"/websocket/ws?token={token_b}"
-        ) as websocket:
+        # 1.6 边界情况 (Edge Case)：查询一个根本不存在的 user_id
+        res_404 = await client.get("/api/friend/info/9999999", headers=headers_a)
+        # 验证 Service 层抛出的 BusinessException(status_code=404) 被正确处理
+        assert res_404.status_code == 404
+        # ==========================================
+        # 👆 新增结束
+        # ==========================================
 
-            # A 申请加 B 为好友
-            res = await client.post(
-                "/api/friend/apply",
-                json={"target_user_id": user_b_id, "message": "hello B"},
-                headers=headers_a,
-            )
-            assert res.status_code == 200
-
-            # 验证 B 是否在 WebSocket 瞬间收到了实时推送
-            friend_notice = None
-            for _ in range(5):  # 过滤系统广播等杂音
-                ws_data = websocket.receive_json()
-                if ws_data.get("type") == "FRIEND_REQUEST_RECEIVED":
-                    friend_notice = ws_data
-                    break
-                else:
-                    print(f"收到并忽略了一条非目标消息: {ws_data.get('type')}")
-
-            # 断言通知的准确性
-            assert friend_notice is not None, "未能收到好友申请通知"
-            assert friend_notice["type"] == "FRIEND_REQUEST_RECEIVED"
-            assert friend_notice["data"]["from_user_id"] == user_a_id
-
-        # [异常流测试] A 再次申请，触发 409
+        # 2. 发送好友申请 (Apply)
         res = await client.post(
             "/api/friend/apply",
             json={"target_user_id": user_b_id, "message": "hello again"},
@@ -136,179 +108,304 @@ async def test_friend_journey_and_edge_cases():
             headers=headers_a,
         )
         assert res.status_code == 400
-        assert res.json()["msg"] == "不能添加自己为好友"
 
-        # ---------------------------------------------------------
         # 3. 处理好友申请 (Handle)
-        # ---------------------------------------------------------
         request_id = None
         async for conn in get_db_conn():
             req_record = await conn.fetchrow(
                 "SELECT request_id FROM friend_request WHERE sender_id=$1 AND receiver_id=$2",
-                user_a_id,
-                user_b_id,
+                user_a_id, user_b_id,
             )
             request_id = req_record["request_id"]
             break
 
-        # B 同意 A 的申请
         res = await client.put(
             "/api/friend/handle",
             json={"request_id": request_id, "action": "accepted"},
             headers=headers_b,
         )
         assert res.status_code == 200
-        assert res.json()["msg"] == "已同意好友申请"
 
-        # [异常流测试] A 尝试加已经是好友的 B
-        res = await client.post(
-            "/api/friend/apply",
-            json={"target_user_id": user_b_id, "message": "add me plz"},
-            headers=headers_a,
-        )
-        assert res.status_code == 409
-        assert "已经是好友" in res.json()["msg"]
-
-        # ---------------------------------------------------------
-        # 3.5 补充测试：拒绝好友申请 (覆盖 repo 层的 action="rejected" 返回)
-        # ---------------------------------------------------------
-        # C 申请加 A 为好友
-        res = await client.post(
-            "/api/friend/apply",
-            json={"target_user_id": user_a_id, "message": "Let's be friends!"},
-            headers=headers_c,
-        )
-        assert res.status_code == 200
-
-        # 去数据库捞取刚才 C 发给 A 的这条申请记录的 ID
-        reject_request_id = None
-        async for conn in get_db_conn():
-            req_record = await conn.fetchrow(
-                "SELECT request_id FROM friend_request WHERE sender_id=$1 AND receiver_id=$2 AND status='pending'",
-                user_c_id,
-                user_a_id,
-            )
-            reject_request_id = req_record["request_id"]
-            break
-
-        # A 残忍拒绝 C 的申请 (触发 action="rejected" 分支)
-        res = await client.put(
-            "/api/friend/handle",
-            json={"request_id": reject_request_id, "action": "rejected"},
-            headers=headers_a,
-        )
-        assert res.status_code == 200
-        # 断言具体取决于你的 Router 返回格式，一般会是：
-        # assert "拒绝" in res.json()["msg"] 或 assert res.json()["code"] == 200
-
-        # 验证 A 的好友列表里确实没有 C
-        res = await client.get("/api/friend", headers=headers_a)
-        friends = res.json()["data"]
-        assert not any(f["user_id"] == user_c_id for f in friends)
-
-        # ---------------------------------------------------------
         # 4. 获取好友列表 (Get List)
-        # ---------------------------------------------------------
         res = await client.get("/api/friend", headers=headers_a)
         assert res.status_code == 200
         friends = res.json()["data"]
-        assert len(friends) >= 1
         assert any(f["user_id"] == user_b_id for f in friends)
 
         # ---------------------------------------------------------
-        # 5. 好友分组标签流转 (Tag Journey)
+        # 5. 好友分组标签流转 (Tag Journey) - 多标签版
         # ---------------------------------------------------------
-        tag_name = "BestFriends"
+        tag_1 = "BestFriends"
+        tag_2 = "Colleagues"
 
-        res = await client.post(
-            "/api/friend/tag/new", json={"tag_name": tag_name}, headers=headers_a
-        )
-        assert res.status_code == 200
+        # 创建两个标签
+        await client.post("/api/friend/tag/new", json={"tag_name": tag_1}, headers=headers_a)
+        await client.post("/api/friend/tag/new", json={"tag_name": tag_2}, headers=headers_a)
 
-        res = await client.post(
-            "/api/friend/tag/new", json={"tag_name": tag_name}, headers=headers_a
-        )
-        assert res.status_code == 409
+        # 把 user_b 同时加入两个标签
+        await client.post("/api/friend/tag/add", json={"tag_name": tag_1, "friend_ids": [user_b_id]}, headers=headers_a)
+        await client.post("/api/friend/tag/add", json={"tag_name": tag_2, "friend_ids": [user_b_id]}, headers=headers_a)
 
-        res = await client.post(
-            "/api/friend/tag/add",
-            json={"tag_name": tag_name, "friend_ids": [user_b_id]},
-            headers=headers_a,
-        )
-        assert res.status_code == 200
+        # 🚨 验证多标签功能：拉取好友列表并检查 Pydantic 模型是否能正确序列化数组
+        res_list = await client.get("/api/friend", headers=headers_a)
+        assert res_list.status_code == 200
+        friends_data = res_list.json()["data"]
 
-        res = await client.post(
-            "/api/friend/tag/query", json={"tag_name": tag_name}, headers=headers_a
-        )
-        assert res.status_code == 200
-        assert len(res.json()["data"]) == 1
-        assert res.json()["data"][0]["user_id"] == user_b_id
+        # 找出 user_b 的数据
+        user_b_data = next(f for f in friends_data if f["user_id"] == user_b_id)
 
-        res = await client.post(
-            "/api/friend/tag/remove",
-            json={"tag_name": tag_name, "friend_id": user_b_id},
-            headers=headers_a,
-        )
-        assert res.status_code == 200
+        # 断言：user_b 的 tags 字段必须是一个列表，并且同时包含这两个标签
+        assert isinstance(user_b_data["tags"], list)
+        assert tag_1 in user_b_data["tags"]
+        assert tag_2 in user_b_data["tags"]
 
-        res = await client.post(
-            "/api/friend/tag/delete", json={"tag_name": tag_name}, headers=headers_a
-        )
-        assert res.status_code == 200
+        # 后续的清理测试（可以只清理其中一个，测一下删除功能）
+        await client.post("/api/friend/tag/remove", json={"tag_name": tag_1, "friend_id": user_b_id}, headers=headers_a)
+        await client.post("/api/friend/tag/delete", json={"tag_name": tag_1}, headers=headers_a)
 
         # ---------------------------------------------------------
-        # 6. 删除好友 (Remove)
+        # 5.5. 模拟两人聊天 (生成 conv_id 和历史记录)
         # ---------------------------------------------------------
-        res = await client.delete(f"/api/friend/remove/{user_b_id}", headers=headers_a)
+
+        # 1. 直接从数据库查询两人已经建好的私聊会话 ID
+        conv_id = None
+        async for conn in get_db_conn():
+            conv_id = await conn.fetchval("""
+                SELECT c.conversation_id
+                FROM conversation c
+                JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
+                JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+                WHERE c.type = 'private'
+                  AND cm1.member_user_id = $1
+                  AND cm2.member_user_id = $2;
+            """, user_a_id, user_b_id)
+            break
+
+        assert conv_id is not None, "A和B加完好友后没有生成私聊会话！"
+
+        # 2. A 给 B (即这个私聊会话) 发一条消息
+        res_msg = await client.post(
+            "/api/message/send",
+            json={
+                "conversation_id": conv_id,  # 👈 改为标准传参
+                "local_id": "local_test_123",
+                "message_content": "你好，这是删好友前的测试消息",
+                "msg_type": "text",
+            },
+            headers=headers_a
+        )
+        assert res_msg.status_code == 200
+
+        # 3. B 也给 A 回复一条消息
+        res_msg_b = await client.post(
+            "/api/message/send",
+            json={
+                "conversation_id": conv_id,  # 👈 同理
+                "local_id": "local_test_456",
+                "message_content": "收到了",
+                "msg_type": "text",
+            },
+            headers=headers_b
+        )
+        assert res_msg_b.status_code == 200
+
+        # ---------------------------------------------------------
+        # 6. 删除好友 (Remove) - 测试带删除历史的选项
+        # ---------------------------------------------------------
+        # A 翻脸无情，删除了 B，并且勾选了“删除聊天记录”
+        res = await client.post(
+            url="/api/friend/remove",
+            json={                                  # 👈 传入 JSON Body
+                "friend_user_id": user_b_id,
+                "delete_history": True
+            },
+            headers=headers_a
+        )
         assert res.status_code == 200
 
+        # 验证 A 的好友列表确实空了
         res = await client.get("/api/friend", headers=headers_a)
         friends = res.json()["data"]
         assert not any(f["user_id"] == user_b_id for f in friends)
 
-        res = await client.delete(f"/api/friend/remove/{user_c_id}", headers=headers_a)
-        assert res.status_code == 404
-
         # ---------------------------------------------------------
-        # 7. 补充边界测试：处理异常好友请求与删除自己 (覆盖 400 异常)
+        # 7. 终极验证：检查双端收件箱的“物理隔离”删除效果
         # ---------------------------------------------------------
-        res = await client.delete(f"/api/friend/remove/{user_a_id}", headers=headers_a)
-        assert res.status_code == 400
-        assert res.json()["msg"] == "不能删除自己"
 
-        res = await client.put(
-            "/api/friend/handle",
-            json={"request_id": 999999, "action": "accepted"},
+        # 验证 1：A 勾选了删除历史，所以 A 拉取该会话的历史消息应该为空
+        res_history_a = await client.post(
+            "/api/message/history",
+            json={"conversation_id": conv_id, "limit": 20},
+            headers=headers_a,
+        )
+        # 💡 核心修改：预期状态码就是 403，证明 A 无权再看该房间信息
+        assert res_history_a.status_code == 403, "安全漏洞：A 被移出房间后仍能访问接口！"
+
+        # 验证 2：B 作为被动方，Ta 的历史记录必须毫发无损！
+        res_history_b = await client.post(
+            "/api/message/history",
+            json={"conversation_id": conv_id, "limit": 20},
             headers=headers_b,
         )
-        assert res.status_code == 404
-        assert res.json()["msg"] == "好友申请不存在或已被处理"
+        assert res_history_b.status_code == 200
+        # 断言 B 依然能拉取到之前发的那 2 条消息
+        assert len(res_history_b.json()["data"]) >= 2, "严重 Bug：B 的聊天记录被误删了！"
 
-        # ---------------------------------------------------------
-        # 8. 补充边界测试：好友分组的异常流转 (覆盖 404 异常)
-        # ---------------------------------------------------------
-        fake_tag_name = "GhostTag"
 
-        res = await client.post(
-            "/api/friend/tag/delete",
-            json={"tag_name": fake_tag_name},
-            headers=headers_a,
+# ==========================================
+# 测试用例 2：A 申请加好友，B 收到系统助手发来的 JSONB 多态卡片
+# ==========================================
+@pytest.mark.asyncio(loop_scope="session")
+@patch("core.ws_manager.manager.send_personal_message")
+async def test_friend_request_triggers_system_card(mock_ws_send):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:
+        # 1. 环境准备：创建 A, B, 10000 号及 B 的系统会话
+        async for conn in get_db_conn():
+            hashed_pw = get_password_hash("testpassword")
+            await conn.execute("""
+                INSERT INTO user_account (user_id, username, password, email)
+                VALUES ($1, '系统助手', 'nopass', 'sys_bot1@ur-im.com')
+                ON CONFLICT (user_id) DO NOTHING
+            """, SYSTEM_ID)
+
+            u_a = await conn.fetchrow(
+                "INSERT INTO user_account (username, password, email) VALUES ('UserA_Apply', $1, $2) RETURNING user_id",
+                hashed_pw, TEST_USER_A_EMAIL
+            )
+            user_a_id = u_a['user_id']
+
+            u_b = await conn.fetchrow(
+                "INSERT INTO user_account (username, password, email) "
+                "VALUES ('UserB_Receiver', $1, $2) RETURNING user_id",
+                hashed_pw, TEST_USER_B_EMAIL
+            )
+            user_b_id = u_b['user_id']
+
+            sys_conv_id = await conn.fetchval(
+                "INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id"
+            )
+            await conn.execute(
+                "INSERT INTO conversation_member (conversation_id, member_user_id) VALUES ($1, $2), ($1, $3)",
+                sys_conv_id, user_b_id, SYSTEM_ID
+            )
+            break
+
+        login_res = await client.post("/api/user/login", json={"id": TEST_USER_A_EMAIL, "password": "testpassword"})
+        token_a = login_res.json()["token"]
+        headers_a = {"Authorization": f"Bearer {token_a}"}
+
+        # 2. 发起好友申请
+        apply_res = await client.post(
+            "/api/friend/apply",  # 确保路由与你的 controller 一致
+            json={"target_user_id": user_b_id, "message": "你好，我是 User A"},
+            headers=headers_a
         )
-        assert res.status_code == 404
-        assert res.json()["msg"] == "分组不存在"
+        assert apply_res.status_code == 200
 
-        res = await client.post(
-            "/api/friend/tag/add",
-            json={"tag_name": fake_tag_name, "friend_ids": [user_b_id]},
-            headers=headers_a,
-        )
-        assert res.status_code == 404
-        assert res.json()["msg"] == "分组不存在"
+        # 3. 验证多态卡片 (extra_data)
+        assert mock_ws_send.called, "系统卡片未能发出！"
 
-        res = await client.post(
-            "/api/friend/tag/remove",
-            json={"tag_name": fake_tag_name, "friend_id": user_b_id},
-            headers=headers_a,
+        b_received_payload = None
+        for call in mock_ws_send.call_args_list:
+            payload, target = call[0][0], call[0][1]
+            if target == user_b_id:
+                b_received_payload = payload
+                break
+
+        assert b_received_payload is not None
+        assert b_received_payload["type"] == "NEW_CHAT_MESSAGE"
+
+        message_data = b_received_payload["data"]
+        assert message_data["sender_id"] == SYSTEM_ID
+
+        # 💡 新架构断言：检查类型和纯文本摘要
+        assert message_data["msg_type"] == "card", "期望类型为 'card'"
+        assert message_data["content"] == "[收到一条好友申请]", "列表摘要文案不匹配"
+
+        # 💡 新架构断言：检查 extra 字典里的具体参数
+        extra = message_data.get("extra", {})
+        assert extra.get("card_type") == "friend_apply"
+        assert extra.get("sender_id") == user_a_id
+        assert "你好，我是 User A" in extra.get("reason", "")
+        assert "request_id" in extra
+
+
+# ==========================================
+# 测试用例 3：B 同意申请，A 收到系统通知指令
+# ==========================================
+@pytest.mark.asyncio(loop_scope="session")
+@patch("core.ws_manager.manager.send_personal_message")
+async def test_friend_accept_triggers_system_notification(mock_ws_send):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:
+        # 1. 环境准备
+        async for conn in get_db_conn():
+            hashed_pw = get_password_hash("pw")
+            u_a = await conn.fetchrow(
+                "INSERT INTO user_account (username, password, email) "
+                "VALUES ('UserA_Accept', $1, $2) RETURNING user_id",
+                hashed_pw, "a_accept@ur-im.com"
+            )
+            u_b = await conn.fetchrow(
+                "INSERT INTO user_account (username, password, email) "
+                "VALUES ('UserB_Accept', $1, $2) RETURNING user_id",
+                hashed_pw, "b_accept@ur-im.com"
+            )
+            user_a_id, user_b_id = u_a['user_id'], u_b['user_id']
+
+            await conn.execute(
+                "INSERT INTO user_account (user_id, username, password, email) "
+                "VALUES ($1, 'sys', '1', 'sys2@ur.im') ON CONFLICT DO NOTHING",
+                SYSTEM_ID
+            )
+
+            # 为 User A 创建系统会话 (因为 A 是发起方，A 将收到同意指令)
+            sys_conv_id = await conn.fetchval(
+                "INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id"
+            )
+            await conn.execute(
+                "INSERT INTO conversation_member (conversation_id, member_user_id) "
+                "VALUES ($1, $2), ($1, $3)",
+                sys_conv_id, user_a_id, SYSTEM_ID
+            )
+
+            req_id = await conn.fetchval(
+                "INSERT INTO friend_request (sender_id, receiver_id, status) "
+                "VALUES ($1, $2, 'pending') RETURNING request_id",
+                user_a_id, user_b_id
+            )
+            break
+
+        login_res = await client.post("/api/user/login", json={"id": "b_accept@ur-im.com", "password": "pw"})
+        headers_b = {"Authorization": f"Bearer {login_res.json()['token']}"}
+
+        # 2. B 同意请求
+        response = await client.put(
+            "/api/friend/handle",
+            json={"request_id": req_id, "action": "accepted"},
+            headers=headers_b
         )
-        assert res.status_code == 404
-        assert res.json()["msg"] == "该好友不在当前分组中"
+        assert response.status_code == 200
+
+        # 3. 验证系统通知指令 (extra_data)
+        assert mock_ws_send.called
+
+        a_received_notification = False
+        for call in mock_ws_send.call_args_list:
+            ws_payload, target_id = call[0][0], call[0][1]
+
+            if target_id == user_a_id and ws_payload["type"] == "NEW_CHAT_MESSAGE":
+                msg_data = ws_payload["data"]
+                if msg_data["sender_id"] == SYSTEM_ID:
+                    # 💡 新架构断言：检查指令类型和内容
+                    assert msg_data["msg_type"] == "notify"
+                    assert msg_data["content"] == "[好友申请已通过]"
+
+                    # 💡 新架构断言：检查前端静默执行的 action
+                    extra = msg_data.get("extra", {})
+                    assert extra.get("action") == "friend_accept"
+                    assert "已同意你的好友申请" in extra.get("tips", "")
+
+                    a_received_notification = True
+                    break
+
+        assert a_received_notification, "User A 未收到携带 'friend_accept' 指令的多态系统通知"

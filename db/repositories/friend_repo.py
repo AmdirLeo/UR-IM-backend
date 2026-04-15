@@ -29,6 +29,9 @@ QUERY_WIPE_INBOX = """
     WHERE conversation_id = $1;
 """
 
+ERR_TAG_NOT_FOUND = "分组不存在"
+ERR_TAG_CONFLICT = "该分组已存在"
+
 
 async def db_create_friend_request(
     conn: asyncpg.Connection, sender_id: int, receiver_id: int, message: str
@@ -141,7 +144,7 @@ async def db_get_friend_requests(
     conn: asyncpg.Connection,
     user_id: int,
     cursor_req_id: int | None = None,
-    limit: int = 20,
+    limit: int = 20
 ) -> list[dict]:
     """
     获取当前用户的所有好友申请记录（包含我发出的 + 我收到的，游标分页）
@@ -191,20 +194,18 @@ async def db_get_friend_requests(
     # 格式化返回：参考你的原格式，但将 sender 统一升级为 target，并增加 direction
     result = []
     for row in rows:
-        result.append(
-            {
-                "request_id": row["request_id"],
-                # 新增：'inbound' (收到) 或 'outbound' (发出)
-                "direction": row["direction"],
-                "target_user_id": row["target_user_id"],  # 替代原 sender_id
-                "target_user_name": row["target_user_name"],  # 替代原 sender_name
-                # 替代原 sender_avatar
-                "target_user_avatar": row["target_user_avatar"],
-                "reason": row["reason"],
-                "status": row["status"],
-                "create_time": row["create_time"],  # datetime 对象
-            }
-        )
+        result.append({
+            "request_id": row['request_id'],
+            # 新增：'inbound' (收到) 或 'outbound' (发出)
+            "direction": row['direction'],
+            "target_user_id": row['target_user_id'],     # 替代原 sender_id
+            "target_user_name": row['target_user_name'],  # 替代原 sender_name
+            # 替代原 sender_avatar
+            "target_user_avatar": row['target_user_avatar'],
+            "reason": row['reason'],
+            "status": row['status'],
+            "create_time": row['create_time']            # datetime 对象
+        })
 
     return result
 
@@ -229,7 +230,10 @@ async def db_get_friend_list(conn: asyncpg.Connection, user_id: int) -> list[dic
 
 
 async def db_remove_friend(
-    conn: asyncpg.Connection, user_id: int, friend_user_id: int
+    conn: asyncpg.Connection,
+    user_id: int,
+    friend_user_id: int,
+    delete_history: bool
 ) -> None:
     """
     删除好友 (对应 DELETE /api/friend/remove)
@@ -251,9 +255,19 @@ async def db_remove_friend(
             QUERY_FIND_DIRECT_CONV, user_id, friend_user_id
         )
 
-        # 第四步：如果他们曾经聊过天，直接炸毁这个房间对应的所有收件箱记录
         if direct_conv_id:
-            await conn.execute(QUERY_WIPE_INBOX, direct_conv_id)
+            # 4. 退群：操作者主动退出私聊房间
+            await conn.execute("""
+                DELETE FROM conversation_member
+                WHERE conversation_id = $1 AND member_user_id = $2
+            """, direct_conv_id, user_id)
+            # 5. 【清空历史记录】
+            if delete_history:
+                # 💡 只删操作者自己 (user_id) 的收件箱，绝不影响对方 (friend_user_id) 的消息记录！
+                await conn.execute("""
+                    DELETE FROM user_inbox
+                    WHERE conversation_id = $1 AND user_id = $2
+                """, direct_conv_id, user_id)
 
 
 async def db_create_friend_tag(
@@ -267,7 +281,7 @@ async def db_create_friend_tag(
     """
     status = await conn.execute(query, user_id, tag_name)
     if status != INSERT_ONE:
-        raise BusinessException(status_code=409, detail="该分组已存在")
+        raise BusinessException(status_code=409, detail=ERR_TAG_CONFLICT)
 
 
 async def db_delete_friend_tag(
@@ -279,7 +293,7 @@ async def db_delete_friend_tag(
     query = "DELETE FROM user_friend_tag WHERE user_id = $1 AND tag_name = $2;"
     status = await conn.execute(query, user_id, tag_name)
     if status != DELETE_ONE:
-        raise BusinessException(status_code=404, detail="分组不存在")
+        raise BusinessException(status_code=404, detail=ERR_TAG_NOT_FOUND)
 
 
 async def db_add_friends_to_tag(
@@ -291,7 +305,7 @@ async def db_add_friends_to_tag(
         tag_name,
     )
     if not check_tag:
-        raise BusinessException(status_code=404, detail="分组不存在")
+        raise BusinessException(status_code=404, detail=ERR_TAG_NOT_FOUND)
 
     # 组装批量插入的数据: [(user_id, friend_id_1, tag), (user_id, friend_id_2, tag)...]
     records = [(user_id, fid, tag_name) for fid in friend_ids]
@@ -311,6 +325,13 @@ async def db_get_friends_by_tag(
     """
     获取某个分组下的所有好友信息 (对应 POST /api/friend/tag/query)
     """
+    # 1. 先查这个分组到底存不存在
+    tag_exists = await conn.fetchval(
+        "SELECT 1 FROM user_friend_tag WHERE user_id = $1 AND tag_name = $2",
+        user_id, tag_name
+    )
+    if not tag_exists:
+        raise BusinessException(status_code=404, detail=ERR_TAG_NOT_FOUND)
     query = """
         SELECT u.user_id, u.username, u.avatar_url
         FROM friend_tag_mapping m

@@ -24,7 +24,7 @@ class FriendInfo(BaseModel):
     user_id: int = Field(..., description="好友用户ID")
     username: str = Field(..., description="好友用户名")
     avatar_url: Optional[str] = Field(None, description="好友头像URL")
-    tag: Optional[str] = Field(None, description="好友分组标签（如'同学','同事'）")
+    tags: list[str] = Field(default_factory=list, description="好友分组标签列表（无标签时为空数组）")
     be_friend_time: datetime = Field(..., description="成为好友的时间")
 
 
@@ -58,3 +58,9 @@ class FriendTagQueryResponse(BaseModel):
 class TagRemoveFriendRequest(BaseModel):
     tag_name: str = Field(..., description="标签名称")
     friend_id: int = Field(..., description="好友ID")
+
+
+class RemoveFriendRequest(BaseModel):
+    """删除好友的请求体"""
+    friend_user_id: int = Field(..., description="要删除的好友的用户 ID")
+    delete_history: bool = Field(False, description="是否同时清空与该好友的聊天记录")
