@@ -49,3 +49,13 @@ class ConversationMuteRequest(BaseModel):
 class ConversationPinRequest(BaseModel):
     conversation_id: int = Field(..., gt=0, description="会话 ID")
     is_pinned: bool = Field(False, description="置顶状态，默认为 false")
+
+
+class DirectConversationData(BaseModel):
+    conversation_id: int
+
+
+class DirectConversationResponse(BaseModel):
+    code: int
+    msg: str
+    data: DirectConversationData

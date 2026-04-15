@@ -5,6 +5,8 @@ from db.repositories.message_repo import (
     db_set_conversation_mute,
     db_set_conversation_pin,
 )
+from db.repositories.conversation_repo import db_get_direct_conversation
+from core.exceptions import BusinessException
 
 
 async def sync_conversations(db_session: asyncpg.Connection, user_id: int) -> list[dict]:
@@ -27,3 +29,20 @@ async def set_conversation_mute(db_session: asyncpg.Connection, user_id: int, co
 async def set_conversation_pin(db_session: asyncpg.Connection, user_id: int, conversation_id: int, is_pinned: bool):
     """设置会话置顶"""
     await db_set_conversation_pin(db_session, user_id, conversation_id, is_pinned)
+
+
+async def get_direct_conversation_id(
+    db_session: asyncpg.Connection, current_user_id: int, friend_user_id: int
+) -> int:
+
+    # 防止自己查自己
+    if current_user_id == friend_user_id:
+        raise BusinessException(status_code=400, detail="无法与自己建立私聊会话")
+
+    conv_id = await db_get_direct_conversation(db_session, current_user_id, friend_user_id)
+
+    if not conv_id:
+        # 如果找不到，说明他们俩根本不是好友，或者会话被意外破坏了
+        raise BusinessException(status_code=404, detail="私聊会话不存在")
+
+    return conv_id

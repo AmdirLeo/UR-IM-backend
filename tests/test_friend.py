@@ -170,20 +170,24 @@ async def test_friend_journey_and_edge_cases():
         # ---------------------------------------------------------
 
         # 1. 直接从数据库查询两人已经建好的私聊会话 ID
-        conv_id = None
-        async for conn in get_db_conn():
-            conv_id = await conn.fetchval("""
-                SELECT c.conversation_id
-                FROM conversation c
-                JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
-                JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
-                WHERE c.type = 'private'
-                  AND cm1.member_user_id = $1
-                  AND cm2.member_user_id = $2;
-            """, user_a_id, user_b_id)
-            break
+        # 1. 🌟 [完美升级] 调接口获取 A 和 B 的私聊会话 ID (替代了以前冗长的 SQL 查询)
+        res_conv = await client.get(
+            f"/api/conversation/direct/{user_b_id}",
+            headers=headers_a
+        )
+        assert res_conv.status_code == 200, "获取私聊会话 ID 接口报错了！"
 
-        assert conv_id is not None, "A和B加完好友后没有生成私聊会话！"
+        conv_data = res_conv.json().get("data", {})
+        conv_id = conv_data.get("conversation_id")
+        assert conv_id is not None, "接口没有返回 conversation_id！"
+
+        # 1.1 边界测试：尝试获取与一个不存在的用户 (或非好友) 的会话 ID
+        res_conv_404 = await client.get(
+            "/api/conversation/direct/999999",
+            headers=headers_a
+        )
+        # 验证我们的 Service 层确实抛出了 404 异常
+        assert res_conv_404.status_code == 404, "安全漏洞：查不存在的好友会话竟然没报 404！"
 
         # 2. A 给 B (即这个私聊会话) 发一条消息
         res_msg = await client.post(

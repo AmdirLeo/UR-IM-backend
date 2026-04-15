@@ -104,8 +104,8 @@ async def friend_handle(
             conversation_id=result.get("conversation_id")
         )
     return FriendHandleResponse(
-        code=200, 
-        msg=msg, 
+        code=200,
+        msg=msg,
         data=response_data
     )
 
