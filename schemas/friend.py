@@ -18,6 +18,16 @@ class FriendHandleRequest(BaseModel):
     request_id: int = Field(..., description="好友申请ID")
     action: Literal["accepted", "rejected"] = Field(
         ..., description="操作类型：accepted（同意）或 rejected（拒绝）")
+    
+# 定义 data 内部的结构
+class FriendHandleData(BaseModel):
+    conversation_id: Optional[int] = None
+
+# 定义完整的响应结构
+class FriendHandleResponse(BaseModel):
+    code: int
+    msg: str
+    data: Optional[FriendHandleData] = None
 
 
 class FriendInfo(BaseModel):

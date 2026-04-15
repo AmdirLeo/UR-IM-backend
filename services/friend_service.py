@@ -91,7 +91,7 @@ async def apply_friend(
 
 async def handle_friend_request(
     db_session: asyncpg.Connection, current_user_id: int, request_id: int, action: str
-) -> None:
+) -> dict:
     """
     处理好友申请的业务逻辑，并附带发送系统通知。
     """
@@ -136,7 +136,7 @@ async def handle_friend_request(
                 "tips": f"用户 {current_user_id} 已同意你的好友申请，快去打个招呼吧！",
                 # 💡 假设你的 db_result 里返回了新建的两人私聊会话ID
                 # 如果底层还没写这块逻辑，前端拿到 None 就只给个提示框，不自动跳
-                "new_conversation_id": db_result.get("new_conversation_id")
+                "conversation_id": db_result.get("conversation_id")
             }
         else:
             msg_content = "[好友申请被拒绝]"
@@ -159,6 +159,9 @@ async def handle_friend_request(
             user_id=10000,
             req=system_req
         )
+
+    # 👈 修改点 3：把 Repo 层返回的字典，原封不动地返回给上一层的 API 路由
+    return db_result
 
 
 async def remove_friend(

@@ -20,6 +20,8 @@ from schemas.friend import (
     FriendTagQueryResponse,
     TagRemoveFriendRequest,
     RemoveFriendRequest,
+    FriendHandleResponse,
+    FriendHandleData,
 )
 
 router = APIRouter()
@@ -74,7 +76,7 @@ async def send_friend_apply(
     return FriendGenericResponse(code=200, msg="好友申请已发送")
 
 
-@router.put("/handle", response_model=FriendGenericResponse, summary="处理好友申请")
+@router.post("/handle", response_model=FriendHandleResponse, summary="处理好友申请")
 async def friend_handle(
     request: FriendHandleRequest,
     current_user_id: CurrentUserId,
@@ -85,14 +87,27 @@ async def friend_handle(
     - **request_id**: 申请ID
     - **action**: `accepted`（同意）或 `rejected`（拒绝）
     """
-    await friend_service.handle_friend_request(
+
+    # 💡 修改点 2：用 result 变量接住 Service 层传上来的字典
+    result = await friend_service.handle_friend_request(
         db_session=db_session,
         current_user_id=current_user_id,
         request_id=request.request_id,
         action=request.action,
     )
+
     msg = "已同意好友申请" if request.action == "accepted" else "已拒绝好友申请"
-    return FriendGenericResponse(code=200, msg=msg)
+
+    response_data = None
+    if request.action == "accepted" and result.get("conversation_id"):
+        response_data = FriendHandleData(
+            conversation_id=result.get("conversation_id")
+        )
+    return FriendHandleResponse(
+        code=200, 
+        msg=msg, 
+        data=response_data
+    )
 
 
 @router.post("/remove", response_model=FriendGenericResponse, summary="删除好友")

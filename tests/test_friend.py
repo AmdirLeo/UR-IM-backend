@@ -115,12 +115,17 @@ async def test_friend_journey_and_edge_cases():
             request_id = req_record["request_id"]
             break
 
-        res = await client.put(
+        res = await client.post(
             "/api/friend/handle",
             json={"request_id": request_id, "action": "accepted"},
             headers=headers_b,
         )
         assert res.status_code == 200
+
+        handle_data = res.json().get("data", {})
+        assert handle_data is not None, "返回的 data 字段不应为空"
+        assert "conversation_id" in handle_data, "返回的 data 中缺少 conversation_id"
+        assert isinstance(handle_data["conversation_id"], int), "conversation_id 应该是一个整数"
 
         # 4. 获取好友列表 (Get List)
         res = await client.get("/api/friend", headers=headers_a)
@@ -376,12 +381,16 @@ async def test_friend_accept_triggers_system_notification(mock_ws_send):
         headers_b = {"Authorization": f"Bearer {login_res.json()['token']}"}
 
         # 2. B 同意请求
-        response = await client.put(
+        response = await client.post(
             "/api/friend/handle",
             json={"request_id": req_id, "action": "accepted"},
             headers=headers_b
         )
         assert response.status_code == 200
+
+        # 👇 新增：提取出后端在 HTTP 响应里返回给 B 的 conversation_id
+        http_conv_id = response.json().get("data", {}).get("conversation_id")
+        assert http_conv_id is not None, "HTTP 响应里漏掉了 conversation_id！"
 
         # 3. 验证系统通知指令 (extra_data)
         assert mock_ws_send.called
@@ -397,10 +406,11 @@ async def test_friend_accept_triggers_system_notification(mock_ws_send):
                     assert msg_data["msg_type"] == "notify"
                     assert msg_data["content"] == "[好友申请已通过]"
 
-                    # 💡 新架构断言：检查前端静默执行的 action
+                    # 👇 核心断言：检查前端静默执行的 action，以及 WebSocket 传给 A 的 ID 必须和 HTTP 给 B 的 ID 完全一致！
                     extra = msg_data.get("extra", {})
                     assert extra.get("action") == "friend_accept"
                     assert "已同意你的好友申请" in extra.get("tips", "")
+                    assert extra.get("conversation_id") == http_conv_id, "严重错误：WebSocket漏传了conversation_id或者双方拿到的不一致！"
 
                     a_received_notification = True
                     break
