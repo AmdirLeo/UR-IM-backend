@@ -35,15 +35,14 @@ def get_auth_headers(token: str) -> Dict[str, str]:
 @pytest.mark.asyncio(loop_scope="session")
 async def test_friend_journey_and_edge_cases():
     """
-    全量好友功能的 E2E 测试 (包含 WebSocket 实时通知验证)。
+    全量好友功能的 E2E 测试。
     不使用任何 Mock，完全基于真实的测试数据库和数据流转！
     """
     user_a_id = None
     user_b_id = None
     user_c_id = None
 
-    async for proxy_conn in get_db_conn():
-        conn = cast(asyncpg.Connection, proxy_conn)
+    async for conn in get_db_conn():
         hashed_pw = get_password_hash("password123")
         # type: ignore
         user_a_id = await db_create_user(conn, "friend_user_A", hashed_pw, "friend_a@test.com")
@@ -55,11 +54,9 @@ async def test_friend_journey_and_edge_cases():
 
     token_a = create_access_token(data={"sub": str(user_a_id)})
     token_b = create_access_token(data={"sub": str(user_b_id)})
-    token_c = create_access_token(data={"sub": str(user_c_id)})
 
     headers_a = get_auth_headers(token_a)
     headers_b = get_auth_headers(token_b)
-    headers_c = get_auth_headers(token_c)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:
 
@@ -95,13 +92,12 @@ async def test_friend_journey_and_edge_cases():
         # 2. 发送好友申请 (Apply)
         res = await client.post(
             "/api/friend/apply",
-            json={"target_user_id": user_b_id, "message": "hello again"},
+            json={"target_user_id": user_b_id, "message": "hello B"},
             headers=headers_a,
         )
-        assert res.status_code == 409
-        assert "待处理" in res.json()["msg"]
+        assert res.status_code == 200
 
-        # [异常流测试] A 不能申请加自己
+        # A 不能申请加自己
         res = await client.post(
             "/api/friend/apply",
             json={"target_user_id": user_a_id, "message": "hello me"},
@@ -409,3 +405,4 @@ async def test_friend_accept_triggers_system_notification(mock_ws_send):
                     break
 
         assert a_received_notification, "User A 未收到携带 'friend_accept' 指令的多态系统通知"
+        

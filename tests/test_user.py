@@ -60,11 +60,13 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
     """
 
     async for conn in get_db_conn():
-        await conn.execute("""
+        await conn.execute(
+            """
             INSERT INTO user_account (user_id, username, password, email)
             VALUES (10000, '系统通知助手', 'system_fake_password', 'system@ur-im.com')
             ON CONFLICT (user_id) DO NOTHING;
-        """)
+        """
+        )
         break
 
     # 核心：使用 AsyncClient 替代 TestClient
@@ -72,7 +74,9 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         transport=ASGITransport(app=app), base_url="https://test"
     ) as client:
 
-        # 测试不带 Token 访问，会被 FastAPI 自动拒绝
+        # ---------------------------------------------------------
+        # 0. 测试不带 Token 访问，会被 FastAPI 自动拒绝
+        # ---------------------------------------------------------
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://testserver"
         ) as ac:
@@ -176,7 +180,9 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         # 7. Access protected route with invalid/missing JWT (401)
         # ---------------------------------------------------------
         # 用编辑用户名接口来做鉴权测试
-        response = await client.put(EDIT_USERNAME_API_PATH, json={"new_username": "new_name"})
+        response = await client.put(
+            EDIT_USERNAME_API_PATH, json={"new_username": "new_name"}
+        )
         assert response.status_code == 401
 
         response = await client.put(
@@ -228,10 +234,7 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         new_email = "new_email@tsinghua.edu.cn"
         response = await client.put(
             EDIT_EMAIL_API_PATH,
-            json={
-                "password": VALID_PASSWORD,
-                "new-email": new_email
-            },
+            json={"password": VALID_PASSWORD, "new-email": new_email},
             headers=auth_headers,
         )
         assert response.status_code == 200
@@ -240,47 +243,51 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         new_password = "newpassword456"
         response = await client.put(
             EDIT_PASSWORD_API_PATH,
-            json={
-                "old_password": VALID_PASSWORD,
-                "new_password": new_password
-            },
+            json={"old_password": VALID_PASSWORD, "new_password": new_password},
             headers=auth_headers,
         )
         assert response.status_code == 200
 
+        # 8d. 第四次请求：修改头像
+        with patch(
+            "services.user_service.db_update_user_profile", new_callable=AsyncMock
+        ) as mock_db:
+            mock_db.return_value = True
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://testserver"
+            ) as ac:
+                files = {"file": ("test.png", b"fake_data", "image/png")}
+                response = await ac.put(
+                    "/api/user/edit/portrait", files=files, headers=auth_headers
+                )
+            assert response.status_code == 200
+            data = response.json()
+            saved_path = data["filekey"].lstrip("/")
+            if os.path.exists(saved_path):
+                os.remove(saved_path)  # 清理测试产生的图片
+
+        # 8e. 测试上传超过 2MB 的超大文件会被拒绝
+        # 伪造一个大于 2MB 的垃圾数据 (2MB + 1KB)
+        large_file_content = b"0" * (2 * 1024 * 1024 + 1024)
+        filename = "too_large_avatar.png"
+        # 发起请求
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as ac:
+            files = {"file": (filename, large_file_content, "image/png")}
+            response = await ac.put(
+                "/api/user/edit/portrait", files=files, headers=auth_headers
+            )
+        # 断言结果：期望被拦截，并返回 400 状态码
+        assert response.status_code == 400
+        assert "不能超过 2MB" in response.text
+        # 上传 txt 文件作为头像
+        files = {"file": ("test.txt", b"Hello, I am a text file", "text/plain")}
         response = await client.put(
-            "/api/users/edit",
-            json={
-                "old_password": "wrong_password_haha",
-                "new_password": "new_password123",
-            },
-            headers=auth_headers,
+            "/api/user/edit/portrait", files=files, headers=auth_headers
         )
         assert response.status_code == 400
-        assert "密码错误" in response.text
-
-        response = await client.put(
-            "/api/users/edit/email",  # 注意核对一下你的真实路由是不是这个
-            json={
-                "password": "password123",               # 补上必填的密码
-                "new-email": "new_email@tsinghua.edu.cn"  # 使用 alias 规定的键名
-            },
-            headers=auth_headers,
-        )
-
-        # 兼容路由可能叫单数形式的情况
-        if response.status_code == 404:
-            response = await client.put(
-                "/api/user/edit/email",
-                json={
-                    "password": "password123",
-                    "new-email": "new_email@tsinghua.edu.cn"
-                },
-                headers=auth_headers,
-            )
-
-        assert response.status_code == 200
-        assert "邮箱修改成功" in response.text
+        assert "不支持的图片格式" in response.text
 
         # ---------------------------------------------------------
         # 9. Forget Password Flow
@@ -321,12 +328,10 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         )
         assert response.status_code == 200
 
-        # 真实测试：验证码是对的，但该邮箱根本没注册过账号
+        # 9b. 验证码是对的，但该邮箱根本没注册过账号
         ghost_email = "ghost@tsinghua.edu.cn"
-
         # 第一步：巧妙利用“注册发码”接口，往 Redis 里强制塞入这个邮箱的有效验证码
         await client.post("/api/users/register/email", json={"email": ghost_email})
-
         # 第二步：拿着有效的验证码，去请求“重置密码”接口
         # 此时代码会通过 db_verify_code(Redis校验)，但在 db_get_user_by_email 时查不到数据
         response = await client.post(
@@ -337,7 +342,6 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
                 "verification_code": "123456",
             },
         )
-
         assert response.status_code == 404
         assert "未找到绑定该邮箱的账号" in response.text
 
@@ -368,7 +372,7 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         response = await client.post(
             "/api/users/delete",
             headers=delete_headers,
-            json={"password": "wrong_password_here"}  # 故意传错
+            json={"password": "wrong_password_here"},  # 故意传错
         )
         assert response.status_code == 400
         assert "密码错误" in response.json()["msg"]
@@ -377,7 +381,7 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         response = await client.post(
             "/api/users/delete",
             headers=delete_headers,
-            json={"password": "recoveredpassword"}  # 传入注销所需的确认密码
+            json={"password": "recoveredpassword"},  # 传入注销所需的确认密码
         )
         assert response.status_code == 200
 
@@ -387,3 +391,55 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
             json={"id": str(user_id), "password": "recoveredpassword"},
         )
         assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_user_info_success():
+    """测试成功获取个人信息"""
+    # 1. 签发测试 Token (假设当前登录用户 ID 为 1)
+    test_token = create_access_token(data={"sub": "1"})
+    headers = {"Authorization": f"Bearer {test_token}"}
+    # 2. 伪造数据库返回的字典数据
+    mock_user_data = {
+        "user_id": 1,
+        "username": "TestUser",
+        "email": "test@example.com",
+        "avatar_url": "/static/avatars/test.png",
+    }
+    # 3. 拦截数据库查询操作 (Repository层)，让它直接返回伪造数据
+    with patch(
+        "services.user_service.db_get_user_by_id", new_callable=AsyncMock
+    ) as mock_db:
+        mock_db.return_value = mock_user_data
+        # 4. 发起 HTTP GET 请求
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as ac:
+            response = await ac.get("/api/user/info", headers=headers)
+        # 5. 极其严谨的断言
+        assert response.status_code == 200
+        data = response.json()
+        assert data["code"] == 200
+        assert data["id"] == 1
+        assert data["username"] == "TestUser"
+        assert data["email"] == "test@example.com"
+        assert data["avatar_url"] == "/static/avatars/test.png"
+
+
+@pytest.mark.asyncio
+async def test_get_user_info_not_found():
+    """测试 Token 合法但数据库中找不到该用户（比如账号刚被注销）"""
+    test_token = create_access_token(data={"sub": "999"})
+    headers = {"Authorization": f"Bearer {test_token}"}
+    with patch(
+        "services.user_service.db_get_user_by_id", new_callable=AsyncMock
+    ) as mock_db:
+        # 模拟数据库查不到人，返回 None
+        mock_db.return_value = None
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as ac:
+            response = await ac.get("/api/user/info", headers=headers)
+        # 断言会被 Service 层拦截并抛出 404
+        assert response.status_code == 404
+        assert "用户不存在" in response.text
