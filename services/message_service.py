@@ -41,7 +41,8 @@ async def send_message_service(db_session: asyncpg.Connection, user_id: int, req
         )
 
     # 从字典中提取出真正的 msg_id
-    real_msg_id = db_result["msg_id"] if isinstance(db_result, dict) else db_result
+    real_msg_id = db_result["msg_id"] if isinstance(
+        db_result, dict) else db_result
     # 提前获取一下服务器时间，因为推送和返回都要用到
     server_time = datetime.now(timezone.utc)
 

@@ -36,7 +36,8 @@ class SendMessageRequest(BaseModel):
     )
     msg_type: MessageType = Field(default=MessageType.TEXT, description="消息类型")
     # 💡 核心新增：用来装 JSON 参数的万能口袋
-    extra_data: Optional[Dict[str, Any]] = Field(default=None, description="附加结构化数据")
+    extra_data: Optional[Dict[str, Any]] = Field(
+        default=None, description="附加结构化数据")
 
     quote_message_id: Optional[int] = Field(None, description="当前信息所引用的信息的id")
 

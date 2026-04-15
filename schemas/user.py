@@ -57,18 +57,24 @@ class DeleteAccountRequest(BaseModel):
 # ==========================================
 # 更改用户名
 class UsernameEdit(BaseModel):
-    new_username: str = Field(..., min_length=3, max_length=20, description="新用户名")
+    new_username: str = Field(...,
+                              min_length=3,
+                              max_length=20,
+                              description="新用户名")
 
 
 # 更改密码
 class PasswordEdit(BaseModel):
-    old_password: str = Field(..., min_length=6, max_length=50, description="旧密码")
-    new_password: str = Field(..., min_length=6, max_length=50, description="新密码")
+    old_password: str = Field(..., min_length=6,
+                              max_length=50, description="旧密码")
+    new_password: str = Field(..., min_length=6,
+                              max_length=50, description="新密码")
 
 
 # 更改邮箱
 class EmailEdit(BaseModel):
-    password: str = Field(..., min_length=6, max_length=50, description="当前明文密码，用于验证身份")
+    password: str = Field(..., min_length=6, max_length=50,
+                          description="当前明文密码，用于验证身份")
     # 注意：新文档中写的是 new-email，在 Pydantic 中可以通过 alias 完美映射到 Python 变量
     new_email: EmailStr = Field(..., alias="new-email", description="新邮箱地址")
 

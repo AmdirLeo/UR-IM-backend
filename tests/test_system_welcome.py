@@ -73,4 +73,5 @@ async def test_registration_triggers_system_message(mock_ws_send, mock_generate_
         assert "系统小助手" in msg_payload["content"]
 
         print(
-            f"\n✅ 成功拦截到发给新用户({new_user_id})的系统欢迎信！内容为: {msg_payload['content']}")
+            f"\n✅ 成功拦截到发给新用户({new_user_id})的系统欢迎信！内容为: {
+                msg_payload['content']}")

@@ -148,7 +148,8 @@ async def test_friend_journey_and_edge_cases():
         friends_data = res_list.json()["data"]
 
         # 找出 user_b 的数据
-        user_b_data = next(f for f in friends_data if f["user_id"] == user_b_id)
+        user_b_data = next(
+            f for f in friends_data if f["user_id"] == user_b_id)
 
         # 断言：user_b 的 tags 字段必须是一个列表，并且同时包含这两个标签
         assert isinstance(user_b_data["tags"], list)
@@ -405,4 +406,3 @@ async def test_friend_accept_triggers_system_notification(mock_ws_send):
                     break
 
         assert a_received_notification, "User A 未收到携带 'friend_accept' 指令的多态系统通知"
-        

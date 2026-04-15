@@ -3,10 +3,13 @@ import os
 from fastapi import Request
 from core.config import settings
 
-#REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
+# REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
 # 初始化连接客户端
 # 确保 settings.REDIS_URL 读到的是上面那个 redis://... 地址
-redis_client = redis.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=True)
+redis_client = redis.from_url(
+    settings.REDIS_URL,
+    encoding="utf-8",
+    decode_responses=True)
 
 
 async def db_save_verification_code(email: str, code: str, expire_minutes: int = 5) -> None:

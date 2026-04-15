@@ -282,7 +282,11 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         assert response.status_code == 400
         assert "不能超过 2MB" in response.text
         # 上传 txt 文件作为头像
-        files = {"file": ("test.txt", b"Hello, I am a text file", "text/plain")}
+        files = {
+            "file": (
+                "test.txt",
+                b"Hello, I am a text file",
+                "text/plain")}
         response = await client.put(
             "/api/user/edit/portrait", files=files, headers=auth_headers
         )
