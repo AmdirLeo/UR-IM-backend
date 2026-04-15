@@ -162,6 +162,16 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         assert response.status_code == 400
         assert response.json()["msg"] == "账号不存在或密码错误"
 
+        # 👇 新增：非法格式登录测试（既不是邮箱也不是纯数字）
+        response = await client.post(
+            LOGIN_API_PATH,
+            json={"id": "invalid_username_format", "password": VALID_PASSWORD},
+        )
+        assert response.status_code == 400
+        # 注意：这里取决于你的全局异常处理器把 detail 映射到了哪个字段
+        # 用 in response.text 是一种最稳妥的断言方式
+        assert "请输入正确的邮箱或数字 ID" in response.text
+
         # ---------------------------------------------------------
         # 6. Login successfully -> obtain JWT token
         # ---------------------------------------------------------
@@ -175,6 +185,7 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
             LOGIN_API_PATH, json={"id": str(user_id), "password": VALID_PASSWORD}
         )
         assert response.status_code == 200
+        assert "token" in response.json()
 
         # ---------------------------------------------------------
         # 7. Access protected route with invalid/missing JWT (401)

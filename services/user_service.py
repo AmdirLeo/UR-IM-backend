@@ -137,16 +137,19 @@ async def login_service(conn, login_data: UserLogin) -> LoginResponse:
     user = None
     if "@" in login_data.id:
         user = await db_get_user_by_email(conn, login_data.id)
-    else:
+    elif login_data.id.isdigit():
         user_id = int(login_data.id)
         user = await db_get_user_by_id(conn, user_id)
         if user:
             user["password"] = await db_get_password_by_id(conn, user_id)
+    # 3. 非法输入：既不是邮箱，也不是纯数字 ID，直接拦截不查库
+    else:
+        raise BusinessException(status_code=400, detail="请输入正确的邮箱或数字 ID")
 
     if not user:
         raise BusinessException(status_code=400, detail="账号不存在或密码错误")
 
-    hashed_pwd = user["password"]
+    hashed_pwd = user.get("password")
     if not hashed_pwd:
         raise BusinessException(status_code=400, detail="账号数据异常，请联系管理员")
 
