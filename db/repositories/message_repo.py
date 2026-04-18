@@ -480,6 +480,9 @@ async def db_sync_conversations(conn: asyncpg.Connection, user_id: int) -> list[
                 ELSE 'abnormal'
             END AS status,
 
+            COALESCE(cm.is_pinned, false) AS is_pinned,
+            COALESCE(cm.is_muted, false) AS is_muted,
+
             cm.read_index AS last_ack_msg_id,
             c.last_msg_id,
 

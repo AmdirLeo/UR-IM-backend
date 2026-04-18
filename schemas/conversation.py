@@ -37,6 +37,8 @@ class ConversationSyncItem(BaseModel):
     last_msg_content: Optional[str] = Field(None, description="最新一条消息的内容")
     last_msg_send_time: Optional[datetime] = Field(
         None, description="最新一条消息的服务端时间")
+    is_pinned: bool = Field(default=False, description="当前用户是否将该会话置顶")
+    is_muted: bool = Field(default=False, description="当前用户是否对该会话开启免打扰")
 
 
 class SyncAggregatedResponse(BaseModel):

@@ -163,6 +163,9 @@ async def test_conversation_journey_and_edge_cases():
         assert target_conv["status"] == "normal"  # 正常加入的群，状态应为 normal
         assert target_conv["unread_count"] == 1   # 因为之前在 inbox 里塞了一条 is_read=false
 
+        assert target_conv["is_pinned"] is True   # Step 2 中我们开启了置顶
+        assert target_conv["is_muted"] is False   # Step 1 中我们最后关闭了免打扰
+
         # ---------------------------------------------------------
         # 5. 消息已读上报 (Read Acknowledgement)
         # ---------------------------------------------------------
@@ -180,7 +183,7 @@ async def test_conversation_journey_and_edge_cases():
         assert sync_data_after[0]["unread_count"] == 0
 
 
-# ---------------------------------------------------------
+        # ---------------------------------------------------------
         # 6. 好友申请红点同步测试 (Pending Friend Requests Sync)
         # ---------------------------------------------------------
         # 6.1 先验证当前的未处理好友申请应该是 0（因为刚建好的号没人加他）
