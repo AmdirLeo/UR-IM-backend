@@ -1,5 +1,6 @@
 import asyncpg
 from core.exceptions import FriendErrors, BusinessException, FriendException
+from typing import Optional
 
 # Constants for database operation status responses
 DELETE_ONE = "DELETE 1"
@@ -108,18 +109,30 @@ async def db_handle_friend_request(
             """
             await conn.execute(insert_friend_query, current_user_id, sender_id)
 
+            # 💡 使用 GROUP BY 精准查找历史私聊会话
             find_conv_query = """
                 SELECT c.conversation_id
                 FROM conversation c
-                JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
-                JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+                JOIN conversation_member cm ON c.conversation_id = cm.conversation_id
                 WHERE c.type = 'private'
-                  AND cm1.member_user_id = $1
-                  AND cm2.member_user_id = $2;
+                  AND cm.member_user_id IN ($1, $2)
+                GROUP BY c.conversation_id
+                HAVING COUNT(DISTINCT cm.member_user_id) = 2;
             """
             conv_id = await conn.fetchval(find_conv_query, current_user_id, sender_id)
 
-            if not conv_id:
+
+            if conv_id:
+                # ==========================================
+                # 【核心修复】：复用旧会话！把双方的 is_active 都恢复成 true
+                # ==========================================
+                await conn.execute("""
+                    UPDATE conversation_member
+                    SET is_active = true
+                    WHERE conversation_id = $1 AND member_user_id IN ($2, $3);
+                """, conv_id, current_user_id, sender_id)
+
+            else:
                 new_conv_id = await conn.fetchval(
                     "INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id;"
                 )
@@ -234,10 +247,14 @@ async def db_remove_friend(
     user_id: int,
     friend_user_id: int,
     delete_history: bool
-) -> None:
+) -> Optional[int]: # 👈 注意修改返回类型
     """
     删除好友 (对应 DELETE /api/friend/remove)
-    需要同时斩断双向联系
+    逻辑重构：
+    1. 斩断好友关系
+    2. 清理可能遗留的申请记录
+    2. 逻辑隐藏会话 (is_active = false)
+    3. 根据参数决定是否物理清空个人收件箱
     """
     async with conn.transaction():
 
@@ -256,9 +273,11 @@ async def db_remove_friend(
         )
 
         if direct_conv_id:
-            # 4. 退群：操作者主动退出私聊房间
+            # 4. 【核心改动】逻辑删除成员状态，并通过推进 read_index 抹平未读数
             await conn.execute("""
-                DELETE FROM conversation_member
+                UPDATE conversation_member
+                SET is_active = false, 
+                    read_index = COALESCE((SELECT last_msg_id FROM conversation WHERE conversation_id = $1), 0)
                 WHERE conversation_id = $1 AND member_user_id = $2
             """, direct_conv_id, user_id)
             # 5. 【清空历史记录】
@@ -268,6 +287,7 @@ async def db_remove_friend(
                     DELETE FROM user_inbox
                     WHERE conversation_id = $1 AND user_id = $2
                 """, direct_conv_id, user_id)
+        return direct_conv_id
 
 
 async def db_create_friend_tag(

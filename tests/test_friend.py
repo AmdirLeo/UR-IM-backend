@@ -20,7 +20,7 @@ setup_exception_handlers(app)
 app.include_router(router, prefix="/api")
 
 # 测试专用常量
-SYSTEM_ID = 10000
+SYSTEM_ID = -1
 TEST_USER_A_EMAIL = "apply_sender@ur-im.com"
 TEST_USER_B_EMAIL = "apply_receiver@ur-im.com"
 
@@ -43,6 +43,12 @@ async def test_friend_journey_and_edge_cases():
     user_c_id = None
 
     async for conn in get_db_conn():
+        await conn.execute("""
+            INSERT INTO user_account (user_id, username, password, email)
+            VALUES ($1, '系统管家', 'nopass', 'sys_admin@ur-im.com')
+            ON CONFLICT (user_id) DO NOTHING
+        """, SYSTEM_ID)
+        
         hashed_pw = get_password_hash("password123")
         # type: ignore
         user_a_id = await db_create_user(conn, "friend_user_A", hashed_pw, "friend_a@test.com")
@@ -274,7 +280,8 @@ async def test_friend_journey_and_edge_cases():
             headers=headers_a,
         )
         # 💡 核心修改：预期状态码就是 403，证明 A 无权再看该房间信息
-        assert res_history_a.status_code == 403, "安全漏洞：A 被移出房间后仍能访问接口！"
+        assert res_history_a.status_code == 200
+        assert len(res_history_a.json()["data"]) == 0, "核心逻辑错误：A 的历史记录没有被成功清空！"
 
         # 验证 2：B 作为被动方，Ta 的历史记录必须毫发无损！
         res_history_b = await client.post(
@@ -285,6 +292,40 @@ async def test_friend_journey_and_edge_cases():
         assert res_history_b.status_code == 200
         # 断言 B 依然能拉取到之前发的那 2 条消息
         assert len(res_history_b.json()["data"]) >= 2, "严重 Bug：B 的聊天记录被误删了！"
+        
+        
+        # ---------------------------------------------------------
+        # 8. [新增] 终极验证：重新加回好友，测试会话 ID 是否完美复用！
+        # ---------------------------------------------------------
+        # A 厚着脸皮再次申请加 B
+        await client.post(
+            "/api/friend/apply", 
+            json={"target_user_id": user_b_id, "message": "求求你加回我吧"}, 
+            headers=headers_a
+        )
+
+        # 获取最新的 request_id
+        async for conn in get_db_conn():
+            req_record = await conn.fetchrow(
+                "SELECT request_id FROM friend_request WHERE sender_id=$1 AND receiver_id=$2 ORDER BY create_time DESC LIMIT 1",
+                user_a_id, user_b_id,
+            )
+            request_id_new = req_record["request_id"]
+            break
+
+        # B 再次同意
+        res_re_accept = await client.post(
+            "/api/friend/handle", 
+            json={"request_id": request_id_new, "action": "accepted"}, 
+            headers=headers_b
+        )
+        assert res_re_accept.status_code == 200
+
+        # 提取这次生成的会话 ID
+        new_conv_id = res_re_accept.json()["data"]["conversation_id"]
+
+        # 💡 核心断言：这里的 conv_id 是你在前面步骤 5.5 获取的那个旧 ID
+        assert new_conv_id == conv_id, "底层架构 Bug：重新加好友产生了新的会话，没有复用旧的！"
 
 
 # ==========================================
@@ -294,7 +335,7 @@ async def test_friend_journey_and_edge_cases():
 @patch("core.ws_manager.manager.send_personal_message")
 async def test_friend_request_triggers_system_card(mock_ws_send):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:
-        # 1. 环境准备：创建 A, B, 10000 号及 B 的系统会话
+        # 1. 环境准备：创建 A, B, -1 号及 B 的系统会话
         async for conn in get_db_conn():
             hashed_pw = get_password_hash("testpassword")
             await conn.execute("""
@@ -393,15 +434,6 @@ async def test_friend_accept_triggers_system_notification(mock_ws_send):
                 SYSTEM_ID
             )
 
-            # 为 User A 创建系统会话 (因为 A 是发起方，A 将收到同意指令)
-            sys_conv_id = await conn.fetchval(
-                "INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id"
-            )
-            await conn.execute(
-                "INSERT INTO conversation_member (conversation_id, member_user_id) "
-                "VALUES ($1, $2), ($1, $3)",
-                sys_conv_id, user_a_id, SYSTEM_ID
-            )
 
             req_id = await conn.fetchval(
                 "INSERT INTO friend_request (sender_id, receiver_id, status) "
@@ -434,18 +466,15 @@ async def test_friend_accept_triggers_system_notification(mock_ws_send):
 
             if target_id == user_a_id and ws_payload["type"] == "NEW_CHAT_MESSAGE":
                 msg_data = ws_payload["data"]
-                if msg_data["sender_id"] == SYSTEM_ID:
+                if msg_data.get("conversation_id") == http_conv_id:
                     # 💡 新架构断言：检查指令类型和内容
+                    assert msg_data["sender_id"] == SYSTEM_ID, "发件人必须是系统上帝账号"
                     assert msg_data["msg_type"] == "notify"
-                    assert msg_data["content"] == "[好友申请已通过]"
-
-                    # 👇 核心断言：检查前端静默执行的 action，以及 WebSocket 传给 A 的 ID 必须和 HTTP 给 B 的 ID 完全一致！
                     extra = msg_data.get("extra", {})
                     assert extra.get("action") == "friend_accept"
-                    assert "已同意你的好友申请" in extra.get("tips", "")
-                    assert extra.get("conversation_id") == http_conv_id, "严重错误：WebSocket漏传了conversation_id或者双方拿到的不一致！"
 
+                    
                     a_received_notification = True
                     break
 
-        assert a_received_notification, "User A 未收到携带 'friend_accept' 指令的多态系统通知"
+        assert a_received_notification, "严重错误：User A 未能在【私聊会话】中收到系统同意通知！"

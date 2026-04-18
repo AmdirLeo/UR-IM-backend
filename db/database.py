@@ -22,10 +22,10 @@ async def init_system_data():
             # 保证了每次重启服务都不会重复插入，也不会报错。
             await conn.execute("""
                 INSERT INTO user_account (user_id, username, password, email)
-                VALUES (10000, '系统通知助手', 'system_fake_password', 'system@ur-im.com')
+                VALUES (-1, '系统通知助手', 'system_fake_password', 'system@ur-im.com')
                 ON CONFLICT (user_id) DO NOTHING;
             """)
-            print("系统核心数据自检完毕：系统助手(10000)已就绪。")
+            print("系统核心数据自检完毕：系统助手(-1)已就绪。")
     except Exception as e:
         print(f"系统核心数据自检失败: {e}")
         # break  # 取一次连接执行完毕就主动跳出循环

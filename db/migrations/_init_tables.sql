@@ -59,6 +59,7 @@ CREATE TABLE conversation_member (
     is_muted BOOLEAN DEFAULT false,        -- 消息免打扰
     is_pinned BOOLEAN DEFAULT false,       -- 置顶会话
     read_index BIGINT DEFAULT 0,           -- 已读到的最大 msg_id (用于算未读数)
+    is_active BOOLEAN DEFAULT true,
     join_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (conversation_id, member_user_id)
 );

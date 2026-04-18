@@ -51,7 +51,7 @@ async def apply_friend(
         # 理论上外层已做所有检查，此处为兜底
         raise BusinessException(status_code=500, detail="好友申请发送失败")
 
-    # 3. 查找目标用户与系统助手(10000号)的私聊会话 ID
+    # 3. 查找目标用户与系统助手(-1号)的私聊会话 ID
     system_conv_query = """
         SELECT c.conversation_id
         FROM conversation c
@@ -59,7 +59,7 @@ async def apply_friend(
         JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
         WHERE c.type = 'private'
           AND cm1.member_user_id = $1
-          AND cm2.member_user_id = 10000
+          AND cm2.member_user_id = -1
     """
     system_conv_id = await db_session.fetchval(system_conv_query, target_user_id)
 
@@ -82,10 +82,10 @@ async def apply_friend(
             }
         )
 
-        # 4.2 调用消息模块，以 10000 号的身份发信
+        # 4.2 调用消息模块，以 -1 号的身份发信
         await send_message_service(
             db_session=db_session,
-            user_id=10000,
+            user_id=-1,
             req=msg_req
         )
 
@@ -106,60 +106,28 @@ async def handle_friend_request(
     )
     if not db_result:
         # 如果失败（例如申请状态已变更或不存在），抛出异常
-        raise BusinessException(status_code=400, detail="处理失败，请稍后重试")
-
-    # 提取最初发起好友申请的人的 ID
-    sender_id = db_result["friend_id"]
+        raise BusinessException(status_code=400, detail="处理失败，请稍后重试") 
 
     # ==========================================
-    # 2. 查找对方与系统助手(10000号)的专属会话
+    # 2. 只有在同意申请时，才发送打招呼消息
     # ==========================================
-    find_system_conv_query = """
-        SELECT c.conversation_id
-        FROM conversation c
-        JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
-        JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
-        WHERE c.type = 'private'
-          AND cm1.member_user_id = $1
-          AND cm2.member_user_id = 10000;
-    """
-    system_conv_id = await db_session.fetchval(find_system_conv_query, sender_id)
+    if action == "accepted":
+        # 【核心改动 1】：同意申请后，通知直接下发到两人的【私聊会话】中！
+        private_conv_id = db_result.get("conversation_id")
 
-    # ==========================================
-    # 3. 如果找到了系统会话，立刻推送 WebSocket 通知！
-    # ==========================================
-    if system_conv_id:
-        # 根据用户的操作，定制不同的系统提示语
-        if action == "accepted":
-            msg_content = "[好友申请已通过]"
-            extra_data = {
-                "action": "friend_accept",
-                "tips": f"用户 {current_user_id} 已同意你的好友申请，快去打个招呼吧！",
-                # 💡 假设你的 db_result 里返回了新建的两人私聊会话ID
-                # 如果底层还没写这块逻辑，前端拿到 None 就只给个提示框，不自动跳
-                "conversation_id": db_result.get("conversation_id")
-            }
-        else:
-            msg_content = "[好友申请被拒绝]"
-            extra_data = {
-                "action": "friend_reject",
-                "tips": f"用户 {current_user_id} 拒绝了你的好友申请。"
-            }
-
-        system_req = SendMessageRequest(
-            conversation_id=system_conv_id,
-            local_id=str(uuid.uuid4()),
-            message_content=msg_content,
-            msg_type=MessageType.NOTIFY,  # 👈 使用系统通知指令类型
-            extra_data=extra_data         # 👈 将指令参数丢进附件包
-        )
-
-        # 调起我们写好的发消息接口，身份为上帝账号 (10000)
-        await send_message_service(
-            db_session=db_session,
-            user_id=10000,
-            req=system_req
-        )
+        if private_conv_id:
+            accept_req = SendMessageRequest(
+                conversation_id=private_conv_id,  # 👈 目标：你们俩的新家
+                local_id=str(uuid.uuid4()),
+                message_content="[好友申请已通过]",  # 前端可以根据这个显示打招呼的灰色小字
+                msg_type=MessageType.NOTIFY,
+                extra_data={
+                    "action": "friend_accept",
+                    "tips": f"用户 {current_user_id} 已同意你的好友申请，快去打个招呼吧！",
+                    "conversation_id": private_conv_id
+                }
+            )
+            await send_message_service(db_session, -1, accept_req)
 
     # 👈 修改点 3：把 Repo 层返回的字典，原封不动地返回给上一层的 API 路由
     return db_result
@@ -181,25 +149,14 @@ async def remove_friend(
         raise BusinessException(status_code=400, detail="不能删除自己")
 
     # 2. 核心调度：全权委托给 Repo 层的底层事务处理数据变更
-    await db_remove_friend(db_session, current_user_id, friend_user_id, delete_history)
+    direct_conv_id = await db_remove_friend(db_session, current_user_id, friend_user_id, delete_history)
 
     # ==========================================
-    # 3. 找到被删除人的系统助手会话，发一条解绑指令
+    # 3. 发一条解绑指令
     # ==========================================
-    find_system_conv_query = """
-        SELECT c.conversation_id
-        FROM conversation c
-        JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
-        JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
-        WHERE c.type = 'private'
-          AND cm1.member_user_id = $1
-          AND cm2.member_user_id = 10000;
-    """
-    friend_system_conv_id = await db_session.fetchval(find_system_conv_query, friend_user_id)
-
-    if friend_system_conv_id:
+    if direct_conv_id:
         notify_req = SendMessageRequest(
-            conversation_id=friend_system_conv_id,
+            conversation_id=direct_conv_id,
             local_id=str(uuid.uuid4()),
             message_content="[好友关系解除]",
             msg_type=MessageType.NOTIFY,
@@ -209,7 +166,10 @@ async def remove_friend(
                 "tips": "对方已解除与你的好友关系，你无法再发送新消息。"
             }
         )
-        await send_message_service(db_session, 10000, notify_req)
+        # 关键点：用系统账号 (-1) 的身份调用服务层发消息！
+        # 因为此时 current_user_id 已经退群 (is_active=false)，
+        # 如果用 current_user_id 去发，会被你自己将要写的鉴权拦截器无情拦截。
+        await send_message_service(db_session, -1, notify_req)
 
 
 async def get_friend_list(db_session: asyncpg.Connection, current_user_id: int) -> List[Dict]:

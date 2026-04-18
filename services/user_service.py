@@ -82,9 +82,9 @@ async def register_service(conn, user_data: UserRegister) -> RegisterResponse:
         "INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id;"
     )
 
-    # 把刚注册的新用户 (user_id) 和系统助手 (10000) 拉进这个会话
+    # 把刚注册的新用户 (user_id) 和系统助手 (-1) 拉进这个会话
     await conn.execute(
-        "INSERT INTO conversation_member (conversation_id, member_user_id) VALUES ($1, $2), ($1, 10000);",
+        "INSERT INTO conversation_member (conversation_id, member_user_id) VALUES ($1, $2), ($1, -1);",
         conv_id,
         user_id,
     )
@@ -99,10 +99,10 @@ async def register_service(conn, user_data: UserRegister) -> RegisterResponse:
         local_id=str(uuid.uuid4())  # 后端自己随便生成一个临时 ID 骗过校验即可
     )
 
-    # 调用发消息服务。注意这里的发件人 user_id 强行指定为 10000
+    # 调用发消息服务。注意这里的发件人 user_id 强行指定为 -1
     await send_message_service(
         db_session=conn,
-        user_id=10000,
+        user_id=-1,
         req=system_req
     )
 

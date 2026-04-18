@@ -17,6 +17,7 @@ env/
 .coverage
 htmlcov/
 coverage.xml
+reset_db.py
 
 #头像存储
 static/avatars/

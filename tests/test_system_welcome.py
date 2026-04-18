@@ -21,12 +21,12 @@ async def test_registration_triggers_system_message(mock_ws_send, mock_generate_
     测试新用户注册时，系统是否成功创建了会话并发送了欢迎消息。
     """
     # ==========================================
-    # 0. 【强行注入】先给测试数据库塞入 10000 号！
+    # 0. 【强行注入】先给测试数据库塞入 -1 号！
     # ==========================================
     async for conn in get_db_conn():
         await conn.execute("""
             INSERT INTO user_account (user_id, username, password, email)
-            VALUES (10000, '系统通知助手', 'system_fake_password', 'system@ur-im.com')
+            VALUES (-1, '系统通知助手', 'system_fake_password', 'system@ur-im.com')
             ON CONFLICT (user_id) DO NOTHING;
         """)
         break  # 拿一次连接执行完就退出
@@ -68,7 +68,7 @@ async def test_registration_triggers_system_message(mock_ws_send, mock_generate_
         assert sent_ws_data["type"] == "NEW_CHAT_MESSAGE"
 
         msg_payload = sent_ws_data["data"]
-        assert msg_payload["sender_id"] == 10000
+        assert msg_payload["sender_id"] == -1
         assert "欢迎来到 UR-IM" in msg_payload["content"]
         assert "系统小助手" in msg_payload["content"]
 

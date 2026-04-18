@@ -38,11 +38,11 @@ async def db_send_message(
     check_member_query = """
         SELECT EXISTS(
             SELECT 1 FROM conversation_member
-            WHERE conversation_id = $1 AND member_user_id = $2
+            WHERE conversation_id = $1 AND member_user_id = $2 AND is_active = true
         );
     """
     is_member = await conn.fetchval(check_member_query, conversation_id, sender_id)
-    if not is_member:
+    if not is_member and sender_id > 0:
         # 对应 MessageErrors.NotInConversation
         raise MessageException(MessageErrors.NotInConversation)
 
@@ -83,9 +83,11 @@ async def db_send_message(
         await conn.execute(QUERY_UPDATE_CONV_SORT, msg_id, conversation_id)
 
         # 4.获取会话所有成员，并批量写入收件箱
-        get_members_query = (
-            "SELECT member_user_id FROM conversation_member WHERE conversation_id = $1;"
-        )
+        get_members_query = """
+            SELECT member_user_id 
+            FROM conversation_member 
+            WHERE conversation_id = $1 AND is_active = true;
+        """
         members = await conn.fetch(get_members_query, conversation_id)
 
         if members:

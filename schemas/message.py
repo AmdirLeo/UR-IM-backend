@@ -62,7 +62,7 @@ class MessageHistoryRequest(BaseModel):
 class MessageHistoryItem(BaseModel):
     msg_id: int = Field(..., gt=0, description="全局唯一的消息 ID")
     msg_type: MessageType = Field(default=MessageType.TEXT, description="消息类型")
-    sender_id: int = Field(..., gt=0, description="发送者的用户 ID")
+    sender_id: int = Field(..., description="发送者的用户 ID")
     msg_content: str = Field(..., description="消息主体内容")
     create_time: datetime = Field(..., description="消息在服务端的落库时间")
     quote_msg_id: Optional[int] = Field(None, gt=0, description="引用的目标消息 ID")
@@ -71,7 +71,7 @@ class MessageHistoryItem(BaseModel):
 
 class MessageSearchRequest(BaseModel):
     conversation_id: Optional[int] = Field(None, gt=0)
-    sender_id: Optional[int] = Field(None, gt=0, description="发送者 ID")
+    sender_id: Optional[int] = Field(None, description="发送者 ID")
     start_time: Optional[datetime] = Field(None, description="起始时间")
     end_time: Optional[datetime] = Field(None, description="结束时间")
     keyword: Optional[str] = Field(None, description="搜索关键词")

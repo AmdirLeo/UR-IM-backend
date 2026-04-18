@@ -63,7 +63,7 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         await conn.execute(
             """
             INSERT INTO user_account (user_id, username, password, email)
-            VALUES (10000, '系统通知助手', 'system_fake_password', 'system@ur-im.com')
+            VALUES (-1, '系统通知助手', 'system_fake_password', 'system@ur-im.com')
             ON CONFLICT (user_id) DO NOTHING;
         """
         )
