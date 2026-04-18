@@ -84,8 +84,8 @@ async def db_send_message(
 
         # 4.获取会话所有成员，并批量写入收件箱
         get_members_query = """
-            SELECT member_user_id 
-            FROM conversation_member 
+            SELECT member_user_id
+            FROM conversation_member
             WHERE conversation_id = $1 AND is_active = true;
         """
         members = await conn.fetch(get_members_query, conversation_id)
@@ -476,9 +476,9 @@ async def db_sync_conversations(conn: asyncpg.Connection, user_id: int) -> list[
             -- 动态判断存活状态
             -- 如果左连表能连上 member 表，说明我还在里面；连不上，说明我被踢了/退群了
             CASE
-                WHEN cm.member_user_id IS NOT NULL THEN 'active'
-                ELSE 'kicked'
-            END AS my_status,
+                WHEN cm.member_user_id IS NOT NULL AND cm.is_active = true THEN 'normal'
+                ELSE 'abnormal'
+            END AS status,
 
             cm.read_index AS last_ack_msg_id,
             c.last_msg_id,

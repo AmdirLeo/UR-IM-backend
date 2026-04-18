@@ -404,3 +404,23 @@ async def db_review_group_invite(
                 ON CONFLICT (conversation_id, member_user_id) DO NOTHING;
             """
             await conn.execute(insert_member, conversation_id, invitee_id)
+
+
+async def db_get_pending_group_invite_count(conn: asyncpg.Connection, user_id: int) -> int:
+    """
+    统计“我是群主/管理员，需要我审批的申请”
+    """
+    admin_query = """
+        SELECT COUNT(1)
+        FROM group_invite gi
+        JOIN conversation_member cm ON gi.conversation_id = cm.conversation_id
+        WHERE cm.member_user_id = $1
+          AND cm.role IN ('owner', 'admin')  -- 身份校验
+          AND cm.is_active = true            -- 必须还在群里
+          AND gi.status = 'pending';
+    """
+    admin_count = await conn.fetchval(admin_query, user_id)
+    admin_count = admin_count or 0
+
+    # 返回最终的红点数。
+    return admin_count

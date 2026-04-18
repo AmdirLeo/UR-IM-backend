@@ -121,7 +121,6 @@ async def db_handle_friend_request(
             """
             conv_id = await conn.fetchval(find_conv_query, current_user_id, sender_id)
 
-
             if conv_id:
                 # ==========================================
                 # 【核心修复】：复用旧会话！把双方的 is_active 都恢复成 true
@@ -247,7 +246,7 @@ async def db_remove_friend(
     user_id: int,
     friend_user_id: int,
     delete_history: bool
-) -> Optional[int]: # 👈 注意修改返回类型
+) -> Optional[int]:  # 👈 注意修改返回类型
     """
     删除好友 (对应 DELETE /api/friend/remove)
     逻辑重构：
@@ -276,7 +275,7 @@ async def db_remove_friend(
             # 4. 【核心改动】逻辑删除成员状态，并通过推进 read_index 抹平未读数
             await conn.execute("""
                 UPDATE conversation_member
-                SET is_active = false, 
+                SET is_active = false,
                     read_index = COALESCE((SELECT last_msg_id FROM conversation WHERE conversation_id = $1), 0)
                 WHERE conversation_id = $1 AND member_user_id = $2
             """, direct_conv_id, user_id)
@@ -390,3 +389,18 @@ async def db_remove_friend_from_tag(
     status = await conn.execute(query, user_id, friend_user_id, tag_name)
     if status != DELETE_ONE:
         raise BusinessException(status_code=404, detail="该好友不在当前分组中")
+
+
+async def db_get_pending_request_count(conn: asyncpg.Connection, user_id: int) -> int:
+    """
+    查询指定用户当前未处理的好友申请数量
+    """
+    query = """
+        SELECT COUNT(1)
+        FROM friend_request
+        WHERE receiver_id = $1 AND status = 'pending';
+    """
+    # fetchval 专门用来获取单行单列的单一值，非常适合 COUNT() 查询
+    count = await conn.fetchval(query, user_id)
+
+    return count or 0

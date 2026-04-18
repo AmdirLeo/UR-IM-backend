@@ -5,14 +5,25 @@ from db.repositories.message_repo import (
     db_set_conversation_mute,
     db_set_conversation_pin,
 )
+from db.repositories.friend_repo import db_get_pending_request_count
+from db.repositories.group_repo import db_get_pending_group_invite_count
 from db.repositories.conversation_repo import db_get_direct_conversation
 from core.exceptions import BusinessException
 
 
-async def sync_conversations(db_session: asyncpg.Connection, user_id: int) -> list[dict]:
-    """同步会话列表及未读信息"""
+async def sync_conversations(db_session: asyncpg.Connection, user_id: int) -> dict:
+    """
+    同步会话列表及各类型申请的未读红点信息
+    """
+    # 核心并发：同时拉取 会话列表、好友申请数、入群申请数
     conversations = await db_sync_conversations(db_session, user_id)
-    return conversations
+    pending_friends = await db_get_pending_request_count(db_session, user_id)
+    pending_groups = await db_get_pending_group_invite_count(db_session, user_id)
+    return {
+        "conversations": conversations,
+        "pending_friend_requests": pending_friends,
+        "pending_group_requests": pending_groups
+    }
 
 
 async def read_ack(db_session: asyncpg.Connection, user_id: int, conversation_id: int):

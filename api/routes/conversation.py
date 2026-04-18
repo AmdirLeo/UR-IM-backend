@@ -17,6 +17,7 @@ from schemas.conversation import (
     ConversationPinRequest,
     DirectConversationResponse,
     DirectConversationData,
+    SyncAggregatedResponse,
 )
 
 router = APIRouter()
@@ -25,14 +26,14 @@ router = APIRouter()
 @router.get(
     "/sync",
     summary="同步会话列表",
-    response_model=ConversationGenericResponse[list[ConversationSyncItem]],
+    response_model=SyncAggregatedResponse,
 )
 async def sync(
     current_user_id: CurrentUserId,
     db_session: DBConnection,
 ):
-    conversations = await sync_conversations(db_session, current_user_id)
-    return ConversationGenericResponse(data=conversations)
+    sync_data = await sync_conversations(db_session, current_user_id)
+    return sync_data
 
 
 @router.post("/read_ack", summary="已读回执",

@@ -1,6 +1,7 @@
 import pytest
 from httpx import AsyncClient, ASGITransport
 from typing import Dict
+import json
 
 # 引入项目核心依赖
 from main import app
@@ -44,7 +45,7 @@ async def test_conversation_journey_and_edge_cases():
         user_id = await db_create_user(conn, "conv_tester", hashed_pw, "conv@test.com")
 
         # 2. 强行在底层创建一个会话，并把该用户拉入会话
-        conv_id = await conn.fetchval("INSERT INTO conversation (type) VALUES ('single') RETURNING conversation_id;")
+        conv_id = await conn.fetchval("INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id;")
         await conn.execute(
             "INSERT INTO conversation_member (conversation_id, member_user_id, read_index) VALUES ($1, $2, 1);",
             conv_id,
@@ -52,9 +53,31 @@ async def test_conversation_journey_and_edge_cases():
         )
 
         # 3. 强行造一条消息，用于后面的 read_ack (已读上报) 测试
+        fake_msg_body = {
+            "type": "text",                   # 对应 msg_type (注意你的 DB 查询用的是 'type')
+            "content": "测试消息内容",         # 对应 message_content (你的 DB 查询用的是 'content')
+            "local_id": "test-local-uuid-001",  # 必填的本地 ID
+            "extra_data": {                   # 测试万能口袋
+                "test_flag": True,
+                "at_users": [2, 3]
+            },
+            "quote_message_id": None          # 引用消息 ID
+        }
+
+        # 使用 json.dumps 序列化，并通过 $1 安全地插入到 jsonb 字段中
         msg_id = await conn.fetchval(
-            'INSERT INTO message (msg_body) VALUES (\'{"text": "test"}\'::jsonb) RETURNING msg_id;'
+            'INSERT INTO message (msg_body) VALUES ($1::jsonb) RETURNING msg_id;',
+            json.dumps(fake_msg_body)
         )
+
+        # 👇 【新增这一段】：将最新生成的 msg_id 更新到会话表的 last_msg_id 中！
+        await conn.execute(
+            "UPDATE conversation SET last_msg_id = $1 WHERE conversation_id = $2;",
+            msg_id,
+            conv_id
+        )
+        # 👆 新增结束
+
         await conn.execute(
             "INSERT INTO conversation_message (conversation_id, msg_id, sender_id, seq_id) VALUES ($1, $2, $3, 1);",
             conv_id,
@@ -124,11 +147,21 @@ async def test_conversation_journey_and_edge_cases():
         # ---------------------------------------------------------
         res = await client.get("/api/conversation/sync", headers=headers)
         assert res.status_code == 200
-        sync_data = res.json()["data"]
-        # 因为我们前面造了数据，所以这里必定能拉取到列表
-        assert len(sync_data) >= 1
-        # 验证拉取到的会话 ID 是对的
-        assert sync_data[0]["conversation_id"] == conv_id
+        sync_data = res.json()
+
+        # 校验聚合响应的新数据结构
+        assert "conversations" in sync_data
+        assert "pending_friend_requests" in sync_data
+        assert "pending_group_requests" in sync_data
+
+        conv_list = sync_data["conversations"]
+        assert len(conv_list) >= 1
+
+        # 验证会话数据及新的状态机
+        target_conv = conv_list[0]
+        assert target_conv["conversation_id"] == conv_id
+        assert target_conv["status"] == "normal"  # 正常加入的群，状态应为 normal
+        assert target_conv["unread_count"] == 1   # 因为之前在 inbox 里塞了一条 is_read=false
 
         # ---------------------------------------------------------
         # 5. 消息已读上报 (Read Acknowledgement)
@@ -141,6 +174,36 @@ async def test_conversation_journey_and_edge_cases():
         assert res.status_code == 200
 
         # 可选断言：已读后，再次拉取 sync 或者未读数接口，红点应该消失
+        # 断言：已读后，再次拉取 sync，验证对应会话的 unread_count 红点应该清零
         res_sync_after_read = await client.get("/api/conversation/sync", headers=headers)
-        sync_data_after = res_sync_after_read.json()["data"]
+        sync_data_after = res_sync_after_read.json()["conversations"]
         assert sync_data_after[0]["unread_count"] == 0
+
+
+# ---------------------------------------------------------
+        # 6. 好友申请红点同步测试 (Pending Friend Requests Sync)
+        # ---------------------------------------------------------
+        # 6.1 先验证当前的未处理好友申请应该是 0（因为刚建好的号没人加他）
+        res_sync_before = await client.get("/api/conversation/sync", headers=headers)
+        assert res_sync_before.status_code == 200
+        assert res_sync_before.json()["pending_friend_requests"] == 0
+
+        # 6.2 在底层强制制造一条“别人发给我的”未处理好友申请
+        async for conn in get_db_conn():
+            # 创建一个陌生人用户
+            stranger_pw = get_password_hash("password123")
+            # 注意邮箱和用户名别跟上面冲突了
+            stranger_id = await db_create_user(conn, "stranger_tester", stranger_pw, "stranger@test.com")
+
+            # 插入一条待处理的好友申请 (sender=陌生人, receiver=当前测试用户, status=pending)
+            await conn.execute(
+                "INSERT INTO friend_request (sender_id, receiver_id, status) VALUES ($1, $2, 'pending');",
+                stranger_id, user_id
+            )
+            break  # 操作完立马释放连接归还给连接池
+
+        # 6.3 再次拉取 Sync 接口，验证好友申请红点数是否精准变成了 1
+        res_sync_after = await client.get("/api/conversation/sync", headers=headers)
+        assert res_sync_after.status_code == 200
+        sync_data_friends = res_sync_after.json()
+        assert sync_data_friends["pending_friend_requests"] == 1

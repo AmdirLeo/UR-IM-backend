@@ -44,20 +44,20 @@ async def send_message_service(db_session: asyncpg.Connection, user_id: int, req
         # 拦截 2：主动退群/单删（is_active = false）
         if not auth_result["is_active"]:
             raise MessageException(
-                error_code=MessageErrors.NotInConversation, 
+                error_code=MessageErrors.NotInConversation,
                 message="你已退出该会话或解除了好友关系"
             )
         # 拦截 3：【双向社交保护】
         if auth_result["type"] == "private":
             target_active = await db_session.fetchval("""
-                SELECT is_active FROM conversation_member 
+                SELECT is_active FROM conversation_member
                 WHERE conversation_id = $1 AND member_user_id != $2
                 LIMIT 1
             """, req.conversation_id, user_id)
-            
+
             if target_active is False:
                 raise MessageException(
-                    error_code=MessageErrors.NotInConversation, # 视你的枚举定义而定
+                    error_code=MessageErrors.NotInConversation,  # 视你的枚举定义而定
                     message="对方开启了好友验证，你还不是他(她)的好友"
                 )
     # ==========================================

@@ -48,7 +48,7 @@ async def test_friend_journey_and_edge_cases():
             VALUES ($1, '系统管家', 'nopass', 'sys_admin@ur-im.com')
             ON CONFLICT (user_id) DO NOTHING
         """, SYSTEM_ID)
-        
+
         hashed_pw = get_password_hash("password123")
         # type: ignore
         user_a_id = await db_create_user(conn, "friend_user_A", hashed_pw, "friend_a@test.com")
@@ -292,15 +292,14 @@ async def test_friend_journey_and_edge_cases():
         assert res_history_b.status_code == 200
         # 断言 B 依然能拉取到之前发的那 2 条消息
         assert len(res_history_b.json()["data"]) >= 2, "严重 Bug：B 的聊天记录被误删了！"
-        
-        
+
         # ---------------------------------------------------------
         # 8. [新增] 终极验证：重新加回好友，测试会话 ID 是否完美复用！
         # ---------------------------------------------------------
         # A 厚着脸皮再次申请加 B
         await client.post(
-            "/api/friend/apply", 
-            json={"target_user_id": user_b_id, "message": "求求你加回我吧"}, 
+            "/api/friend/apply",
+            json={"target_user_id": user_b_id, "message": "求求你加回我吧"},
             headers=headers_a
         )
 
@@ -315,8 +314,8 @@ async def test_friend_journey_and_edge_cases():
 
         # B 再次同意
         res_re_accept = await client.post(
-            "/api/friend/handle", 
-            json={"request_id": request_id_new, "action": "accepted"}, 
+            "/api/friend/handle",
+            json={"request_id": request_id_new, "action": "accepted"},
             headers=headers_b
         )
         assert res_re_accept.status_code == 200
@@ -434,7 +433,6 @@ async def test_friend_accept_triggers_system_notification(mock_ws_send):
                 SYSTEM_ID
             )
 
-
             req_id = await conn.fetchval(
                 "INSERT INTO friend_request (sender_id, receiver_id, status) "
                 "VALUES ($1, $2, 'pending') RETURNING request_id",
@@ -473,7 +471,6 @@ async def test_friend_accept_triggers_system_notification(mock_ws_send):
                     extra = msg_data.get("extra", {})
                     assert extra.get("action") == "friend_accept"
 
-                    
                     a_received_notification = True
                     break
 

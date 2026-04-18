@@ -106,7 +106,7 @@ async def handle_friend_request(
     )
     if not db_result:
         # 如果失败（例如申请状态已变更或不存在），抛出异常
-        raise BusinessException(status_code=400, detail="处理失败，请稍后重试") 
+        raise BusinessException(status_code=400, detail="处理失败，请稍后重试")
 
     # ==========================================
     # 2. 只有在同意申请时，才发送打招呼消息
