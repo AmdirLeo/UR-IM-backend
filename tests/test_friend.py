@@ -307,7 +307,9 @@ async def test_friend_journey_and_edge_cases():
         # 获取最新的 request_id
         async for conn in get_db_conn():
             req_record = await conn.fetchrow(
-                "SELECT request_id FROM friend_request WHERE sender_id=$1 AND receiver_id=$2 ORDER BY create_time DESC LIMIT 1",
+                "SELECT request_id "
+                "FROM friend_request WHERE sender_id=$1 "
+                "AND receiver_id=$2 ORDER BY create_time DESC LIMIT 1",
                 user_a_id, user_b_id,
             )
             request_id_new = req_record["request_id"]
