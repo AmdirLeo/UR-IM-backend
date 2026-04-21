@@ -28,7 +28,7 @@ async def init_system_data():
             print("系统核心数据自检完毕：系统助手(-1)已就绪。")
     except Exception as e:
         print(f"系统核心数据自检失败: {e}")
-        # break  # 取一次连接执行完毕就主动跳出循环
+        # 取一次连接执行完毕就主动跳出循环
 
 
 async def init_db_pool():
