@@ -150,7 +150,8 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         # 5. Login with incorrect credentials (400)
         # ---------------------------------------------------------
         response = await client.post(
-            LOGIN_API_PATH, json={"id": VALID_EMAIL, "password": "wrong_password"}
+            LOGIN_API_PATH, json={"id": VALID_EMAIL,
+                                  "password": "wrong_password"}
         )
         assert response.status_code == 400
         assert response.json()["msg"] == "账号不存在或密码错误"
@@ -176,13 +177,15 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         # 6. Login successfully -> obtain JWT token
         # ---------------------------------------------------------
         response = await client.post(
-            LOGIN_API_PATH, json={"id": VALID_EMAIL, "password": VALID_PASSWORD}
+            LOGIN_API_PATH, json={
+                "id": VALID_EMAIL, "password": VALID_PASSWORD}
         )
         assert response.status_code == 200
         token = response.json()["token"]
 
         response = await client.post(
-            LOGIN_API_PATH, json={"id": str(user_id), "password": VALID_PASSWORD}
+            LOGIN_API_PATH, json={
+                "id": str(user_id), "password": VALID_PASSWORD}
         )
         assert response.status_code == 200
         assert "token" in response.json()
@@ -254,7 +257,8 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         new_password = "newpassword456"
         response = await client.put(
             EDIT_PASSWORD_API_PATH,
-            json={"old_password": VALID_PASSWORD, "new_password": new_password},
+            json={"old_password": VALID_PASSWORD,
+                  "new_password": new_password},
             headers=auth_headers,
         )
         assert response.status_code == 200

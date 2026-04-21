@@ -42,7 +42,8 @@ class ConversationSyncItem(BaseModel):
 
 
 class SyncAggregatedResponse(BaseModel):
-    conversations: List[ConversationSyncItem] = Field(default_factory=list, description="同步的会话列表")
+    conversations: List[ConversationSyncItem] = Field(
+        default_factory=list, description="同步的会话列表")
     pending_friend_requests: int = Field(0, ge=0, description="未处理的好友申请数量")
     pending_group_requests: int = Field(0, ge=0, description="未处理的入群申请数量")
 

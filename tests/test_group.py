@@ -78,7 +78,8 @@ async def test_group_journey_and_edge_cases():
         # Owner 创建群聊，带上 admin 和 member，排除了 stranger
         res = await client.post(
             "/api/group/create",
-            json={"user_ids": [user_admin_id, user_member_id], "name": "Test Avengers"},
+            json={"user_ids": [user_admin_id, user_member_id],
+                  "name": "Test Avengers"},
             headers=headers_owner,
         )
         assert res.status_code == 200
@@ -121,7 +122,8 @@ async def test_group_journey_and_edge_cases():
         # ---------------------------------------------------------
         res = await client.post(
             "/api/group/members",
-            json={"conversation_id": conversation_id, "page": 1, "page_size": 2},
+            json={"conversation_id": conversation_id,
+                  "page": 1, "page_size": 2},
             headers=headers_owner,
         )
         assert res.status_code == 200
@@ -194,7 +196,8 @@ async def test_group_journey_and_edge_cases():
         # Member 邀请 Stranger (合法的 member 邀请流程)
         res_invite = await client.post(
             "/api/group/invite",
-            json={"conversation_id": conversation_id, "user_id": user_stranger_id},
+            json={"conversation_id": conversation_id,
+                  "user_id": user_stranger_id},
             headers=headers_member,
         )
         assert res_invite.status_code == 200
@@ -228,7 +231,8 @@ async def test_group_journey_and_edge_cases():
         res_kick = await client.request(
             "DELETE",
             "/api/group/member",
-            json={"conversation_id": conversation_id, "user_id": user_member_id},
+            json={"conversation_id": conversation_id,
+                  "user_id": user_member_id},
             headers=headers_admin,
         )
         assert res_kick.status_code == 200

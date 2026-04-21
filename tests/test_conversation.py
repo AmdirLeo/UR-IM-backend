@@ -54,8 +54,10 @@ async def test_conversation_journey_and_edge_cases():
 
         # 3. 强行造一条消息，用于后面的 read_ack (已读上报) 测试
         fake_msg_body = {
-            "type": "text",                   # 对应 msg_type (注意你的 DB 查询用的是 'type')
-            "content": "测试消息内容",         # 对应 message_content (你的 DB 查询用的是 'content')
+            # 对应 msg_type (注意你的 DB 查询用的是 'type')
+            "type": "text",
+            # 对应 message_content (你的 DB 查询用的是 'content')
+            "content": "测试消息内容",
             "local_id": "test-local-uuid-001",  # 必填的本地 ID
             "extra_data": {                   # 测试万能口袋
                 "test_flag": True,
@@ -161,7 +163,8 @@ async def test_conversation_journey_and_edge_cases():
         target_conv = conv_list[0]
         assert target_conv["conversation_id"] == conv_id
         assert target_conv["status"] == "normal"  # 正常加入的群，状态应为 normal
-        assert target_conv["unread_count"] == 1   # 因为之前在 inbox 里塞了一条 is_read=false
+        # 因为之前在 inbox 里塞了一条 is_read=false
+        assert target_conv["unread_count"] == 1
 
         assert target_conv["is_pinned"] is True   # Step 2 中我们开启了置顶
         assert target_conv["is_muted"] is False   # Step 1 中我们最后关闭了免打扰
@@ -181,7 +184,6 @@ async def test_conversation_journey_and_edge_cases():
         res_sync_after_read = await client.get("/api/conversation/sync", headers=headers)
         sync_data_after = res_sync_after_read.json()["conversations"]
         assert sync_data_after[0]["unread_count"] == 0
-
 
         # ---------------------------------------------------------
         # 6. 好友申请红点同步测试 (Pending Friend Requests Sync)

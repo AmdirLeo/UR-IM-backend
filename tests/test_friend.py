@@ -131,7 +131,8 @@ async def test_friend_journey_and_edge_cases():
         handle_data = res.json().get("data", {})
         assert handle_data is not None, "返回的 data 字段不应为空"
         assert "conversation_id" in handle_data, "返回的 data 中缺少 conversation_id"
-        assert isinstance(handle_data["conversation_id"], int), "conversation_id 应该是一个整数"
+        assert isinstance(
+            handle_data["conversation_id"], int), "conversation_id 应该是一个整数"
 
         # 4. 获取好友列表 (Get List)
         res = await client.get("/api/friend", headers=headers_a)
