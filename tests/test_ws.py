@@ -18,7 +18,7 @@ client = TestClient(app, raise_server_exceptions=False)
 # 2. 辅助函数：快速生成带有有效 Token 的 WebSocket URL
 def get_ws_url(user_id: int) -> str:
     token = create_access_token(data={"sub": str(user_id)})
-    return f"api/websocket/ws?token={token}"
+    return f"/websocket/ws?token={token}"
 
 
 # ==========================================
@@ -29,7 +29,7 @@ def get_ws_url(user_id: int) -> str:
 def test_websocket_auth_failure():
     """测试安全机制：携带无效 Token 应该被服务器拒绝连接"""
     with pytest.raises(WebSocketDisconnect) as exc:
-        with client.websocket_connect("api/websocket/ws?token=invalid_fake_token"):
+        with client.websocket_connect("/websocket/ws?token=invalid_fake_token"):
             # 仅需建立连接触发鉴权失败，不需要发送或接收消息
             pass
     assert exc.value.code == 1008
@@ -189,7 +189,7 @@ def test_websocket_missing_sub_in_token():
         payload_without_sub, settings.JWT_SECRET_KEY, algorithm="HS256")
 
     with pytest.raises(WebSocketDisconnect) as exc:
-        with client.websocket_connect(f"api/websocket/ws?token={malformed_token}"):
+        with client.websocket_connect(f"/websocket/ws?token={malformed_token}"):
             # 预期的连接由于 Token 载荷缺失 sub 字段应被服务器拒绝
             pass
     assert exc.value.code == 1008
