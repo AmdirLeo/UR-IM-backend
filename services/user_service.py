@@ -75,36 +75,47 @@ async def register_service(conn, user_data: UserRegister) -> RegisterResponse:
         raise BusinessException(status_code=400, detail="该邮箱已被注册")
 
     hashed_pw = get_password_hash(user_data.password)
-    user_id = await db_create_user(conn, user_data.username, hashed_pw, user_data.email)
+    async with conn.transaction():
+        user_id = await db_create_user(conn, user_data.username, hashed_pw, user_data.email)
 
-    # 建一个 private 类型的会话
-    conv_id = await conn.fetchval(
-        "INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id;"
-    )
+        # 2. 创建与系统通知助手 (-1) 的会话
+        conv_notify_id = await conn.fetchval(
+            "INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id;"
+        )
 
-    # 把刚注册的新用户 (user_id) 和系统助手 (-1) 拉进这个会话
-    await conn.execute(
-        "INSERT INTO conversation_member (conversation_id, member_user_id) VALUES ($1, $2), ($1, -1);",
-        conv_id,
-        user_id,
-    )
+        # 把刚注册的新用户 (user_id) 和系统助手 (-1) 拉进这个会话
+        await conn.execute(
+            "INSERT INTO conversation_member (conversation_id, member_user_id) VALUES ($1, $2), ($1, -1);",
+            conv_notify_id,
+            user_id,
+        )
 
-    # ==========================================
-    # 3. 【核心新增】让系统助手发第一条欢迎消息
-    # ==========================================
-    system_req = SendMessageRequest(
-        conversation_id=conv_id,
-        message_content="欢迎来到 UR-IM！我是你的系统小助手。有关好友申请的处理结果等重要通知，都会在这里显示。",
-        msg_type="text",
-        local_id=str(uuid.uuid4())  # 后端自己随便生成一个临时 ID 骗过校验即可
-    )
+        # 3. 创建与群聊助手 (-2) 的会话
+        conv_group_id = await conn.fetchval(
+            "INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id;"
+        )
 
-    # 调用发消息服务。注意这里的发件人 user_id 强行指定为 -1
-    await send_message_service(
-        db_session=conn,
-        user_id=-1,
-        req=system_req
-    )
+        # 把刚注册的新用户 (user_id) 和群聊助手 (-2) 拉进这个会话
+        await conn.execute(
+            "INSERT INTO conversation_member (conversation_id, member_user_id) VALUES ($1, $2), ($1, -2);",
+            conv_group_id,
+            user_id,
+        )
+
+        # 4. 发送欢迎消息
+        system_req = SendMessageRequest(
+            conversation_id=conv_notify_id,
+            message_content="欢迎来到 UR-IM！我是你的系统小助手。有关好友申请的处理结果等重要通知，都会在这里显示。",
+            msg_type="text",
+            local_id=str(uuid.uuid4())  # 后端自己随便生成一个临时 ID 骗过校验即可
+        )
+
+        # 调用发消息服务。注意这里的发件人 user_id 强行指定为 -1
+        await send_message_service(
+            db_session=conn,
+            user_id=-1,
+            req=system_req
+        )
 
     return RegisterResponse(code=200, id=user_id)
 
