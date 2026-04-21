@@ -63,7 +63,7 @@ setup_exception_handlers(app)
 
 # 路由注册
 app.include_router(user.router, prefix="/api/user", tags=["User Management"])
-app.include_router(websocket.router, prefix="/websocket",
+app.include_router(websocket.router, prefix="/api/websocket",
                    tags=["IM WebSocket"])
 app.include_router(message.router, prefix="/api/message", tags=["Message API"])
 app.include_router(friend.router, prefix="/api/friend",
