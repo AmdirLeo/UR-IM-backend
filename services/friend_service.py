@@ -114,11 +114,25 @@ async def handle_friend_request(
     # ==========================================
     if action == "accepted":
         # 【核心改动 1】：同意申请后，通知直接下发到两人的【私聊会话】中！
+        # 2. 查找对方与系统助手(-1号)的专属会话
+        sender_id = db_result["friend_id"]
+        find_system_conv_query = """
+            SELECT c.conversation_id
+            FROM conversation c
+            JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
+            JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+            WHERE c.type = 'private'
+            AND cm1.member_user_id = $1
+            AND cm2.member_user_id = -1;
+        """
+        system_conv_id = await db_session.fetchval(find_system_conv_query, sender_id)
+
         private_conv_id = db_result.get("conversation_id")
 
-        if private_conv_id:
+        # 1. 通知申请人 A
+        if system_conv_id and private_conv_id:
             accept_req = SendMessageRequest(
-                conversation_id=private_conv_id,  # 👈 目标：你们俩的新家
+                conversation_id=system_conv_id,
                 local_id=str(uuid.uuid4()),
                 message_content="[好友申请已通过]",  # 前端可以根据这个显示打招呼的灰色小字
                 msg_type=MessageType.NOTIFY,
@@ -129,6 +143,17 @@ async def handle_friend_request(
                 }
             )
             await send_message_service(db_session, -1, accept_req)
+
+        # 2. B 在新会话中发送欢迎消息
+        if private_conv_id:
+            welcome_req = SendMessageRequest(
+                conversation_id=private_conv_id,
+                local_id=str(uuid.uuid4()),
+                message_content="我们已经是好友啦，一起聊天吧！",
+                msg_type=MessageType.TEXT,
+                extra_data={}
+            )
+            await send_message_service(db_session, current_user_id, welcome_req)
 
     # 👈 修改点 3：把 Repo 层返回的字典，原封不动地返回给上一层的 API 路由
     return db_result

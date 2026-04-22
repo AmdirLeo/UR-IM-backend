@@ -56,6 +56,26 @@ async def test_friend_journey_and_edge_cases():
         user_b_id = await db_create_user(conn, "friend_user_B", hashed_pw, "friend_b@test.com")
         # type: ignore
         user_c_id = await db_create_user(conn, "friend_user_C", hashed_pw, "friend_c@test.com")
+
+        for uid in (user_a_id, user_b_id, user_c_id):
+            sys_conv_id = await conn.fetchval("""
+                SELECT c.conversation_id
+                FROM conversation c
+                JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
+                JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+                WHERE c.type = 'private'
+                AND cm1.member_user_id = $1
+                AND cm2.member_user_id = -1
+            """, uid)
+            if sys_conv_id is None:
+                sys_conv_id = await conn.fetchval(
+                    "INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id"
+                )
+                await conn.execute(
+                    "INSERT INTO conversation_member (conversation_id, member_user_id) VALUES ($1, $2), ($1, -1)",
+                    sys_conv_id, uid
+                )
+
         break
 
     token_a = create_access_token(data={"sub": str(user_a_id)})
@@ -557,8 +577,28 @@ async def test_friend_accept_triggers_system_notification(mock_ws_send):
                 SYSTEM_ID
             )
 
+            # 为 user_a 和 user_b 创建与 -1 的系统私聊会话
+            for uid in (user_a_id, user_b_id):
+                sys_conv = await conn.fetchval("""
+                    SELECT c.conversation_id
+                    FROM conversation c
+                    JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
+                    JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+                    WHERE c.type = 'private'
+                      AND cm1.member_user_id = $1
+                      AND cm2.member_user_id = -1
+                """, uid)
+                if sys_conv is None:
+                    sys_conv = await conn.fetchval(
+                        "INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id"
+                    )
+                    await conn.execute(
+                        "INSERT INTO conversation_member (conversation_id, member_user_id) VALUES ($1, $2), ($1, -1)",
+                        sys_conv, uid
+                    )
+
             req_id = await conn.fetchval(
-                "INSERT INTO friend_request (sender_id, receiver_id, status) "
+                "INSERT INTO    friend_request (sender_id, receiver_id, status) "
                 "VALUES ($1, $2, 'pending') RETURNING request_id",
                 user_a_id, user_b_id
             )
@@ -588,14 +628,31 @@ async def test_friend_accept_triggers_system_notification(mock_ws_send):
 
             if target_id == user_a_id and ws_payload["type"] == "NEW_CHAT_MESSAGE":
                 msg_data = ws_payload["data"]
-                if msg_data.get("conversation_id") == http_conv_id:
+                extra = msg_data.get("extra", {})
+                if extra.get("action") == "friend_accept" and extra.get("conversation_id") == http_conv_id:
                     # 💡 新架构断言：检查指令类型和内容
-                    assert msg_data["sender_id"] == SYSTEM_ID, "发件人必须是系统上帝账号"
+                    assert msg_data["sender_id"] == SYSTEM_ID
                     assert msg_data["msg_type"] == "notify"
-                    extra = msg_data.get("extra", {})
-                    assert extra.get("action") == "friend_accept"
-
                     a_received_notification = True
                     break
 
-        assert a_received_notification, "严重错误：User A 未能在【私聊会话】中收到系统同意通知！"
+        assert a_received_notification, "User A 未收到系统同意通知"
+
+        # ==========================================
+        # 👇 新增：验证 B 发送的欢迎消息
+        # ==========================================
+        a_received_welcome = False
+        for call in mock_ws_send.call_args_list:
+            ws_payload, target_id = call[0][0], call[0][1]
+
+            if target_id == user_a_id and ws_payload["type"] == "NEW_CHAT_MESSAGE":
+                msg_data = ws_payload["data"]
+                # 欢迎消息的特征：会话 ID 为新好友会话，发送者为 B，类型为 text，内容为欢迎语
+                if (msg_data.get("conversation_id") == http_conv_id and
+                    msg_data.get("sender_id") == user_b_id and
+                    msg_data.get("msg_type") == "text" and
+                        msg_data.get("content") == "我们已经是好友啦，一起聊天吧！"):
+                    a_received_welcome = True
+                    break
+
+        assert a_received_welcome, "User A 未收到来自 B 的欢迎消息"
