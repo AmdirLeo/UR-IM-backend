@@ -466,6 +466,22 @@ async def db_sync_conversations(conn: asyncpg.Connection, user_id: int) -> list[
             UNION
             -- 来源 2：我曾经收到过消息的会话 (即使我现在已经被踢了，但在收件箱里还有记录)
             SELECT conversation_id FROM user_inbox WHERE user_id = $1
+        ),
+
+        -- 为每个私聊会话预先找出对方用户ID
+        private_targets AS (
+            SELECT 
+                cm1.conversation_id,
+                cm2.member_user_id AS target_id
+            FROM conversation_member cm1
+            JOIN conversation_member cm2 ON cm1.conversation_id = cm2.conversation_id
+            WHERE cm1.member_user_id = $1
+              AND cm2.member_user_id != $1
+              AND EXISTS (
+                  SELECT 1 FROM conversation c 
+                  WHERE c.conversation_id = cm1.conversation_id 
+                  AND c.type = 'private'
+              )
         )
 
         SELECT
@@ -499,11 +515,15 @@ async def db_sync_conversations(conn: asyncpg.Connection, user_id: int) -> list[
                 WHERE ui.user_id = $1
                   AND ui.conversation_id = c.conversation_id
                   AND ui.is_read = false
-            ) AS unread_count
+            ) AS unread_count,
+
+            -- 新增 target_id，私聊时取 private_targets.target_id，否则为 NULL
+            COALESCE(pt.target_id, NULL) AS target_id
 
         -- 从我们计算出的全集出发
         FROM my_all_convs mc
         JOIN conversation c ON mc.conversation_id = c.conversation_id
+        LEFT JOIN private_targets pt ON c.conversation_id = pt.conversation_id AND c.type = 'private'
 
         -- 使用 LEFT JOIN 试探性地去 member 表里找我
         LEFT JOIN conversation_member cm ON c.conversation_id = cm.conversation_id AND cm.member_user_id = $1

@@ -39,6 +39,8 @@ class ConversationSyncItem(BaseModel):
         None, description="最新一条消息的服务端时间")
     is_pinned: bool = Field(default=False, description="当前用户是否将该会话置顶")
     is_muted: bool = Field(default=False, description="当前用户是否对该会话开启免打扰")
+    target_id: Optional[int] = Field(
+        None, description="私聊对方的用户ID（仅当 type='private' 时有值）")
 
 
 class SyncAggregatedResponse(BaseModel):
