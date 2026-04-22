@@ -10,6 +10,7 @@ DROP TABLE IF EXISTS conversation CASCADE;
 DROP TABLE IF EXISTS friend_request CASCADE;
 DROP TABLE IF EXISTS friend_relationship CASCADE;
 DROP TABLE IF EXISTS user_account CASCADE;
+DROP TABLE IF EXISTS group_invite_admin_state CASCADE;
 -- 1. 用户表
 CREATE TABLE user_account (
     user_id BIGSERIAL PRIMARY KEY,
@@ -128,6 +129,15 @@ CREATE TABLE group_invite (
     invitee_id BIGINT NOT NULL REFERENCES user_account(user_id) ON DELETE CASCADE,
     status VARCHAR(20) DEFAULT 'pending',  -- 状态: pending, approved, rejected
     create_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 12. 个人群成员邀请审核表
+CREATE TABLE group_invite_admin_state (
+    invite_id BIGINT NOT NULL REFERENCES group_invite(invite_id) ON DELETE CASCADE,
+    admin_id BIGINT NOT NULL REFERENCES user_account(user_id) ON DELETE CASCADE,
+    state VARCHAR(20) NOT NULL DEFAULT 'pending',  -- 'pending', 'ignored', 'approved'
+    updated_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (invite_id, admin_id)
 );
 
 -- 会话置顶排序

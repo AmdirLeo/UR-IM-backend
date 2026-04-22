@@ -138,7 +138,7 @@ async def invite_to_group(
     return GroupGenericResponse(data=data)
 
 
-@router.put(
+@router.post(
     "/invite/review", summary="审核邀请", response_model=GroupGenericResponse[None]
 )
 async def review_group_invite(

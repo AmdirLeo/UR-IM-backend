@@ -346,13 +346,40 @@ async def db_invite_to_group(
     if has_pending:
         raise GroupException(GroupErrors.InvitePending)
 
-    # 5. 插入邀请记录
-    query = """
-        INSERT INTO group_invite (conversation_id, inviter_id, invitee_id)
-        VALUES ($1, $2, $3)
-        RETURNING invite_id;
-    """
-    invite_id = await conn.fetchval(query, conversation_id, inviter_id, invitee_id)
+    # 5. 开启事务（如果 conn 还未处于事务中，可显式开始）
+    async with conn.transaction():
+        # 5.1 插入邀请主记录
+        query = """
+            INSERT INTO group_invite (conversation_id, inviter_id, invitee_id)
+            VALUES ($1, $2, $3)
+            RETURNING invite_id;
+        """
+        invite_id = await conn.fetchval(query, conversation_id, inviter_id, invitee_id)
+
+        # 5.2 获取群内所有管理员的用户ID（包括群主）
+        admin_ids = await conn.fetch(
+            """
+            SELECT member_user_id
+            FROM conversation_member
+            WHERE conversation_id = $1
+              AND (role = 'admin' OR role = 'owner');
+            """,
+            conversation_id,
+        )
+        admin_ids = [record["member_user_id"] for record in admin_ids]
+
+        if not admin_ids:
+            # 没有管理员：抛出异常，要求群必须至少有一个管理员
+            raise GroupException(GroupErrors.NoAdminInGroup)
+
+        # 5.3 为每个管理员创建审核状态记录
+        insert_state_sql = """
+            INSERT INTO group_invite_admin_state (invite_id, admin_id, state)
+            VALUES ($1, $2, 'pending');
+        """
+        for admin_id in admin_ids:
+            await conn.execute(insert_state_sql, invite_id, admin_id)
+
     return invite_id
 
 
@@ -367,7 +394,11 @@ async def db_review_group_invite(
         raise GroupException(GroupErrors.InvalidReviewAction)
 
     # 1. 查找这条邀请记录
-    query_invite = "SELECT conversation_id, invitee_id, status FROM group_invite WHERE invite_id = $1;"
+    query_invite = """
+        SELECT conversation_id, invitee_id, status
+        FROM group_invite
+        WHERE invite_id = $1;
+    """
     invite_record = await conn.fetchrow(query_invite, invite_id)
 
     if not invite_record or invite_record["status"] != "pending":
@@ -386,18 +417,37 @@ async def db_review_group_invite(
     # 3. 开启强事务处理审核结果
     async with conn.transaction():
         # a. 更新邀请状态
-        result = await conn.execute(
-            "UPDATE group_invite SET status = $1 WHERE invite_id = $2 AND status = 'pending';",
-            action,
-            invite_id,
-        )
+        upsert_admin_state = """
+            INSERT INTO group_invite_admin_state (invite_id, admin_id, state)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (invite_id, admin_id)
+            DO UPDATE SET state = EXCLUDED.state, updated_time = CURRENT_TIMESTAMP;
+        """
 
-        if result == "UPDATE 0":
-            raise GroupException(GroupErrors.InviteNotFound)
+        await conn.execute(upsert_admin_state, invite_id, reviewer_id, action)
 
-        # b. 如果通过了，就把人拉进群
+        # 4. 如果批准，则全局生效并覆盖所有管理员的个人状态
         if action == "approved":
-            # ON CONFLICT DO NOTHING 防止极端并发下重复拉人报错
+            # 4.1 更新全局邀请状态
+            update_global = """
+                UPDATE group_invite
+                SET status = 'approved'
+                WHERE invite_id = $1 AND status = 'pending';
+            """
+            result = await conn.execute(update_global, invite_id)
+
+            if result == "UPDATE 0":
+                # 理论上不会发生，因为上面已检查过 status='pending'
+                raise GroupException(GroupErrors.InviteNotFound)
+
+            # 4.2 将所有管理员在该邀请上的个人状态强制改为 'approved'
+            force_approve_all = """
+                UPDATE group_invite_admin_state
+                SET state = 'approved', updated_time = CURRENT_TIMESTAMP
+                WHERE invite_id = $1;
+            """
+            await conn.execute(force_approve_all, invite_id)
+
             insert_member = """
                 INSERT INTO conversation_member (conversation_id, member_user_id, role)
                 VALUES ($1, $2, 'member')
@@ -408,22 +458,23 @@ async def db_review_group_invite(
 
 async def db_get_pending_group_invite_count(conn: asyncpg.Connection, user_id: int) -> int:
     """
-    统计“我是群主/管理员，需要我审批的申请”
+    统计当前用户作为群主/管理员，待我审批的邀请数量
+    （基于 group_invite_admin_state 表中 state='pending' 且邀请全局 status='pending'）
     """
-    admin_query = """
+    query = """
         SELECT COUNT(1)
-        FROM group_invite gi
-        JOIN conversation_member cm ON gi.conversation_id = cm.conversation_id
-        WHERE cm.member_user_id = $1
-          AND cm.role IN ('owner', 'admin')  -- 身份校验
-          AND cm.is_active = true            -- 必须还在群里
-          AND gi.status = 'pending';
+        FROM group_invite_admin_state gias
+        JOIN group_invite gi ON gias.invite_id = gi.invite_id
+        JOIN conversation_member cm ON gi.conversation_id = cm.conversation_id 
+                                   AND cm.member_user_id = gias.admin_id
+        WHERE gias.admin_id = $1
+          AND gias.state = 'pending'
+          AND gi.status = 'pending'
+          AND cm.role IN ('owner', 'admin')
+          AND cm.is_active = true;
     """
-    admin_count = await conn.fetchval(admin_query, user_id)
-    admin_count = admin_count or 0
-
-    # 返回最终的红点数。
-    return admin_count
+    count = await conn.fetchval(query, user_id)
+    return count or 0
 
 
 async def db_get_group_admins(conn: asyncpg.Connection, conversation_id: int) -> list[int]:

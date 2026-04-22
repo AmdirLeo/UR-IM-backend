@@ -217,7 +217,7 @@ async def test_group_journey_and_edge_cases():
         )
         assert res_admin_anno.status_code == 200
         # ---------------------------------------------------------
-        # 6. 群邀请与审核 (POST /api/group/invite & PUT /api/group/invite/review)
+        # 6. 群邀请与审核 (POST /api/group/invite & POST /api/group/invite/review)
         # ---------------------------------------------------------
         # Member 邀请 Stranger (合法的 member 邀请流程)
         res_invite = await client.post(
@@ -228,13 +228,152 @@ async def test_group_journey_and_edge_cases():
         )
         assert res_invite.status_code == 200
         apply_id = res_invite.json()["data"]["apply_id"]
-        # Admin 拒绝一次试试 (或者通过)
-        res_review = await client.put(
+
+        # 验证数据库：group_invite_admin_state 中已有两个管理员（owner + admin）的 pending 记录
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            admin_states = await conn.fetch(
+                "SELECT admin_id, state FROM group_invite_admin_state WHERE invite_id = $1",
+                apply_id
+            )
+            assert len(admin_states) == 2
+            for record in admin_states:
+                assert record["state"] == "pending"
+            break
+
+        # 场景1：Admin 先执行忽略（仅修改自己的状态，全局不变）
+        res_ignore = await client.post(
             "/api/group/invite/review",
-            json={"apply_id": apply_id, "status": "APPROVED"},
+            # 假设 IGNORED 对应 ignored
+            json={"apply_id": apply_id, "status": "IGNORED"},
             headers=headers_admin,
         )
-        assert res_review.status_code == 200
+        assert res_ignore.status_code == 200
+
+        # 验证：admin 的个人状态变为 ignored，owner 仍为 pending，全局 status 仍为 pending
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            rows = await conn.fetch(
+                "SELECT admin_id, state FROM group_invite_admin_state WHERE invite_id = $1 ORDER BY admin_id",
+                apply_id
+            )
+            states = {row["admin_id"]: row["state"] for row in rows}
+            assert states[user_admin_id] == "ignored"
+            assert states[user_owner_id] == "pending"
+            global_status = await conn.fetchval("SELECT status FROM group_invite WHERE invite_id = $1", apply_id)
+            assert global_status == "pending"
+            # 被邀请人尚未入群
+            is_member = await conn.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2)",
+                conversation_id, user_stranger_id
+            )
+            assert is_member is False
+            break
+
+        # 场景2：Owner 批准（一票通过，覆盖所有管理员状态，拉人入群，发送通知）
+        res_approve = await client.post(
+            "/api/group/invite/review",
+            json={"apply_id": apply_id, "status": "APPROVED"},
+            headers=headers_owner,
+        )
+        assert res_approve.status_code == 200
+
+        # 验证：全局状态变为 approved，所有管理员个人状态变为 approved
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            rows = await conn.fetch(
+                "SELECT admin_id, state FROM group_invite_admin_state WHERE invite_id = $1",
+                apply_id
+            )
+            for row in rows:
+                assert row["state"] == "approved"
+            global_status = await conn.fetchval("SELECT status FROM group_invite WHERE invite_id = $1", apply_id)
+            assert global_status == "approved"
+            # 被邀请人已入群
+            is_member = await conn.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2)",
+                conversation_id, user_stranger_id
+            )
+            assert is_member is True
+            break
+
+        # ========== 新增验证：系统消息 ==========
+        # 1. 验证群聊内收到系统消息（-2 发送的 NOTIFY，内容包含邀请人和被邀请人）
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            inviter_name = await conn.fetchval("SELECT username FROM user_account WHERE user_id = $1", user_member_id)
+            invitee_name = await conn.fetchval("SELECT username FROM user_account WHERE user_id = $1", user_stranger_id)
+
+            group_msg = await conn.fetchrow(
+                """
+                SELECT m.msg_body->>'content' as message_content,
+                    m.msg_body->'extra' as extra_data
+                FROM message m
+                WHERE m.msg_id = (
+                    SELECT cm.msg_id
+                    FROM conversation_message cm
+                    WHERE cm.conversation_id = $1
+                    AND cm.sender_id = -2
+                    ORDER BY cm.msg_id DESC
+                    LIMIT 1
+                )
+                AND m.msg_body->>'type' = 'notify'
+                """,
+                conversation_id
+            )
+            assert group_msg is not None, "群聊中没有收到系统通知"
+            msg_text = group_msg["message_content"]
+            assert inviter_name in msg_text, f"通知中未包含邀请人 {inviter_name}"
+            assert invitee_name in msg_text, f"通知中未包含被邀请人 {invitee_name}"
+            assert "拉入了群聊" in msg_text
+            extra = group_msg["extra_data"]
+            if extra:
+                assert extra.get("action") == "group_member_invited"
+            break
+
+        # 2. 验证被邀请人收到系统私聊通知
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            system_conv = await conn.fetchval(
+                """
+                SELECT c.conversation_id
+                FROM conversation c
+                JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
+                JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+                WHERE c.type = 'private'
+                AND cm1.member_user_id = $1
+                AND cm2.member_user_id = -2
+                """,
+                user_stranger_id
+            )
+            assert system_conv is not None, "被邀请人没有与系统助手的私聊会话"
+            invitee_msg = await conn.fetchrow(
+                """
+                SELECT m.msg_body->>'content' as message_content,
+                    m.msg_body->'extra' as extra_data
+                FROM message m
+                WHERE m.msg_id = (
+                    SELECT cm.msg_id
+                    FROM conversation_message cm
+                    WHERE cm.conversation_id = $1
+                    AND cm.sender_id = -2
+                    ORDER BY cm.msg_id DESC
+                    LIMIT 1
+                )
+                AND m.msg_body->>'type' = 'notify'
+                """,
+                system_conv
+            )
+            assert invitee_msg is not None, "被邀请人未收到系统私聊通知"
+            msg_text = invitee_msg["message_content"]
+            assert "入群申请已通过" in msg_text or "批准" in msg_text
+            extra = invitee_msg["extra_data"]
+            if extra:
+                assert extra.get(
+                    "action") == "group_invite_approved_for_invitee"
+                assert extra.get("conversation_id") == conversation_id
+            break
+
         # Stranger 现在已经是群员了，尝试看群信息
         res_stranger_info = await client.post(
             "/api/group/info",
