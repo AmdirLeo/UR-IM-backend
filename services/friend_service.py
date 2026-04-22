@@ -10,6 +10,7 @@ from db.repositories.friend_repo import (
     db_get_friends_by_tag,
     db_remove_friend_from_tag,
     db_get_friend_tags,
+    db_get_pending_friend_requests,
 )
 from db.repositories.user_repo import (
     db_get_user_by_id,
@@ -265,3 +266,27 @@ async def get_friend_tag_list(db_session: asyncpg.Connection, current_user_id: i
     # 调用之前定义的数据库层函数
     tags = await db_get_friend_tags(db_session, current_user_id)
     return tags
+
+
+async def get_pending_friend_requests_as_cards(
+    db_session: asyncpg.Connection,
+    current_user_id: int
+) -> list[dict]:
+    """
+    获取待处理好友申请，并转换为卡片格式。
+    """
+    raw_requests = await db_get_pending_friend_requests(db_session, current_user_id)
+
+    cards = []
+    for req in raw_requests:
+        cards.append({
+            "card_type": "friend_apply",
+            "request_id": req["request_id"],
+            "sender_id": req["sender_id"],
+            "sender_name": req["sender_name"],
+            "sender_avatar": req["sender_avatar"],
+            "reason": req["message"] or "",
+            "status": "pending",
+            "create_time": int(req["create_time"].timestamp())  # 转为 Unix 时间戳
+        })
+    return cards

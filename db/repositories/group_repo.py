@@ -424,3 +424,14 @@ async def db_get_pending_group_invite_count(conn: asyncpg.Connection, user_id: i
 
     # 返回最终的红点数。
     return admin_count
+
+
+async def db_get_group_admins(conn: asyncpg.Connection, conversation_id: int) -> list[int]:
+    """返回该群所有具有管理权限的用户 ID（群主 + 管理员）"""
+    rows = await conn.fetch("""
+        SELECT member_user_id
+        FROM conversation_member
+        WHERE conversation_id = $1
+          AND role IN ('owner', 'admin')
+    """, conversation_id)
+    return [row["member_user_id"] for row in rows]

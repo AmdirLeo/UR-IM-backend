@@ -2,6 +2,7 @@ import pytest
 import asyncpg
 from httpx import AsyncClient, ASGITransport
 from typing import Dict, cast
+from unittest.mock import patch
 
 # 引入项目核心依赖
 from main import app
@@ -42,6 +43,12 @@ async def test_group_journey_and_edge_cases():
     async for proxy_conn in get_db_conn():
         conn = cast(asyncpg.Connection, proxy_conn)
         hashed_pw = get_password_hash("password123")
+        # 确保系统账号 -2 存在
+        await conn.execute("""
+            INSERT INTO user_account (user_id, username, password, email)
+            VALUES (-2, '群聊助手', 'system_fake_password', 'group_assistant@ur-im.com')
+            ON CONFLICT (user_id) DO NOTHING
+        """)
         # 假设每次测试前 conftest.py 都会清理数据库，邮箱不会冲突
         user_owner_id = await db_create_user(
             conn, "group_owner", hashed_pw, "g_owner@test.com"
@@ -55,6 +62,25 @@ async def test_group_journey_and_edge_cases():
         user_stranger_id = await db_create_user(
             conn, "group_stranger", hashed_pw, "g_stranger@test.com"
         )
+        # 👇 新增：为每个用户创建与群聊助手(-2)的私聊会话
+        for uid in [user_owner_id, user_admin_id, user_member_id, user_stranger_id]:
+            conv_id = await conn.fetchval("""
+                SELECT c.conversation_id
+                FROM conversation c
+                JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
+                JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+                WHERE c.type = 'private'
+                  AND cm1.member_user_id = $1
+                  AND cm2.member_user_id = -2
+            """, uid)
+            if conv_id is None:
+                conv_id = await conn.fetchval(
+                    "INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id"
+                )
+                await conn.execute(
+                    "INSERT INTO conversation_member (conversation_id, member_user_id) VALUES ($1, $2), ($1, -2)",
+                    conv_id, uid
+                )
         break  # 取一次连接执行完毕即可
     # 为用户生成真实的 JWT Token，完美通过路由的鉴权依赖
     token_owner = create_access_token(data={"sub": str(user_owner_id)})
@@ -278,3 +304,132 @@ async def test_group_journey_and_edge_cases():
         )
         # 根据 group_repo，如果全被删除了会找不到，也就是 role 获取失败返回 NotInGroup (403)
         assert res_after_bomb.status_code == 403
+
+# ==========================================
+# 测试用例：邀请入群触发群聊助手(-2)私聊卡片通知
+# ==========================================
+
+
+@pytest.mark.asyncio(loop_scope="session")
+@patch("core.ws_manager.manager.send_personal_message")
+async def test_group_invite_triggers_assistant_card(mock_ws_send):
+    """
+    测试邀请入群时，群聊助手(-2)会向所有管理员（含群主）的私聊发送卡片消息。
+    验证卡片消息内容、格式以及接收人。
+    """
+    user_owner_id = None
+    user_admin_id = None
+    user_member_id = None
+    user_invitee_id = None
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:
+        # 1. 准备测试数据：创建群主、管理员、普通成员、被邀请人，并建立私聊会话
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+
+            # 确保系统账号 -2 存在
+            await conn.execute("""
+                INSERT INTO user_account (user_id, username, password, email)
+                VALUES (-2, '群聊助手', 'system_fake_password', 'group_assistant@ur-im.com')
+                ON CONFLICT (user_id) DO NOTHING
+            """)
+
+            hashed_pw = get_password_hash("test123")
+
+            user_owner_id = await conn.fetchval(
+                "INSERT INTO user_account (username, password, email) VALUES ($1, $2, $3) RETURNING user_id",
+                "GroupOwner", hashed_pw, "owner_invite@test.com"
+            )
+            user_admin_id = await conn.fetchval(
+                "INSERT INTO user_account (username, password, email) VALUES ($1, $2, $3) RETURNING user_id",
+                "GroupAdmin", hashed_pw, "admin_invite@test.com"
+            )
+            user_member_id = await conn.fetchval(
+                "INSERT INTO user_account (username, password, email) VALUES ($1, $2, $3) RETURNING user_id",
+                "GroupMember", hashed_pw, "member_invite@test.com"
+            )
+            user_invitee_id = await conn.fetchval(
+                "INSERT INTO user_account (username, password, email) VALUES ($1, $2, $3) RETURNING user_id",
+                "Invitee", hashed_pw, "invitee@test.com"
+            )
+
+            # 为群主和管理员创建与 -2 助手的私聊会话（模拟注册时的行为）
+            for uid in [user_owner_id, user_admin_id]:
+                conv_id = await conn.fetchval("""
+                    SELECT c.conversation_id
+                    FROM conversation c
+                    JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
+                    JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+                    WHERE c.type = 'private'
+                      AND cm1.member_user_id = $1
+                      AND cm2.member_user_id = -2
+                """, uid)
+                if conv_id is None:
+                    conv_id = await conn.fetchval(
+                        "INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id"
+                    )
+                    await conn.execute(
+                        "INSERT INTO conversation_member (conversation_id, member_user_id) VALUES ($1, $2), ($1, -2)",
+                        conv_id, uid
+                    )
+
+            # 创建群聊：群主 + 管理员 + 成员
+            group_conv_id = await conn.fetchval(
+                "INSERT INTO conversation (type) VALUES ('group') RETURNING conversation_id"
+            )
+            await conn.execute("""
+                INSERT INTO conversation_member (conversation_id, member_user_id, role)
+                VALUES ($1, $2, 'owner'),
+                       ($1, $3, 'admin'),
+                       ($1, $4, 'member')
+            """, group_conv_id, user_owner_id, user_admin_id, user_member_id)
+
+            break
+
+        # 2. 普通成员登录
+        token_member = create_access_token(data={"sub": str(user_member_id)})
+        headers_member = get_auth_headers(token_member)
+
+        # 3. 成员邀请新人入群
+        res = await client.post(
+            "/api/group/invite",
+            json={
+                "conversation_id": group_conv_id,
+                "user_id": user_invitee_id
+            },
+            headers=headers_member,
+        )
+        assert res.status_code == 200
+        apply_id = res.json()["data"]["apply_id"]
+        assert apply_id is not None
+
+        # 4. 验证 WebSocket 推送（Mock）
+        assert mock_ws_send.called, "系统卡片未能发出！"
+
+        # 收集推送给群主和管理员的消息
+        received_payloads = []
+        for call in mock_ws_send.call_args_list:
+            payload, target_user_id = call[0][0], call[0][1]
+            if target_user_id in (user_owner_id, user_admin_id):
+                received_payloads.append((target_user_id, payload))
+
+        # 应该有两个管理员收到消息
+        assert len(
+            received_payloads) == 2, f"预期推送给2个管理员，实际收到 {len(received_payloads)} 个"
+
+        # 验证每条消息的内容
+        for target_user_id, payload in received_payloads:
+            assert payload["type"] == "NEW_CHAT_MESSAGE"
+            message_data = payload["data"]
+            assert message_data["sender_id"] == -2
+            assert message_data["msg_type"] == "card"
+            assert message_data["content"] == "[收到一条入群申请]"
+
+            extra = message_data.get("extra", {})
+            assert extra.get("card_type") == "group_apply"
+            assert extra.get("apply_id") == apply_id
+            assert extra.get("applicant_id") == user_invitee_id
+            assert extra.get("inviter_id") == user_member_id
+            assert extra.get("conversation_id") == group_conv_id
+            assert extra.get("status") == "pending"
+            assert extra.get("inviter_name") == "GroupMember"

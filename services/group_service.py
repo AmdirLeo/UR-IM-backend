@@ -11,6 +11,7 @@ from schemas.group import (
     GroupInviteRequest,
     GroupInviteReviewRequest,
 )
+from schemas.message import MessageType
 from core.exceptions import GroupException, GroupErrors
 from db.repositories.group_repo import (
     db_create_group,
@@ -22,6 +23,7 @@ from db.repositories.group_repo import (
     db_post_group_announcement,
     db_invite_to_group,
     db_review_group_invite,
+    db_get_group_admins,
 )
 from schemas.message import SendMessageRequest
 from services.message_service import send_message_service
@@ -201,12 +203,65 @@ async def post_group_announcement_service(
 async def invite_to_group_service(
     db_session: asyncpg.Connection, current_user_id: int, req: GroupInviteRequest
 ) -> dict:
+    # 1. 创建入群申请记录（邀请制）
     invite_id = await db_invite_to_group(
         conn=db_session,
         inviter_id=current_user_id,
         conversation_id=req.conversation_id,
         invitee_id=req.user_id,
     )
+
+    # 2. 获取邀请人姓名（用于消息展示）
+    inviter_name = await db_session.fetchval(
+        "SELECT username FROM user_account WHERE user_id = $1", current_user_id
+    )
+
+    # 3. 获取该群所有管理员和群主的 user_id（即有审核权限的人）
+    admin_ids = await db_get_group_admins(db_session, req.conversation_id)
+
+    # 4. 为每个管理员发送私聊通知
+    for admin_id in admin_ids:
+
+        # 4.1 查找该管理员与 -2 号助手的现有私聊会话
+        conv_id = await db_session.fetchval("""
+            SELECT c.conversation_id
+            FROM conversation c
+            JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
+            JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+            WHERE c.type = 'private'
+              AND cm1.member_user_id = $1
+              AND cm2.member_user_id = -2
+        """, admin_id)
+
+        if conv_id is None:
+            raise RuntimeError(
+                f"数据完整性错误：管理员 {admin_id} 缺少与群聊助手(-2)的私聊会话，"
+                "请检查注册流程是否正确创建了该会话。"
+            )
+
+        # 4.2 构造卡片消息
+        msg_req = SendMessageRequest(
+            conversation_id=conv_id,
+            local_id=str(uuid.uuid4()),
+            message_content="[收到一条入群申请]",
+            msg_type=MessageType.CARD,
+            extra_data={
+                "card_type": "group_apply",
+                "apply_id": invite_id,
+                "applicant_id": req.user_id,
+                "inviter_id": current_user_id,
+                "inviter_name": inviter_name,
+                "conversation_id": req.conversation_id,
+                "status": "pending"
+            }
+        )
+
+        # 4.3 以 -2 身份发送消息
+        await send_message_service(
+            db_session=db_session,
+            user_id=-2,
+            req=msg_req
+        )
     return {"apply_id": invite_id}
 
 

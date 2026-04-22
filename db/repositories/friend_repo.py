@@ -1,6 +1,6 @@
 import asyncpg
 from core.exceptions import FriendErrors, BusinessException, FriendException
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 # Constants for database operation status responses
 DELETE_ONE = "DELETE 1"
@@ -404,3 +404,40 @@ async def db_get_pending_request_count(conn: asyncpg.Connection, user_id: int) -
     count = await conn.fetchval(query, user_id)
 
     return count or 0
+
+
+async def db_get_pending_friend_requests(
+    conn: asyncpg.Connection,
+    user_id: int
+) -> List[Dict[str, Any]]:
+    """
+    从数据库查询指定用户收到的所有待处理好友申请。
+    返回包含申请详情和发送者信息的列表。
+    """
+    rows = await conn.fetch("""
+        SELECT
+            fr.request_id,
+            fr.sender_id,
+            u.username AS sender_name,
+            u.avatar_url AS sender_avatar,
+            fr.message,
+            fr.create_time
+        FROM friend_request fr
+        JOIN user_account u ON fr.sender_id = u.user_id
+        WHERE fr.receiver_id = $1
+          AND fr.status = 'pending'
+        ORDER BY fr.create_time DESC
+    """, user_id)
+
+    # 将 asyncpg.Record 转换为普通字典列表
+    result = []
+    for row in rows:
+        result.append({
+            "request_id": row["request_id"],
+            "sender_id": row["sender_id"],
+            "sender_name": row["sender_name"],
+            "sender_avatar": row["sender_avatar"],
+            "message": row["message"],
+            "create_time": row["create_time"],  # 保留 datetime 对象，服务层再转换
+        })
+    return result
