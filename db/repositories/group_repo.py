@@ -465,7 +465,7 @@ async def db_get_pending_group_invite_count(conn: asyncpg.Connection, user_id: i
         SELECT COUNT(1)
         FROM group_invite_admin_state gias
         JOIN group_invite gi ON gias.invite_id = gi.invite_id
-        JOIN conversation_member cm ON gi.conversation_id = cm.conversation_id 
+        JOIN conversation_member cm ON gi.conversation_id = cm.conversation_id
                                    AND cm.member_user_id = gias.admin_id
         WHERE gias.admin_id = $1
           AND gias.state = 'pending'
