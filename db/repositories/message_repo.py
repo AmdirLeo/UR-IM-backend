@@ -470,7 +470,7 @@ async def db_sync_conversations(conn: asyncpg.Connection, user_id: int) -> list[
 
         -- 为每个私聊会话预先找出对方用户ID
         private_targets AS (
-            SELECT 
+            SELECT
                 cm1.conversation_id,
                 cm2.member_user_id AS target_id
             FROM conversation_member cm1
@@ -478,8 +478,8 @@ async def db_sync_conversations(conn: asyncpg.Connection, user_id: int) -> list[
             WHERE cm1.member_user_id = $1
               AND cm2.member_user_id != $1
               AND EXISTS (
-                  SELECT 1 FROM conversation c 
-                  WHERE c.conversation_id = cm1.conversation_id 
+                  SELECT 1 FROM conversation c
+                  WHERE c.conversation_id = cm1.conversation_id
                   AND c.type = 'private'
               )
         )

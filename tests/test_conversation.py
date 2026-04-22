@@ -53,7 +53,8 @@ async def test_conversation_journey_and_edge_cases():
 
         # 4. 将两个用户都加入会话
         await conn.execute(
-            "INSERT INTO conversation_member (conversation_id, member_user_id, read_index) VALUES ($1, $2, 1), ($1, $3, 1);",
+            "INSERT INTO conversation_member (conversation_id, member_user_id, read_index) "
+            "VALUES ($1, $2, 1), ($1, $3, 1);",
             conv_id, user_id, friend_id
         )
 

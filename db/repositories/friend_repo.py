@@ -249,7 +249,7 @@ async def db_get_friend_list(conn: asyncpg.Connection, user_id: int) -> list[dic
             ) AS conversation_id
         FROM friend_relationship f
         JOIN user_account u ON f.friend_user_id = u.user_id
-        LEFT JOIN friend_tag_mapping m 
+        LEFT JOIN friend_tag_mapping m
             ON f.user_id = m.user_id AND f.friend_user_id = m.friend_user_id
         WHERE f.user_id = $1
         GROUP BY u.user_id, u.username, u.avatar_url, f.create_time;
