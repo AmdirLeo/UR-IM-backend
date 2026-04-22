@@ -27,7 +27,7 @@ class ConversationSyncItem(BaseModel):
     )
     unread_count: int = Field(..., ge=0, description="该会话当前的未读消息总数")
     last_ack_msg_id: Optional[int] = Field(
-        None, gt=0, description="当前用户在该会话中最后一次确认（已读）的消息 ID")
+        None, description="当前用户在该会话中最后一次确认（已读）的消息 ID")
     last_msg_id: Optional[int] = Field(
         None, gt=0, description="该会话中最新一条消息的全局 ID")
     last_msg_type: MessageType = Field(
