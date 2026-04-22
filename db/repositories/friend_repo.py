@@ -229,11 +229,28 @@ async def db_get_friend_list(conn: asyncpg.Connection, user_id: int) -> list[dic
     """
     query = """
         SELECT
-            u.user_id, u.username, u.avatar_url, f.create_time as be_friend_time,
-            COALESCE(array_agg(m.tag_name) FILTER (WHERE m.tag_name IS NOT NULL), '{}') as tags
+            u.user_id,
+            u.username,
+            u.avatar_url,
+            f.create_time as be_friend_time,
+            COALESCE(
+                array_agg(m.tag_name) FILTER (WHERE m.tag_name IS NOT NULL),
+                '{}'
+            ) As tags,
+            (
+                SELECT c.conversation_id
+                FROM conversation c
+                JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
+                JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+                WHERE c.type = 'private'
+                  AND cm1.member_user_id = $1
+                  AND cm2.member_user_id = u.user_id
+                LIMIT 1
+            ) AS conversation_id
         FROM friend_relationship f
         JOIN user_account u ON f.friend_user_id = u.user_id
-        LEFT JOIN friend_tag_mapping m ON f.user_id = m.user_id AND f.friend_user_id = m.friend_user_id
+        LEFT JOIN friend_tag_mapping m 
+            ON f.user_id = m.user_id AND f.friend_user_id = m.friend_user_id
         WHERE f.user_id = $1
         GROUP BY u.user_id, u.username, u.avatar_url, f.create_time;
     """

@@ -160,6 +160,12 @@ async def test_friend_journey_and_edge_cases():
         friends = res.json()["data"]
         assert any(f["user_id"] == user_b_id for f in friends)
 
+        for friend in friends:
+            assert "conversation_id" in friend
+            conv_id = friend["conversation_id"]
+            # conversation_id 可以是整数或 None
+            assert isinstance(conv_id, int)  # 必定为 int，不会是 None
+
         # ---------------------------------------------------------
         # 5. 好友分组标签流转 (Tag Journey) - 多标签版
         # ---------------------------------------------------------
