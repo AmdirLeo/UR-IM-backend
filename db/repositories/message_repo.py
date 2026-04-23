@@ -533,7 +533,16 @@ async def db_sync_conversations(conn: asyncpg.Connection, user_id: int) -> list[
         LEFT JOIN conversation_message cm_last
           ON m.msg_id = cm_last.msg_id
           AND cm_last.conversation_id = c.conversation_id
-
+        WHERE NOT (
+            -- 排除与系统账号(-1, -2)的私聊会话
+            c.type = 'private'
+            AND EXISTS (
+                SELECT 1
+                FROM conversation_member cm_sys
+                WHERE cm_sys.conversation_id = c.conversation_id
+                  AND cm_sys.member_user_id IN (-1, -2)
+            )
+        )
         ORDER BY c.last_msg_time DESC NULLS LAST;
     """
 
