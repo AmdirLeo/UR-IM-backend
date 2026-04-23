@@ -537,3 +537,23 @@ async def db_get_pending_group_invites(
             "create_time": row["create_time"],  # datetime 对象
         })
     return result
+
+
+async def db_remove_admin_invite_states(
+    conn: asyncpg.Connection,
+    conversation_id: int,
+    admin_id: int,
+) -> None:
+    """
+    删除指定管理员在某群的所有待处理邀请审核状态记录。
+    用于当管理员被撤销或群主转让后，不再参与该群入群审核。
+    """
+    query = """
+        DELETE FROM group_invite_admin_state
+        WHERE admin_id = $1
+          AND invite_id IN (
+              SELECT invite_id FROM group_invite
+              WHERE conversation_id = $2 AND status = 'pending'
+          )
+    """
+    await conn.execute(query, admin_id, conversation_id)

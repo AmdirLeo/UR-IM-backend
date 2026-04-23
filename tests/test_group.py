@@ -1,5 +1,6 @@
 import pytest
 import asyncpg
+import json
 from httpx import AsyncClient, ASGITransport
 from typing import Dict, cast
 from unittest.mock import patch
@@ -62,8 +63,11 @@ async def test_group_journey_and_edge_cases():
         user_stranger_id = await db_create_user(
             conn, "group_stranger", hashed_pw, "g_stranger@test.com"
         )
+        user_outsider_id = await db_create_user(
+            conn, "group_outsider", hashed_pw, "g_outsider@test.com"
+        )
         # 👇 新增：为每个用户创建与群聊助手(-2)的私聊会话
-        for uid in [user_owner_id, user_admin_id, user_member_id, user_stranger_id]:
+        for uid in [user_owner_id, user_admin_id, user_member_id, user_stranger_id, user_outsider_id]:
             conv_id = await conn.fetchval("""
                 SELECT c.conversation_id
                 FROM conversation c
@@ -297,6 +301,242 @@ async def test_group_journey_and_edge_cases():
             headers=headers_admin,
         )
         assert res_admin_anno.status_code == 200
+
+        # ========== 新增：验证设置管理员后的系统通知 ==========
+        # 验证群内收到角色变更通知（admin 被设为管理员）
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            owner_name = await conn.fetchval("SELECT username FROM user_account WHERE user_id = $1", user_owner_id)
+            admin_name = await conn.fetchval("SELECT username FROM user_account WHERE user_id = $1", user_admin_id)
+
+            role_change_msg = await conn.fetchrow(
+                """
+                SELECT
+                    (m.msg_body->>'content')::jsonb->>'content' as message_content,
+                    (m.msg_body->>'content')::jsonb->>'extra' as extra_data
+                FROM message m
+                JOIN conversation_message cm ON m.msg_id = cm.msg_id
+                WHERE cm.conversation_id = $1
+                AND cm.sender_id = -2
+                AND m.msg_body->>'type' = 'notify'
+                AND (m.msg_body->>'content')::jsonb->>'extra' LIKE '%group_admin_set%'
+                ORDER BY cm.msg_id DESC
+                LIMIT 1
+                """,
+                conversation_id
+            )
+            assert role_change_msg is not None, "群聊内未收到设置管理员的通知"
+            msg_text = role_change_msg["message_content"]
+            assert owner_name in msg_text and admin_name in msg_text
+            assert "设置" in msg_text and "管理员" in msg_text
+            extra_str = role_change_msg["extra_data"]
+            extra = json.loads(extra_str) if extra_str else {}
+            if extra:
+                assert extra.get("action") == "group_admin_set"
+                assert extra.get("operator_id") == user_owner_id
+                assert extra.get("target_user_id") == user_admin_id
+            break
+
+        # 2. 验证被操作者 (admin) 收到私聊通知
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            system_conv = await conn.fetchval(
+                """
+                SELECT c.conversation_id
+                FROM conversation c
+                JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
+                JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+                WHERE c.type = 'private'
+                AND cm1.member_user_id = $1
+                AND cm2.member_user_id = -2
+                """,
+                user_admin_id
+            )
+            assert system_conv is not None, "被设置管理员没有与系统助手的私聊会话"
+            private_msg = await conn.fetchrow(
+                """
+                SELECT
+                    (m.msg_body->>'content')::jsonb->>'content' as message_content,
+                    (m.msg_body->>'content')::jsonb->>'extra' as extra_data
+                FROM message m
+                WHERE m.msg_id = (
+                    SELECT cm.msg_id
+                    FROM conversation_message cm
+                    WHERE cm.conversation_id = $1
+                    AND cm.sender_id = -2
+                    ORDER BY cm.msg_id DESC
+                    LIMIT 1
+                )
+                AND m.msg_body->>'type' = 'notify'
+                AND (m.msg_body->>'content')::jsonb->>'extra' LIKE '%group_admin_set_to_you%'
+                """,
+                system_conv
+            )
+            assert private_msg is not None, "被设置管理员未收到私聊通知"
+            extra_str = private_msg["extra_data"]
+            extra = json.loads(extra_str) if extra_str else {}
+            if extra:
+                assert extra.get("action") == "group_admin_set_to_you"
+                assert extra.get("conversation_id") == conversation_id
+                assert extra.get("operator_id") == user_owner_id
+            break
+        # ========== 设置管理员通知验证结束 ==========
+
+        # ========== 新增：撤销管理员并验证通知及待处理列表清理 ==========
+        # 先让 member 再创建一个新的入群申请，确保待处理列表中有数据可供后续验证清理
+        res_invite2 = await client.post(
+            "/api/group/invite",
+            json={"conversation_id": conversation_id,
+                  "user_id": user_outsider_id},
+            headers=headers_member,
+        )
+        assert res_invite2.status_code == 200
+        apply_id2 = res_invite2.json()["data"]["apply_id"]
+
+        # 确认 admin 的待处理列表包含该申请
+        res_pending_admin_before = await client.get(
+            "/api/group/invites/pending",
+            headers=headers_admin,
+        )
+        assert res_pending_admin_before.status_code == 200
+        cards_before = res_pending_admin_before.json()["data"]
+        assert any(card["apply_id"] ==
+                   apply_id2 for card in cards_before), "撤销前 admin 应能看到新申请"
+
+        # Owner 撤销 admin 的管理员角色
+        res_revoke = await client.put(
+            "/api/group/admin",
+            json={
+                "conversation_id": conversation_id,
+                "user_id": user_admin_id,
+                "role": "member",
+            },
+            headers=headers_owner,
+        )
+        assert res_revoke.status_code == 200
+
+        # 验证群内收到撤销管理员的通知
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            owner_name = await conn.fetchval("SELECT username FROM user_account WHERE user_id = $1", user_owner_id)
+            admin_name = await conn.fetchval("SELECT username FROM user_account WHERE user_id = $1", user_admin_id)
+
+            revoke_msg = await conn.fetchrow(
+                """
+                SELECT
+                    (m.msg_body->>'content')::jsonb->>'content' as message_content,
+                    (m.msg_body->>'content')::jsonb->>'extra' as extra_data
+                FROM message m
+                WHERE m.msg_id = (
+                    SELECT cm.msg_id
+                    FROM conversation_message cm
+                    WHERE cm.conversation_id = $1
+                    AND cm.sender_id = -2
+                    ORDER BY cm.msg_id DESC
+                    LIMIT 1
+                )
+                AND m.msg_body->>'type' = 'notify'
+                AND (m.msg_body->>'content')::jsonb->>'extra' LIKE '%group_admin_unset%'
+                """,
+                conversation_id
+            )
+            assert revoke_msg is not None, "群聊内未收到撤销管理员的通知"
+            msg_text = revoke_msg["message_content"]
+            assert owner_name in msg_text and admin_name in msg_text
+            assert "撤销" in msg_text and "管理员" in msg_text
+            extra_str = revoke_msg["extra_data"]
+            extra = json.loads(extra_str) if extra_str else {}
+            if extra:
+                assert extra.get("action") == "group_admin_unset"
+                assert extra.get("operator_id") == user_owner_id
+                assert extra.get("target_user_id") == user_admin_id
+            break
+
+        # 验证被撤销者收到私聊通知
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            system_conv = await conn.fetchval(
+                """
+                SELECT c.conversation_id
+                FROM conversation c
+                JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
+                JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+                WHERE c.type = 'private'
+                AND cm1.member_user_id = $1
+                AND cm2.member_user_id = -2
+                """,
+                user_admin_id
+            )
+            assert system_conv is not None
+            private_revoke_msg = await conn.fetchrow(
+                """
+                SELECT
+                    (m.msg_body->>'content')::jsonb->>'content' as message_content,
+                    (m.msg_body->>'content')::jsonb->>'extra' as extra_data
+                FROM message m
+                WHERE m.msg_id = (
+                    SELECT cm.msg_id
+                    FROM conversation_message cm
+                    WHERE cm.conversation_id = $1
+                    AND cm.sender_id = -2
+                    ORDER BY cm.msg_id DESC
+                    LIMIT 1
+                )
+                AND m.msg_body->>'type' = 'notify'
+                AND (m.msg_body->>'content')::jsonb->>'extra' LIKE '%group_admin_unset_from_you%'
+                """,
+                system_conv
+            )
+            assert private_revoke_msg is not None, "被撤销管理员未收到私聊通知"
+            extra_str = private_revoke_msg["extra_data"]
+            extra = json.loads(extra_str) if extra_str else {}
+            if extra:
+                assert extra.get("action") == "group_admin_unset_from_you"
+                assert extra.get("conversation_id") == conversation_id
+                assert extra.get("operator_id") == user_owner_id
+            break
+
+        # 验证被撤销者的待处理入群申请已被清理（数据库中无 pending 记录）
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            count = await conn.fetchval(
+                """
+                SELECT COUNT(1)
+                FROM group_invite_admin_state
+                WHERE admin_id = $1
+                AND state = 'pending'
+                AND invite_id IN (
+                    SELECT invite_id FROM group_invite
+                    WHERE conversation_id = $2 AND status = 'pending'
+                )
+                """,
+                user_admin_id, conversation_id
+            )
+            assert count == 0, "被撤销管理员后，其待处理入群申请状态记录未被清理"
+            break
+
+        # 撤销后 admin 调用待处理列表应返回空（或不再包含本群申请）
+        res_pending_admin_after = await client.get(
+            "/api/group/invites/pending",
+            headers=headers_admin,
+        )
+        assert res_pending_admin_after.status_code == 200
+        cards_after = res_pending_admin_after.json()["data"]
+        assert not any(card["conversation_id"] == conversation_id for card in cards_after), \
+            "撤销管理员后，其待处理列表中不应再看到该群的任何申请"
+        # ========== 撤销管理员测试结束 ==========
+
+        res = await client.put(
+            "/api/group/admin",
+            json={
+                "conversation_id": conversation_id,
+                "user_id": user_admin_id,
+                "role": "admin",
+            },
+            headers=headers_owner,
+        )
+        assert res.status_code == 200
+
         # ---------------------------------------------------------
         # 6. 群邀请与审核 (POST /api/group/invite & POST /api/group/invite/review)
         # ---------------------------------------------------------

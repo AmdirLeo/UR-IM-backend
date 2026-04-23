@@ -26,6 +26,7 @@ from db.repositories.group_repo import (
     db_review_group_invite,
     db_get_group_admins,
     db_get_pending_group_invites,
+    db_remove_admin_invite_states,
 )
 from schemas.message import SendMessageRequest, MessageType
 from services.message_service import send_message_service
@@ -167,6 +168,14 @@ async def manage_group_admin_service(
 ) -> None:
     if current_user_id == req.user_id:
         raise GroupException(GroupErrors.PermissionDenied, "不能操作自己")
+
+    old_role = await db_session.fetchval(
+        "SELECT role FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2",
+        req.conversation_id, req.user_id
+    )
+    if not old_role:
+        raise GroupException(GroupErrors.NotInGroup)
+
     await db_manage_group_role(
         conn=db_session,
         operator_id=current_user_id,
@@ -174,6 +183,32 @@ async def manage_group_admin_service(
         target_user_id=req.user_id,
         new_role=req.role,
     )
+    # 发送通知（仅当角色确实发生变化时）
+    if old_role != req.role:
+        # 1. 群内通知
+        await send_role_change_group_notification(
+            conn=db_session,
+            conversation_id=req.conversation_id,
+            operator_id=current_user_id,
+            target_user_id=req.user_id,
+            old_role=old_role,
+            new_role=req.role,
+        )
+        # 2. 被操作者私聊通知
+        await send_role_change_private_notification(
+            conn=db_session,
+            target_user_id=req.user_id,
+            operator_id=current_user_id,
+            conversation_id=req.conversation_id,
+            old_role=old_role,
+            new_role=req.role,
+        )
+
+        # 3.若被操作者失去管理权限，清除其待处理审核记录
+        if old_role in ("owner", "admin") and req.role == "member":
+            await db_remove_admin_invite_states(
+                db_session, req.conversation_id, req.user_id
+            )
 
 
 async def remove_group_member_service(
@@ -619,3 +654,117 @@ async def send_group_creation_notification(
         await send_message_service(conn, -2, send_req)
     except Exception as e:
         print(f"发送群创建系统通知失败: {e}")
+
+
+async def send_role_change_group_notification(
+    conn: asyncpg.Connection,
+    conversation_id: int,
+    operator_id: int,
+    target_user_id: int,
+    old_role: str,
+    new_role: str,
+) -> None:
+    """
+    在群内发送角色变更的系统通知
+    """
+    # 获取操作者和目标用户的名称
+    operator_name = await conn.fetchval(
+        QUERY_GET_USERNAME_BY_ID, operator_id
+    )
+    target_name = await conn.fetchval(
+        QUERY_GET_USERNAME_BY_ID, target_user_id
+    )
+    if not operator_name:
+        operator_name = str(operator_id)
+    if not target_name:
+        target_name = str(target_user_id)
+
+    # 根据角色变更构造消息文本
+    if new_role == "owner":
+        message_text = f"{operator_name} 将群主转让给 {target_name}"
+        action = "group_owner_transferred"
+    elif new_role == "admin" and old_role == "member":
+        message_text = f"{operator_name} 设置 {target_name} 为管理员"
+        action = "group_admin_set"
+    elif new_role == "member" and old_role == "admin":
+        message_text = f"{operator_name} 撤销了 {target_name} 的管理员"
+        action = "group_admin_unset"
+    else:
+        return  # 无变化则不通知
+
+    send_req = SendMessageRequest(
+        conversation_id=conversation_id,
+        local_id=str(uuid.uuid4()),
+        message_content=message_text,
+        msg_type=MessageType.NOTIFY,
+        extra_data={
+            "action": action,
+            "operator_id": operator_id,
+            "target_user_id": target_user_id,
+            "old_role": old_role,
+            "new_role": new_role,
+        }
+    )
+    try:
+        await send_message_service(conn, -2, send_req)
+    except Exception as e:
+        print(f"通知发送失败: {e}")
+
+
+async def send_role_change_private_notification(
+    conn: asyncpg.Connection,
+    target_user_id: int,
+    operator_id: int,
+    conversation_id: int,
+    old_role: str,
+    new_role: str,
+) -> None:
+    """
+    向被操作者发送私聊系统通知（角色变更提醒）
+    """
+    # 获取操作者和群名称
+    operator_name = await conn.fetchval(
+        QUERY_GET_USERNAME_BY_ID, operator_id
+    )
+    group_name = await conn.fetchval(
+        "SELECT conversation_name FROM conversation WHERE conversation_id = $1", conversation_id
+    )
+    if not operator_name:
+        operator_name = str(operator_id)
+    group_display = group_name or f"群聊{conversation_id}"
+
+    # 查询目标用户与系统助手的私聊会话
+    system_conv = await conn.fetchval(
+        QUERY_FIND_SYSTEM_PRIVATE_CONV,
+        target_user_id
+    )
+    if not system_conv:
+        return
+
+    # 构造消息文案
+    if new_role == "owner":
+        tips = f"{operator_name} 已将群聊 {group_display} 的群主转让给你"
+        action = "group_owner_transferred_to_you"
+    elif new_role == "admin" and old_role == "member":
+        tips = f"你已被 {operator_name} 设置为群聊 {group_display} 的管理员"
+        action = "group_admin_set_to_you"
+    elif new_role == "member" and old_role == "admin":
+        tips = f"你已被 {operator_name} 撤销群聊 {group_display} 的管理员"
+        action = "group_admin_unset_from_you"
+    else:
+        return
+
+    send_req = SendMessageRequest(
+        conversation_id=system_conv,
+        local_id=str(uuid.uuid4()),
+        message_content="[群角色变更通知]",
+        msg_type=MessageType.NOTIFY,
+        extra_data={
+            "action": action,
+            "tips": tips,
+            "conversation_id": conversation_id,
+            "operator_id": operator_id,
+            "new_role": new_role,
+        }
+    )
+    await send_message_service(conn, -2, send_req)
