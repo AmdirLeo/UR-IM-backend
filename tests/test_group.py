@@ -241,6 +241,48 @@ async def test_group_journey_and_edge_cases():
                 assert record["state"] == "pending"
             break
 
+        # ========== 新增 API 测试：GET /api/group/invites/pending ==========
+        # 1. Admin 获取待处理入群申请列表（应包含刚刚创建的申请）
+        res_pending_admin = await client.get(
+            "/api/group/invites/pending",
+            headers=headers_admin,
+        )
+        assert res_pending_admin.status_code == 200
+        pending_cards_admin = res_pending_admin.json()["data"]
+        assert len(pending_cards_admin) >= 1
+        found_admin = False
+        for card in pending_cards_admin:
+            if card["apply_id"] == apply_id:
+                found_admin = True
+                assert card["card_type"] == "group_apply"
+                assert card["conversation_id"] == conversation_id
+                assert card["applicant_id"] == user_stranger_id
+                assert card["status"] == "pending"
+                assert "create_time" in card
+                break
+        assert found_admin, "Admin 的待处理列表中未找到新创建的入群申请"
+
+        # 2. Owner 获取待处理列表（也应包含该申请）
+        res_pending_owner = await client.get(
+            "/api/group/invites/pending",
+            headers=headers_owner,
+        )
+        assert res_pending_owner.status_code == 200
+        pending_cards_owner = res_pending_owner.json()["data"]
+        found_owner = any(card["apply_id"] ==
+                          apply_id for card in pending_cards_owner)
+        assert found_owner, "Owner 的待处理列表中未找到新创建的入群申请"
+
+        # 3. 普通成员获取待处理列表（应返回空列表，因为成员无审批权限）
+        res_pending_member = await client.get(
+            "/api/group/invites/pending",
+            headers=headers_member,
+        )
+        assert res_pending_member.status_code == 200
+        pending_cards_member = res_pending_member.json()["data"]
+        assert len(pending_cards_member) == 0, "普通成员不应看到任何待处理入群申请"
+        # ========== 新增测试结束 ==========
+
         # 场景1：Admin 先执行忽略（仅修改自己的状态，全局不变）
         res_ignore = await client.post(
             "/api/group/invite/review",
@@ -270,6 +312,29 @@ async def test_group_journey_and_edge_cases():
             assert is_member is False
             break
 
+        # ========== 验证忽略后 Admin 的待处理列表不再包含该申请 ==========
+        res_pending_admin_after_ignore = await client.get(
+            "/api/group/invites/pending",
+            headers=headers_admin,
+        )
+        assert res_pending_admin_after_ignore.status_code == 200
+        admin_cards_after_ignore = res_pending_admin_after_ignore.json()[
+            "data"]
+        assert not any(card["apply_id"] == apply_id for card in admin_cards_after_ignore), \
+            "Admin 执行忽略后，其待处理列表中不应再出现该入群申请"
+
+        # Owner 依然能看到（因为 Owner 的状态还是 pending）
+        res_pending_owner_after_ignore = await client.get(
+            "/api/group/invites/pending",
+            headers=headers_owner,
+        )
+        assert res_pending_owner_after_ignore.status_code == 200
+        owner_cards_after_ignore = res_pending_owner_after_ignore.json()[
+            "data"]
+        assert any(card["apply_id"] == apply_id for card in owner_cards_after_ignore), \
+            "Owner 未执行操作，待处理列表中应仍包含该入群申请"
+        # ========== 结束 ==========
+
         # 场景2：Owner 批准（一票通过，覆盖所有管理员状态，拉人入群，发送通知）
         res_approve = await client.post(
             "/api/group/invite/review",
@@ -296,6 +361,17 @@ async def test_group_journey_and_edge_cases():
             )
             assert is_member is True
             break
+
+        # ========== 验证批准后待处理列表不再包含该申请 ==========
+        res_pending_after_approve = await client.get(
+            "/api/group/invites/pending",
+            headers=headers_owner,
+        )
+        assert res_pending_after_approve.status_code == 200
+        after_cards = res_pending_after_approve.json()["data"]
+        assert not any(card["apply_id"] == apply_id for card in after_cards), \
+            "批准后待处理列表中不应再出现该入群申请"
+        # ========== 结束 ==========
 
         # ========== 新增验证：系统消息 ==========
         # 1. 验证群聊内收到系统消息（-2 发送的 NOTIFY，内容包含邀请人和被邀请人）

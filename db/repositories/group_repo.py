@@ -486,3 +486,54 @@ async def db_get_group_admins(conn: asyncpg.Connection, conversation_id: int) ->
           AND role IN ('owner', 'admin')
     """, conversation_id)
     return [row["member_user_id"] for row in rows]
+
+
+async def db_get_pending_group_invites(
+    conn: asyncpg.Connection,
+    admin_id: int
+) -> list[dict]:
+    """
+    获取当前管理员待审批的入群邀请列表（仅限全局状态 pending 且该管理员状态 pending）
+    返回字段包括：邀请ID、群信息、申请人信息、邀请人信息、创建时间等
+    """
+    query = """
+        SELECT
+            gi.invite_id,
+            gi.conversation_id,
+            c.conversation_name,
+            c.avatar_url AS group_avatar,
+            gi.invitee_id AS applicant_id,
+            u1.username AS applicant_name,
+            u1.avatar_url AS applicant_avatar,
+            gi.inviter_id,
+            u2.username AS inviter_name,
+            u2.avatar_url AS inviter_avatar,
+            gi.create_time
+        FROM group_invite_admin_state gias
+        JOIN group_invite gi ON gias.invite_id = gi.invite_id
+        JOIN conversation c ON gi.conversation_id = c.conversation_id
+        JOIN user_account u1 ON gi.invitee_id = u1.user_id
+        JOIN user_account u2 ON gi.inviter_id = u2.user_id
+        WHERE gias.admin_id = $1
+          AND gias.state = 'pending'
+          AND gi.status = 'pending'
+        ORDER BY gi.create_time DESC
+    """
+    rows = await conn.fetch(query, admin_id)
+
+    result = []
+    for row in rows:
+        result.append({
+            "invite_id": row["invite_id"],
+            "conversation_id": row["conversation_id"],
+            "conversation_name": row["conversation_name"],
+            "group_avatar": row["group_avatar"],
+            "applicant_id": row["applicant_id"],
+            "applicant_name": row["applicant_name"],
+            "applicant_avatar": row["applicant_avatar"],
+            "inviter_id": row["inviter_id"],
+            "inviter_name": row["inviter_name"],
+            "inviter_avatar": row["inviter_avatar"],
+            "create_time": row["create_time"],  # datetime 对象
+        })
+    return result

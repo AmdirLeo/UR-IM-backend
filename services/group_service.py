@@ -24,6 +24,7 @@ from db.repositories.group_repo import (
     db_invite_to_group,
     db_review_group_invite,
     db_get_group_admins,
+    db_get_pending_group_invites,
 )
 from schemas.message import SendMessageRequest
 from services.message_service import send_message_service
@@ -500,3 +501,32 @@ async def review_group_invite_service(
             conn=db_session,
             invite_id=req.apply_id,
         )
+
+
+async def get_pending_group_invites_as_cards(
+    db_session: asyncpg.Connection,
+    current_user_id: int
+) -> list[dict]:
+    """
+    获取当前用户待审批的入群申请，并转换为卡片格式。
+    """
+    raw_invites = await db_get_pending_group_invites(db_session, current_user_id)
+
+    cards = []
+    for inv in raw_invites:
+        cards.append({
+            "card_type": "group_apply",
+            "apply_id": inv["invite_id"],
+            "conversation_id": inv["conversation_id"],
+            "conversation_name": inv["conversation_name"],
+            "group_avatar": inv["group_avatar"],
+            "applicant_id": inv["applicant_id"],
+            "applicant_name": inv["applicant_name"],
+            "applicant_avatar": inv["applicant_avatar"],
+            "inviter_id": inv["inviter_id"],
+            "inviter_name": inv["inviter_name"],
+            "inviter_avatar": inv["inviter_avatar"],
+            "status": "pending",
+            "create_time": int(inv["create_time"].timestamp())  # 转为 Unix 时间戳
+        })
+    return cards
