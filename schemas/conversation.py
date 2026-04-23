@@ -30,8 +30,8 @@ class ConversationSyncItem(BaseModel):
         None, description="当前用户在该会话中最后一次确认（已读）的消息 ID")
     last_msg_id: Optional[int] = Field(
         None, gt=0, description="该会话中最新一条消息的全局 ID")
-    last_msg_type: MessageType = Field(
-        default=MessageType.TEXT, description="最新一条消息的类型")
+    last_msg_type: Optional[MessageType] = Field(
+        None, description="最新一条消息的类型（无消息时为 None）")
     last_msg_sender_id: Optional[int] = Field(
         None, description="最新一条消息的发送者 ID")
     last_msg_content: Optional[str] = Field(None, description="最新一条消息的内容")
