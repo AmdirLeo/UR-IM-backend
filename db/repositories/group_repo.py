@@ -149,13 +149,8 @@ async def db_quit_group(
     """
     退出群聊 (对应 POST /api/group/quit)
     """
-    role = await conn.fetchval(QUERY_GET_MEMBER_ROLE, conversation_id, user_id)
-    if not role:
-        raise GroupException(GroupErrors.NotInGroup)
-
-    # 群主不能退群
-    if role == "owner":
-        raise GroupException(GroupErrors.OwnerCannotQuit)
+    # 鉴权（保证只能退群，且防御并发）
+    await db_assert_can_quit_group(conn, user_id, conversation_id)
 
     await conn.execute(
         "DELETE FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;",
@@ -170,12 +165,35 @@ async def db_disband_group(
     """
     解散群聊 (对应 POST /api/group/bomb)
     """
+    await db_assert_can_disband_group(conn, user_id, conversation_id)
+    # 标记群已解散
+    await conn.execute(
+        "UPDATE conversation SET is_disbanded = true WHERE conversation_id = $1",
+        conversation_id
+    )
+    # 删除所有成员（除了系统账号）
+    await conn.execute(
+        "DELETE FROM conversation_member WHERE conversation_id = $1",
+        conversation_id
+    )
+
+
+async def db_assert_can_disband_group(
+    conn: asyncpg.Connection,
+    user_id: int,
+    conversation_id: int,
+) -> str:
+    """
+    校验用户是否有权解散群聊，并返回当前角色（必须是 owner）。
+    - 不在群内 → GroupErrors.NotInGroup
+    - 不是群主 → GroupErrors.PermissionDenied
+    """
     role = await conn.fetchval(QUERY_GET_MEMBER_ROLE, conversation_id, user_id)
+    if not role:
+        raise GroupException(GroupErrors.NotInGroup)
     if role != "owner":
         raise GroupException(GroupErrors.PermissionDenied)
-    await conn.execute(
-        "DELETE FROM conversation WHERE conversation_id = $1;", conversation_id
-    )
+    return role
 
 
 async def db_remove_group_member(
@@ -188,35 +206,8 @@ async def db_remove_group_member(
     移除群员 (对应 DELETE /api/group/member)
     包含严格的阶级等级压制校验。
     """
-    # 1. 不能自己踢自己 (自己退群应该调 quit 接口)
-    if operator_id == target_user_id:
-        raise GroupException(GroupErrors.PermissionDenied)
-
-    # 2. 同时查出操作者和被踢者的角色
-    query = """
-        SELECT member_user_id, role
-        FROM conversation_member
-        WHERE conversation_id = $1 AND member_user_id IN ($2, $3);
-    """
-    rows = await conn.fetch(query, conversation_id, operator_id, target_user_id)
-
-    role_map = {row["member_user_id"]: row["role"] for row in rows}
-
-    operator_role = role_map.get(operator_id)
-    target_role = role_map.get(target_user_id)
-
-    # 如果其中有人不在群里
-    if not operator_role or not target_role:
-        raise GroupException(GroupErrors.NotInGroup)
-
-    # 3. 核心鉴权逻辑 (等级压制)
-    if operator_role == "member":
-        # 普通人谁也踢不了
-        raise GroupException(GroupErrors.PermissionDenied)
-    elif operator_role == "admin" and target_role in ("owner", "admin"):
-        # 管理员只能踢普通人，不能踢群主，也不能互踢
-        raise GroupException(GroupErrors.CannotKickHigherRole)
-    # 如果是 owner，则畅通无阻，可以直接往下走
+    # 校验权限（会抛出异常）
+    await db_assert_can_remove_member(conn, operator_id, conversation_id, target_user_id)
 
     # 4. 执行踢人操作
     delete_query = "DELETE FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;"
@@ -557,3 +548,70 @@ async def db_remove_admin_invite_states(
           )
     """
     await conn.execute(query, admin_id, conversation_id)
+
+
+async def db_assert_can_quit_group(
+    conn: asyncpg.Connection,
+    user_id: int,
+    conversation_id: int,
+) -> str:
+    """
+    校验用户是否有权退出群聊，并返回当前角色。
+    - 不在群内 → GroupErrors.NotInGroup
+    - 是群主   → GroupErrors.OwnerCannotQuit
+    """
+    role = await conn.fetchval(QUERY_GET_MEMBER_ROLE, conversation_id, user_id)
+    if not role:
+        raise GroupException(GroupErrors.NotInGroup)
+    if role == "owner":
+        raise GroupException(GroupErrors.OwnerCannotQuit)
+    return role
+
+
+async def db_assert_can_remove_member(
+    conn: asyncpg.Connection,
+    operator_id: int,
+    conversation_id: int,
+    target_user_id: int,
+) -> tuple[str, str]:
+    """
+    校验操作者是否有权踢出目标成员，并返回两者的角色。
+    会抛出 GroupException 如果：
+      - 操作者自踢
+      - 任一用户不在群内
+      - 等级压制不满足
+    """
+    if operator_id == target_user_id:
+        raise GroupException(GroupErrors.PermissionDenied)
+
+    query = """
+        SELECT member_user_id, role
+        FROM conversation_member
+        WHERE conversation_id = $1 AND member_user_id IN ($2, $3);
+    """
+    rows = await conn.fetch(query, conversation_id, operator_id, target_user_id)
+    role_map = {row["member_user_id"]: row["role"] for row in rows}
+
+    operator_role = role_map.get(operator_id)
+    target_role = role_map.get(target_user_id)
+
+    if not operator_role or not target_role:
+        raise GroupException(GroupErrors.NotInGroup)
+
+    # 等级压制
+    if operator_role == "member":
+        raise GroupException(GroupErrors.PermissionDenied)
+    if operator_role == "admin" and target_role in ("owner", "admin"):
+        raise GroupException(GroupErrors.CannotKickHigherRole)
+
+    return operator_role, target_role
+
+
+async def db_clean_group_invites(conn: asyncpg.Connection, conversation_id: int):
+    await conn.execute("""
+        DELETE FROM group_invite_admin_state
+        WHERE invite_id IN (SELECT invite_id FROM group_invite WHERE conversation_id = $1)
+    """, conversation_id)
+    await conn.execute("""
+        DELETE FROM group_invite WHERE conversation_id = $1
+    """, conversation_id)

@@ -798,6 +798,55 @@ async def test_group_journey_and_edge_cases():
             headers=headers_admin,
         )
         assert res_kick.status_code == 200
+
+        # ========== 验证被踢成员收到私聊通知 ==========
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            # 查找 member 与系统助手 -2 的私聊会话
+            system_conv = await conn.fetchval(
+                """
+                SELECT c.conversation_id
+                FROM conversation c
+                JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
+                JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+                WHERE c.type = 'private'
+                  AND cm1.member_user_id = $1
+                  AND cm2.member_user_id = -2
+                """,
+                user_member_id
+            )
+            assert system_conv is not None, "被踢成员没有与系统助手的私聊会话"
+
+            kick_msg = await conn.fetchrow(
+                """
+                SELECT
+                    (m.msg_body->>'content')::jsonb->>'content' as message_content,
+                    (m.msg_body->>'content')::jsonb->>'extra' as extra_data
+                FROM message m
+                WHERE m.msg_id = (
+                    SELECT cm.msg_id
+                    FROM conversation_message cm
+                    WHERE cm.conversation_id = $1
+                      AND cm.sender_id = -2
+                    ORDER BY cm.msg_id DESC
+                    LIMIT 1
+                )
+                AND m.msg_body->>'type' = 'notify'
+                AND (m.msg_body->>'content')::jsonb->>'extra' LIKE '%kicked_from_group%'
+                """,
+                system_conv
+            )
+            assert kick_msg is not None, "被踢成员未收到私聊通知"
+            msg_text = kick_msg["message_content"]
+            assert "你已被" in msg_text or "移出群聊" in msg_text
+            extra_str = kick_msg["extra_data"]
+            extra = json.loads(extra_str) if extra_str else {}
+            assert extra.get("action") == "kicked_from_group"
+            assert extra.get("conversation_id") == conversation_id
+            assert extra.get("operator_id") == user_admin_id  # 踢人者是 admin
+            break
+        # ========== 踢人通知验证结束 ==========
+
         # ---------------------------------------------------------
         # 8. 退出群聊 (POST /api/group/quit)
         # ---------------------------------------------------------
@@ -815,6 +864,51 @@ async def test_group_journey_and_edge_cases():
             headers=headers_stranger,
         )
         assert res_stranger_quit.status_code == 200
+        # ========== 验证退群成员收到私聊通知 ==========
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            system_conv = await conn.fetchval(
+                """
+                SELECT c.conversation_id
+                FROM conversation c
+                JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
+                JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+                WHERE c.type = 'private'
+                  AND cm1.member_user_id = $1
+                  AND cm2.member_user_id = -2
+                """,
+                user_stranger_id
+            )
+            assert system_conv is not None, "退群成员没有与系统助手的私聊会话"
+
+            quit_msg = await conn.fetchrow(
+                """
+                SELECT
+                    (m.msg_body->>'content')::jsonb->>'content' as message_content,
+                    (m.msg_body->>'content')::jsonb->>'extra' as extra_data
+                FROM message m
+                WHERE m.msg_id = (
+                    SELECT cm.msg_id
+                    FROM conversation_message cm
+                    WHERE cm.conversation_id = $1
+                      AND cm.sender_id = -2
+                    ORDER BY cm.msg_id DESC
+                    LIMIT 1
+                )
+                AND m.msg_body->>'type' = 'notify'
+                AND (m.msg_body->>'content')::jsonb->>'extra' LIKE '%left_group%'
+                """,
+                system_conv
+            )
+            assert quit_msg is not None, "退群成员未收到私聊通知"
+            msg_text = quit_msg["message_content"]
+            assert "你已退出" in msg_text or "退出群聊" in msg_text
+            extra_str = quit_msg["extra_data"]
+            extra = json.loads(extra_str) if extra_str else {}
+            assert extra.get("action") == "left_group"
+            assert extra.get("conversation_id") == conversation_id
+            break
+        # ========== 退群通知验证结束 ==========
         # ---------------------------------------------------------
         # 9. 解散群聊 (POST /api/group/bomb)
         # ---------------------------------------------------------
@@ -840,6 +934,35 @@ async def test_group_journey_and_edge_cases():
         )
         # 根据 group_repo，如果全被删除了会找不到，也就是 role 获取失败返回 NotInGroup (403)
         assert res_after_bomb.status_code == 403
+
+        # ========== 验证群内收到解散通知 ==========
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            disband_msg = await conn.fetchrow(
+                """
+                SELECT
+                    (m.msg_body->>'content')::jsonb->>'content' as message_content,
+                    (m.msg_body->>'content')::jsonb->>'extra' as extra_data
+                FROM message m
+                JOIN conversation_message cm ON m.msg_id = cm.msg_id
+                WHERE cm.conversation_id = $1
+                  AND cm.sender_id = -2
+                  AND m.msg_body->>'type' = 'notify'
+                  AND (m.msg_body->>'content')::jsonb->>'extra' LIKE '%group_disbanded%'
+                ORDER BY cm.msg_id DESC
+                LIMIT 1
+                """,
+                conversation_id
+            )
+            assert disband_msg is not None, "群聊内未收到解散通知"
+            msg_text = disband_msg["message_content"]
+            assert "已解散" in msg_text or "解散" in msg_text
+            extra_str = disband_msg["extra_data"]
+            extra = json.loads(extra_str) if extra_str else {}
+            assert extra.get("action") == "group_disbanded"
+            assert extra.get("operator_id") == user_owner_id
+            break
+        # ========== 解散通知验证结束 ==========
 
 # ==========================================
 # 测试用例：邀请入群触发群聊助手(-2)私聊卡片通知

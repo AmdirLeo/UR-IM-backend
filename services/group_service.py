@@ -1,6 +1,6 @@
 import asyncpg
 import uuid
-from typing import List
+from typing import List, Optional
 from datetime import datetime, timezone
 from schemas.group import (
     GroupCreateRequest,
@@ -27,6 +27,10 @@ from db.repositories.group_repo import (
     db_get_group_admins,
     db_get_pending_group_invites,
     db_remove_admin_invite_states,
+    db_assert_can_quit_group,
+    db_assert_can_disband_group,
+    db_clean_group_invites,
+    db_assert_can_remove_member,
 )
 from schemas.message import SendMessageRequest, MessageType
 from services.message_service import send_message_service
@@ -214,6 +218,29 @@ async def manage_group_admin_service(
 async def remove_group_member_service(
     db_session: asyncpg.Connection, current_user_id: int, req: GroupRemoveMemberRequest
 ) -> None:
+    # 1. 提前鉴权（通知需要在删除前发送）
+    await db_assert_can_remove_member(
+        db_session,
+        current_user_id,
+        req.conversation_id,
+        req.user_id,
+    )
+
+    # 2. 向被踢用户发送私聊通知
+    await send_leave_group_notification(
+        db_session,
+        user_id=req.user_id,
+        conversation_id=req.conversation_id,
+        is_kicked=True,
+        operator_id=current_user_id,
+    )
+
+    # 3. 清理被踢者的待处理入群审核记录
+    await db_remove_admin_invite_states(
+        db_session, req.conversation_id, req.user_id
+    )
+
+    # 4. 执行踢人（内部会再次鉴权，但此时角色不变，不会失败）
     await db_remove_group_member(
         conn=db_session,
         operator_id=current_user_id,
@@ -225,6 +252,19 @@ async def remove_group_member_service(
 async def quit_group_service(
     db_session: asyncpg.Connection, current_user_id: int, req: GroupGenericRequest
 ) -> None:
+    # 1. 提前鉴权（通知需要在删除前发送）
+    await db_assert_can_quit_group(db_session, current_user_id, req.conversation_id)
+    # 2. 发送主动退群私聊通知
+    await send_leave_group_notification(
+        db_session,
+        user_id=current_user_id,
+        conversation_id=req.conversation_id,
+        is_kicked=False,
+    )
+    # 3. 清理待处理入群审核记录
+    await db_remove_admin_invite_states(
+        db_session, req.conversation_id, current_user_id
+    )
     await db_quit_group(
         conn=db_session, user_id=current_user_id, conversation_id=req.conversation_id
     )
@@ -233,6 +273,13 @@ async def quit_group_service(
 async def disband_group_service(
     db_session: asyncpg.Connection, current_user_id: int, req: GroupGenericRequest
 ) -> None:
+    # 1. 提前鉴权（通知必须在删除前发送）
+    await db_assert_can_disband_group(db_session, current_user_id, req.conversation_id)
+    # 2. 发送群内解散通知
+    await send_group_disbanded_notification(db_session, req.conversation_id, current_user_id)
+    # 3. 清理群相关邀请数据（可选）
+    await db_clean_group_invites(db_session, req.conversation_id)
+    # 4. 执行解散
     await db_disband_group(
         conn=db_session, user_id=current_user_id, conversation_id=req.conversation_id
     )
@@ -765,6 +812,83 @@ async def send_role_change_private_notification(
             "conversation_id": conversation_id,
             "operator_id": operator_id,
             "new_role": new_role,
+        }
+    )
+    await send_message_service(conn, -2, send_req)
+
+
+async def send_leave_group_notification(
+    conn: asyncpg.Connection,
+    user_id: int,
+    conversation_id: int,
+    is_kicked: bool,
+    operator_id: Optional[int] = None,
+) -> None:
+    """向退群/被踢用户发送私聊通知"""
+    # 获取群名称
+    group_name = await conn.fetchval(
+        "SELECT conversation_name FROM conversation WHERE conversation_id = $1",
+        conversation_id
+    )
+    group_display = group_name or f"群聊{conversation_id}"
+
+    if is_kicked and operator_id:
+        operator_name = await conn.fetchval(
+            QUERY_GET_USERNAME_BY_ID, operator_id
+        ) or str(operator_id)
+        tips = f"你已被 {operator_name} 移出群聊 {group_display}"
+        action = "kicked_from_group"
+        content = "[你已被移出群聊]"
+    else:
+        tips = f"你已退出群聊 {group_display}"
+        action = "left_group"
+        content = "[你已退出群聊]"
+
+    # 查找用户与系统助手的私聊
+    system_conv = await conn.fetchval(
+        QUERY_FIND_SYSTEM_PRIVATE_CONV, user_id  # 使用之前定义的常量
+    )
+    if not system_conv:
+        return
+
+    send_req = SendMessageRequest(
+        conversation_id=system_conv,
+        local_id=str(uuid.uuid4()),
+        message_content=content,
+        msg_type=MessageType.NOTIFY,
+        extra_data={
+            "action": action,
+            "tips": tips,
+            "conversation_id": conversation_id,
+            "group_name": group_display,
+        }
+    )
+    if operator_id:
+        send_req.extra_data["operator_id"] = operator_id
+
+    await send_message_service(conn, -2, send_req)
+
+
+async def send_group_disbanded_notification(
+    conn: asyncpg.Connection,
+    conversation_id: int,
+    operator_id: int,
+) -> None:
+    """在群内发送‘群聊已解散’的系统通知"""
+    operator_name = await conn.fetchval(
+        QUERY_GET_USERNAME_BY_ID, operator_id
+    ) or str(operator_id)
+
+    message_text = f"{operator_name} 已解散该群聊"
+
+    send_req = SendMessageRequest(
+        conversation_id=conversation_id,
+        local_id=str(uuid.uuid4()),
+        message_content=message_text,
+        msg_type=MessageType.NOTIFY,
+        extra_data={
+            "action": "group_disbanded",
+            "operator_id": operator_id,
         }
     )
     await send_message_service(conn, -2, send_req)

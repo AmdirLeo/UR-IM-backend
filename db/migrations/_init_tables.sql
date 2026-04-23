@@ -49,7 +49,8 @@ CREATE TABLE conversation (
     announcement TEXT,                     -- 群公告
     create_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     last_msg_id BIGINT,                    -- 全局id
-    last_msg_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    last_msg_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    is_disbanded BOOLEAN DEFAULT false
 );
 
 -- 5. 会话成员表
