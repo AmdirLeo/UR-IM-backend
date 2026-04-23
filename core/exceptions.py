@@ -65,6 +65,7 @@ class GroupErrors(Enum):
     CannotInviteSelf = "CannotInviteSelf"  # 不能邀请自己加群
     InvalidReviewAction = "InvalidReviewAction"
     InvalidRequest = "InvalidRequest"
+    NoAdminInGroup = "NoAdminInGroup"
 
 
 # ==========================================
@@ -84,13 +85,13 @@ class MessageException(Exception):
     def __init__(self, error_code: MessageErrors,
                  message: Optional[str] = None):
         self.error_code = error_code
-        self.message = message or error_code.value
+        self.message = message
 
 
 class GroupException(Exception):
     def __init__(self, error_code: GroupErrors, message: Optional[str] = None):
         self.error_code = error_code
-        self.message = message or error_code.value
+        self.message = message
 
 
 # ==========================================
@@ -187,6 +188,7 @@ def setup_exception_handlers(app):
             GroupErrors.CannotInviteSelf: (400, "不能邀请自己加入群聊"),
             GroupErrors.InvalidReviewAction: (400, "无效的审核操作"),
             GroupErrors.InvalidRequest: (400, "请求参数不合法"),
+            GroupErrors.NoAdminInGroup: (400, "该群聊没有管理员，无法执行此操作"),
         }
         status_code, detail = error_mapping.get(
             exc.error_code, (500, "群模块未知错误"))
