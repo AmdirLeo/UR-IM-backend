@@ -113,6 +113,87 @@ async def test_group_journey_and_edge_cases():
         assert data["name"] == "Test Avengers"
         assert "conversation_id" in data
         conversation_id = data["conversation_id"]
+
+        # ========== 新增：验证创建群聊后的系统通知 ==========
+        # 1. 验证群聊内收到系统消息：“xxx 创建了群聊”
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            owner_name = await conn.fetchval("SELECT username FROM user_account WHERE user_id = $1", user_owner_id)
+            group_creation_msg = await conn.fetchrow(
+                """
+                SELECT m.msg_body->>'content' as message_content,
+                       m.msg_body->'extra' as extra_data
+                FROM message m
+                WHERE m.msg_id = (
+                    SELECT cm.msg_id
+                    FROM conversation_message cm
+                    WHERE cm.conversation_id = $1
+                      AND cm.sender_id = -2
+                    ORDER BY cm.msg_id DESC
+                    LIMIT 1
+                )
+                AND m.msg_body->>'type' = 'notify'
+                """,
+                conversation_id
+            )
+            assert group_creation_msg is not None, "群聊中没有收到群创建系统通知"
+            msg_text = group_creation_msg["message_content"]
+            assert owner_name in msg_text, f"通知中未包含创建者 {owner_name}"
+            assert "创建了群聊" in msg_text
+            extra = group_creation_msg["extra_data"]
+            if extra:
+                assert extra.get("action") == "group_created"
+                assert extra.get("creator_id") == user_owner_id
+            break
+
+        # 2. 验证被邀请成员（admin 和 member）都收到私聊系统通知
+        invited_users = [user_admin_id, user_member_id]
+        for invited_id in invited_users:
+            async for proxy_conn in get_db_conn():
+                conn = cast(asyncpg.Connection, proxy_conn)
+                # 查找该成员与系统助手 -2 的私聊会话
+                system_conv = await conn.fetchval(
+                    """
+                    SELECT c.conversation_id
+                    FROM conversation c
+                    JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
+                    JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+                    WHERE c.type = 'private'
+                      AND cm1.member_user_id = $1
+                      AND cm2.member_user_id = -2
+                    """,
+                    invited_id
+                )
+                assert system_conv is not None, f"用户 {invited_id} 没有与系统助手的私聊会话"
+
+                invite_msg = await conn.fetchrow(
+                    """
+                    SELECT m.msg_body->>'content' as message_content,
+                           m.msg_body->'extra' as extra_data
+                    FROM message m
+                    WHERE m.msg_id = (
+                        SELECT cm.msg_id
+                        FROM conversation_message cm
+                        WHERE cm.conversation_id = $1
+                          AND cm.sender_id = -2
+                        ORDER BY cm.msg_id DESC
+                        LIMIT 1
+                    )
+                    AND m.msg_body->>'type' = 'notify'
+                    """,
+                    system_conv
+                )
+                assert invite_msg is not None, f"用户 {invited_id} 未收到被加入群聊的系统通知"
+                msg_text = invite_msg["message_content"]
+                assert "被邀请加入群聊" in msg_text or "将你加入了群聊" in msg_text
+                extra = invite_msg["extra_data"]
+                if extra:
+                    assert extra.get("action") == "added_to_group"
+                    assert extra.get("conversation_id") == conversation_id
+                    assert extra.get("creator_id") == user_owner_id
+                break
+        # ========== 新增验证结束 ==========
+
         # 测试 Validation 异常 (422)：没传必填参数 user_ids
         res_invalid = await client.post(
             "/api/group/create",

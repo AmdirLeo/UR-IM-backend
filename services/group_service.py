@@ -1,5 +1,6 @@
 import asyncpg
 import uuid
+from typing import List
 from datetime import datetime, timezone
 from schemas.group import (
     GroupCreateRequest,
@@ -26,8 +27,19 @@ from db.repositories.group_repo import (
     db_get_group_admins,
     db_get_pending_group_invites,
 )
-from schemas.message import SendMessageRequest
+from schemas.message import SendMessageRequest, MessageType
 from services.message_service import send_message_service
+
+QUERY_FIND_SYSTEM_PRIVATE_CONV = """
+    SELECT c.conversation_id
+    FROM conversation c
+    JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
+    JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+    WHERE c.type = 'private'
+      AND cm1.member_user_id = $1
+      AND cm2.member_user_id = -2
+"""
+QUERY_GET_USERNAME_BY_ID = "SELECT username FROM user_account WHERE user_id = $1"
 
 
 async def create_group_service(
@@ -43,6 +55,23 @@ async def create_group_service(
         avatar_url=req.avatar,
         group_name=req.name,
     )
+
+    # ========== 新增：发送通知 ==========
+    # 1. 通知所有被邀请成员（通过私聊助手）
+    await notify_members_added_to_group(
+        conn=db_session,
+        conversation_id=conv_id,
+        creator_id=current_user_id,
+        member_ids=req.user_ids,
+    )
+
+    # 2. 在群聊内发送创建通知
+    await send_group_creation_notification(
+        conn=db_session,
+        conversation_id=conv_id,
+        creator_id=current_user_id,
+    )
+
     return {"conversation_id": conv_id, "name": req.name, "avatar": req.avatar}
 
 
@@ -214,7 +243,7 @@ async def invite_to_group_service(
 
     # 2. 获取邀请人姓名（用于消息展示）
     inviter_name = await db_session.fetchval(
-        "SELECT username FROM user_account WHERE user_id = $1", current_user_id
+        QUERY_GET_USERNAME_BY_ID, current_user_id
     )
 
     # 3. 获取该群所有管理员和群主的 user_id（即有审核权限的人）
@@ -224,15 +253,10 @@ async def invite_to_group_service(
     for admin_id in admin_ids:
 
         # 4.1 查找该管理员与 -2 号助手的现有私聊会话
-        conv_id = await db_session.fetchval("""
-            SELECT c.conversation_id
-            FROM conversation c
-            JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
-            JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
-            WHERE c.type = 'private'
-              AND cm1.member_user_id = $1
-              AND cm2.member_user_id = -2
-        """, admin_id)
+        conv_id = await db_session.fetchval(
+            QUERY_FIND_SYSTEM_PRIVATE_CONV,
+            admin_id
+        )
 
         if conv_id is None:
             raise RuntimeError(
@@ -306,17 +330,6 @@ async def notify_other_admins_invite_approved(
     if not other_admins:
         return
 
-    # 3. 为每个管理员找到与系统助手(-2)的私聊会话
-    find_system_conv_query = """
-        SELECT c.conversation_id
-        FROM conversation c
-        JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
-        JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
-        WHERE c.type = 'private'
-          AND cm1.member_user_id = $1
-          AND cm2.member_user_id = -2
-    """
-
     tip_text = f"群聊 {conversation_id} 的入群申请已被其他管理员批准，请刷新待审批列表。"
     extra_action = "group_invite_approved_by_other"
 
@@ -324,7 +337,7 @@ async def notify_other_admins_invite_approved(
     for admin_record in other_admins:
         admin_id = admin_record["member_user_id"]
         # 获取该管理员与系统助手的私聊会话ID
-        system_conv_id = await conn.fetchval(find_system_conv_query, admin_id)
+        system_conv_id = await conn.fetchval(QUERY_FIND_SYSTEM_PRIVATE_CONV, admin_id)
         if not system_conv_id:
             continue   # 跳过没有会话的管理员
 
@@ -378,7 +391,7 @@ async def send_group_invite_approved_notification(
     # 2. 获取邀请人和被邀请人的显示名称（优先昵称，否则用 user_id）
     async def get_user_display_name(user_id: int) -> str:
         row = await conn.fetchrow(
-            "SELECT username FROM user_account WHERE user_id = $1",
+            QUERY_GET_USERNAME_BY_ID,
             user_id,
         )
         if row:
@@ -439,16 +452,7 @@ async def notify_invitee_approved(
     invitee_id = invite_info["invitee_id"]
 
     # 2. 查询被邀请人与系统助手(-2)的私聊会话ID
-    find_system_conv_query = """
-        SELECT c.conversation_id
-        FROM conversation c
-        JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
-        JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
-        WHERE c.type = 'private'
-          AND cm1.member_user_id = $1
-          AND cm2.member_user_id = -2
-    """
-    system_conv_id = await conn.fetchval(find_system_conv_query, invitee_id)
+    system_conv_id = await conn.fetchval(QUERY_FIND_SYSTEM_PRIVATE_CONV, invitee_id)
     if not system_conv_id:
         # 如果没有与系统助手的私聊会话，可以跳过（或尝试创建）
         return
@@ -530,3 +534,88 @@ async def get_pending_group_invites_as_cards(
             "create_time": int(inv["create_time"].timestamp())  # 转为 Unix 时间戳
         })
     return cards
+
+
+async def notify_members_added_to_group(
+    conn: asyncpg.Connection,
+    conversation_id: int,
+    creator_id: int,
+    member_ids: List[int],
+) -> None:
+    """
+    向所有被邀请加入群聊的成员发送私聊系统通知（通过群聊助手 -2 发送）。
+    """
+    # 1. 获取创建者名称
+    creator_name = await conn.fetchval(
+        QUERY_GET_USERNAME_BY_ID,
+        creator_id,
+    )
+    if not creator_name:
+        creator_name = str(creator_id)
+
+    # 2. 为每个被邀请成员查找与系统助手(-2)的私聊会话并发送通知
+
+    tip_text = f"{creator_name} 将你加入了群聊"
+    extra_data = {
+        "action": "added_to_group",
+        "conversation_id": conversation_id,
+        "creator_id": creator_id,
+        "tips": tip_text,
+    }
+
+    for member_id in member_ids:
+        if member_id == creator_id:
+            continue  # 创建者不需要自己通知自己
+
+        system_conv_id = await conn.fetchval(QUERY_FIND_SYSTEM_PRIVATE_CONV, member_id)
+        if not system_conv_id:
+            # 理论上每个用户都应该有与助手的私聊会话，没有则跳过
+            continue
+
+        send_req = SendMessageRequest(
+            conversation_id=system_conv_id,
+            local_id=str(uuid.uuid4()),
+            message_content="[你被邀请加入群聊]",
+            msg_type=MessageType.NOTIFY,
+            extra_data=extra_data,
+        )
+        try:
+            await send_message_service(conn, -2, send_req)
+        except Exception as e:
+            # 记录日志，不影响主流程
+            print(f"发送群创建通知给成员 {member_id} 失败: {e}")
+
+
+async def send_group_creation_notification(
+    conn: asyncpg.Connection,
+    conversation_id: int,
+    creator_id: int,
+) -> None:
+    """
+    在新建的群聊中发送系统通知：“xxx 创建了群聊”
+    """
+    # 1. 获取创建者名称
+    creator_name = await conn.fetchval(
+        QUERY_GET_USERNAME_BY_ID,
+        creator_id,
+    )
+    if not creator_name:
+        creator_name = str(creator_id)
+
+    message_text = f"{creator_name} 创建了群聊"
+
+    send_req = SendMessageRequest(
+        conversation_id=conversation_id,
+        local_id=str(uuid.uuid4()),
+        message_content=message_text,
+        msg_type=MessageType.NOTIFY,
+        extra_data={
+            "action": "group_created",
+            "creator_id": creator_id,
+        }
+    )
+
+    try:
+        await send_message_service(conn, -2, send_req)
+    except Exception as e:
+        print(f"发送群创建系统通知失败: {e}")
