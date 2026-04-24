@@ -1,6 +1,7 @@
 import pytest
 from httpx import AsyncClient, ASGITransport
 from typing import Dict
+import json
 
 # 引入项目核心依赖
 from main import app
@@ -11,6 +12,11 @@ from core.security import get_password_hash, create_access_token
 from db.database import get_db_conn
 from db.repositories.user_repo import db_create_user
 from unittest.mock import patch
+
+# ========== 新增：导入待测试的服务层、Schema 和异常 ==========
+from services.message_service import send_message_service, verify_conversation_membership
+from schemas.message import SendMessageRequest
+from core.exceptions import MessageException, MessageErrors
 
 # ==========================================
 # 1. Setup FastAPI App
@@ -209,3 +215,106 @@ async def test_message_journey_and_edge_cases(mock_ws_send):
         )
         history_b = res_b.json()["data"]
         assert any(m.get("msg_id") == msg_1_id for m in history_b)
+
+    # ==========================================
+    # 2. 【新增】服务层直调测试：鉴权 & 发送消息自动已读
+    # ==========================================
+
+    # 2.1 鉴权测试：用户不在会话中
+    async for conn in get_db_conn():
+        intruder_pw = get_password_hash("intruder_pass")
+        intruder_id = await db_create_user(conn, "intruder", intruder_pw, "intruder@test.com")
+        with pytest.raises(MessageException) as exc_info:
+            await verify_conversation_membership(conn, intruder_id, conv_id)
+        assert exc_info.value.error_code == MessageErrors.NotInConversation
+        break
+
+    # 2.2 鉴权测试：私聊对方单删（is_active = false）
+    async for conn in get_db_conn():
+        # 模拟 B 单删 A（将 B 的 is_active 置为 false）
+        await conn.execute(
+            "UPDATE conversation_member SET is_active=false "
+            "WHERE conversation_id=$1 AND member_user_id=$2",
+            conv_id, user_b_id
+        )
+        with pytest.raises(MessageException) as exc_info:
+            await verify_conversation_membership(conn, user_a_id, conv_id)
+        assert exc_info.value.error_code == MessageErrors.NotInConversation
+        # 恢复现场
+        await conn.execute(
+            "UPDATE conversation_member SET is_active=true "
+            "WHERE conversation_id=$1 AND member_user_id=$2",
+            conv_id, user_b_id
+        )
+        break
+
+    # 2.3 鉴权测试：上帝账号（负数 user_id）直接放行
+    async for conn in get_db_conn():
+        # 不应抛出任何异常
+        await verify_conversation_membership(conn, -1, conv_id)
+        break
+
+    # 2.4 集成测试：发送消息后自动调用 read_ack，未读数清零
+    async for conn in get_db_conn():
+        # 先记录当前 A 的未读数（至少应有一条来自 B 的引用消息）
+        cnt_before = await conn.fetchval(
+            "SELECT COUNT(*) FROM user_inbox WHERE user_id=$1 AND conversation_id=$2 AND is_read=false",
+            user_a_id, conv_id
+        )
+        assert cnt_before >= 1, f"期望至少有1条未读，实际{cnt_before}"
+
+        # 先为 A 生成一条来自 B 的未读消息
+        fake_body = json.dumps(
+            {"type": "text", "content": "from B", "extra": {}})
+        msg_from_b_id = await conn.fetchval(
+            "INSERT INTO message (msg_body) VALUES ($1::jsonb) RETURNING msg_id;",
+            fake_body
+        )
+
+        # ------ 修复：动态计算下一个 seq_id ------
+        max_seq = await conn.fetchval(
+            "SELECT COALESCE(MAX(seq_id), 0) FROM conversation_message WHERE conversation_id = $1",
+            conv_id
+        )
+        next_seq = max_seq + 1
+        # ----------------------------------------
+
+        await conn.execute(
+            "INSERT INTO conversation_message (conversation_id, msg_id, sender_id, seq_id) "
+            "VALUES ($1, $2, $3, $4)",
+            conv_id, msg_from_b_id, user_b_id, next_seq   # 注意这里用了变量
+        )
+
+        await conn.execute(
+            "INSERT INTO user_inbox (user_id, conversation_id, msg_id, is_read) "
+            "VALUES ($1, $2, $3, false)",
+            user_a_id, conv_id, msg_from_b_id
+        )
+
+        # 确认 A 当前有 1 条未读
+        cnt_after_insert = await conn.fetchval(
+            "SELECT COUNT(*) FROM user_inbox WHERE user_id=$1 AND conversation_id=$2 AND is_read=false",
+            user_a_id, conv_id
+        )
+        assert cnt_after_insert == cnt_before + \
+            1, f"未读数应增加1，现在是{cnt_after_insert}"
+
+        # A 发送一条消息 → 内部会调用 read_ack 清掉 A 在该会话的未读
+        send_req = SendMessageRequest(
+            conversation_id=conv_id,
+            msg_type="text",
+            message_content="A sends again",
+            extra_data={},
+            local_id="local_test_auto_read",
+            quote_message_id=None
+        )
+        result = await send_message_service(conn, user_a_id, send_req)
+        assert "msg_id" in result
+
+        # 再次检查未读数，应为 0
+        cnt_after = await conn.fetchval(
+            "SELECT COUNT(*) FROM user_inbox WHERE user_id=$1 AND conversation_id=$2 AND is_read=false",
+            user_a_id, conv_id
+        )
+        assert cnt_after == 0
+        break
