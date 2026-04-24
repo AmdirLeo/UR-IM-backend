@@ -12,7 +12,6 @@ class ConnectionManager:
         self.HEARTBEAT_TIMEOUT = 60
 
     async def connect(self, websocket: WebSocket, user_id: int):
-        await websocket.accept()
         # 如果该用户已经在其他设备登录，先踢掉旧的连接（单点登录逻辑）
         if user_id in self.active_connections:
             old_ws = self.active_connections[user_id]["ws"]
@@ -44,7 +43,7 @@ class ConnectionManager:
                 await ws.close()
             except Exception:
                 pass
-            del self.active_connections[user_id]
+            self.active_connections.pop(user_id, None)
 
             # 【预留给数据库同学 TODO】: 在这里异步更新数据库，将用户的在线状态设为 False，更新最后离线时间
 
