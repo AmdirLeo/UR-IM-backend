@@ -1,6 +1,6 @@
 import asyncpg
 from core.exceptions import FriendErrors, BusinessException, FriendException
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 # Constants for database operation status responses
 DELETE_ONE = "DELETE 1"
@@ -229,11 +229,28 @@ async def db_get_friend_list(conn: asyncpg.Connection, user_id: int) -> list[dic
     """
     query = """
         SELECT
-            u.user_id, u.username, u.avatar_url, f.create_time as be_friend_time,
-            COALESCE(array_agg(m.tag_name) FILTER (WHERE m.tag_name IS NOT NULL), '{}') as tags
+            u.user_id,
+            u.username,
+            u.avatar_url,
+            f.create_time as be_friend_time,
+            COALESCE(
+                array_agg(m.tag_name) FILTER (WHERE m.tag_name IS NOT NULL),
+                '{}'
+            ) As tags,
+            (
+                SELECT c.conversation_id
+                FROM conversation c
+                JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
+                JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+                WHERE c.type = 'private'
+                  AND cm1.member_user_id = $1
+                  AND cm2.member_user_id = u.user_id
+                LIMIT 1
+            ) AS conversation_id
         FROM friend_relationship f
         JOIN user_account u ON f.friend_user_id = u.user_id
-        LEFT JOIN friend_tag_mapping m ON f.user_id = m.user_id AND f.friend_user_id = m.friend_user_id
+        LEFT JOIN friend_tag_mapping m
+            ON f.user_id = m.user_id AND f.friend_user_id = m.friend_user_id
         WHERE f.user_id = $1
         GROUP BY u.user_id, u.username, u.avatar_url, f.create_time;
     """
@@ -404,3 +421,40 @@ async def db_get_pending_request_count(conn: asyncpg.Connection, user_id: int) -
     count = await conn.fetchval(query, user_id)
 
     return count or 0
+
+
+async def db_get_pending_friend_requests(
+    conn: asyncpg.Connection,
+    user_id: int
+) -> List[Dict[str, Any]]:
+    """
+    从数据库查询指定用户收到的所有待处理好友申请。
+    返回包含申请详情和发送者信息的列表。
+    """
+    rows = await conn.fetch("""
+        SELECT
+            fr.request_id,
+            fr.sender_id,
+            u.username AS sender_name,
+            u.avatar_url AS sender_avatar,
+            fr.message,
+            fr.create_time
+        FROM friend_request fr
+        JOIN user_account u ON fr.sender_id = u.user_id
+        WHERE fr.receiver_id = $1
+          AND fr.status = 'pending'
+        ORDER BY fr.create_time DESC
+    """, user_id)
+
+    # 将 asyncpg.Record 转换为普通字典列表
+    result = []
+    for row in rows:
+        result.append({
+            "request_id": row["request_id"],
+            "sender_id": row["sender_id"],
+            "sender_name": row["sender_name"],
+            "sender_avatar": row["sender_avatar"],
+            "message": row["message"],
+            "create_time": row["create_time"],  # 保留 datetime 对象，服务层再转换
+        })
+    return result

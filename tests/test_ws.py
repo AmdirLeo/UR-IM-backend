@@ -28,11 +28,15 @@ def get_ws_url(user_id: int) -> str:
 
 def test_websocket_auth_failure():
     """测试安全机制：携带无效 Token 应该被服务器拒绝连接"""
-    with pytest.raises(WebSocketDisconnect) as exc:
-        with client.websocket_connect("/websocket/ws?token=invalid_fake_token"):
-            # 仅需建立连接触发鉴权失败，不需要发送或接收消息
-            pass
-    assert exc.value.code == 1008
+    with client.websocket_connect("/websocket/ws?token=invalid_fake_token") as ws:
+        # 接收服务器返回的错误提醒
+        error_msg = ws.receive_json()
+        assert error_msg["type"] == "error"
+        assert "鉴权失败" in error_msg["message"]
+        # 随后服务器会主动关闭连接，下一次接收应抛出 WebSocketDisconnect
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_json()
+        assert exc.value.code == 1008
 
 
 def test_websocket_connect_and_broadcast():
@@ -188,11 +192,13 @@ def test_websocket_missing_sub_in_token():
     malformed_token = jwt.encode(
         payload_without_sub, settings.JWT_SECRET_KEY, algorithm="HS256")
 
-    with pytest.raises(WebSocketDisconnect) as exc:
-        with client.websocket_connect(f"/websocket/ws?token={malformed_token}"):
-            # 预期的连接由于 Token 载荷缺失 sub 字段应被服务器拒绝
-            pass
-    assert exc.value.code == 1008
+    with client.websocket_connect(f"/websocket/ws?token={malformed_token}") as ws:
+        error_msg = ws.receive_json()
+        assert error_msg["type"] == "error"
+        # 连接随后被关闭
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_json()
+        assert exc.value.code == 1008
 
 
 def test_websocket_explicit_client_disconnect():

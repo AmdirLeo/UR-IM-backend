@@ -22,7 +22,6 @@ async def authenticate_websocket(websocket: WebSocket, token: str) -> Optional[i
     except (jwt.InvalidTokenError, ValueError):
         pass
 
-    await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
     return None
 
 
@@ -62,9 +61,13 @@ async def websocket_endpoint(
     # 要求前端通过 ?token=xxx 传入 JWT
     token: str = Query(..., description="JWT Token"),
 ):
+    await websocket.accept()
     # 1. 鉴权阶段
     user_id = await authenticate_websocket(websocket, token)
     if user_id is None:
+        # 鉴权失败：告知客户端后关闭
+        await websocket.send_json({"type": "error", "message": "鉴权失败，无效的 Token"})
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
     # 2. 鉴权通过，正式建立长连接

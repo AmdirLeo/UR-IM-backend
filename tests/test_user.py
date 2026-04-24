@@ -67,6 +67,11 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
             ON CONFLICT (user_id) DO NOTHING;
         """
         )
+        await conn.execute("""
+                INSERT INTO user_account (user_id, username, password, email)
+                VALUES (-2, '群聊通知助手', 'system_fake_password', 'system_group@ur-im.com')
+                ON CONFLICT (user_id) DO NOTHING;
+            """)
         break
 
     # 核心：使用 AsyncClient 替代 TestClient

@@ -27,6 +27,7 @@ from services.group_service import (
     post_group_announcement_service,
     invite_to_group_service,
     review_group_invite_service,
+    get_pending_group_invites_as_cards,
 )
 
 
@@ -138,7 +139,7 @@ async def invite_to_group(
     return GroupGenericResponse(data=data)
 
 
-@router.put(
+@router.post(
     "/invite/review", summary="审核邀请", response_model=GroupGenericResponse[None]
 )
 async def review_group_invite(
@@ -148,3 +149,19 @@ async def review_group_invite(
 ):
     await review_group_invite_service(db_session, current_user_id, req)
     return GroupGenericResponse(data=None)
+
+
+@router.get("/invites/pending")
+async def list_pending_group_invites(
+    current_user_id: CurrentUserId,
+    db_session: DBConnection,
+):
+    """
+    获取当前用户未处理的入群申请列表（卡片格式）
+    """
+    cards = await get_pending_group_invites_as_cards(db_session, current_user_id)
+    return {
+        "code": 200,
+        "data": cards,
+        "total": len(cards)
+    }

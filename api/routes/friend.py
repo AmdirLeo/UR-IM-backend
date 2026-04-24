@@ -258,3 +258,19 @@ async def get_tag_list(
     # 封装成你定义好的 TagListResponse 格式返回
     # 因为继承了 BaseResponse，code 和 msg 也可以省略不写（如果模型里有默认值的话）
     return TagListResponse(code=200, msg="获取标签列表成功", data=tags)
+
+
+@router.get("/requests/pending")
+async def list_pending_friend_requests(
+    current_user_id: CurrentUserId,
+    db_session: DBSession,
+):
+    """
+    获取当前用户未处理的好友申请列表（卡片格式）
+    """
+    cards = await friend_service.get_pending_friend_requests_as_cards(db_session, current_user_id)
+    return {
+        "code": 200,
+        "data": cards,
+        "total": len(cards)
+    }

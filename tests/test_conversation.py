@@ -35,6 +35,7 @@ async def test_conversation_journey_and_edge_cases():
     # 0. 准备测试数据：创建 1 个用户和 1 个群聊，并造一条假消息用于已读测试
     # ==========================================
     user_id = None
+    friend_id = None   # 新增好友用户
     conv_id = None
     msg_id = None
 
@@ -44,15 +45,20 @@ async def test_conversation_journey_and_edge_cases():
         # type: ignore
         user_id = await db_create_user(conn, "conv_tester", hashed_pw, "conv@test.com")
 
-        # 2. 强行在底层创建一个会话，并把该用户拉入会话
+        # 2. 创建好友用户（对方）
+        friend_id = await db_create_user(conn, "conv_friend", hashed_pw, "friend@test.com")
+
+        # 3. 强行在底层创建一个会话，并把该用户拉入会话
         conv_id = await conn.fetchval("INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id;")
+
+        # 4. 将两个用户都加入会话
         await conn.execute(
-            "INSERT INTO conversation_member (conversation_id, member_user_id, read_index) VALUES ($1, $2, 1);",
-            conv_id,
-            user_id,
+            "INSERT INTO conversation_member (conversation_id, member_user_id, read_index) "
+            "VALUES ($1, $2, 1), ($1, $3, 1);",
+            conv_id, user_id, friend_id
         )
 
-        # 3. 强行造一条消息，用于后面的 read_ack (已读上报) 测试
+        # 5. 强行造一条消息，用于后面的 read_ack (已读上报) 测试
         fake_msg_body = {
             # 对应 msg_type (注意你的 DB 查询用的是 'type')
             "type": "text",
@@ -168,6 +174,11 @@ async def test_conversation_journey_and_edge_cases():
 
         assert target_conv["is_pinned"] is True   # Step 2 中我们开启了置顶
         assert target_conv["is_muted"] is False   # Step 1 中我们最后关闭了免打扰
+
+        # ----- 新增 target_id 字段验证 -----
+        assert "target_id" in target_conv, "私聊会话应包含 target_id 字段"
+        assert target_conv["target_id"] == friend_id, f"target_id 应为对方用户ID {friend_id}"
+        assert isinstance(target_conv["target_id"], int), "target_id 应为整数类型"
 
         # ---------------------------------------------------------
         # 5. 消息已读上报 (Read Acknowledgement)

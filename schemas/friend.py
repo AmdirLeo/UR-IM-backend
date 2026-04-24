@@ -42,6 +42,7 @@ class FriendInfo(BaseModel):
         default_factory=list,
         description="好友分组标签列表（无标签时为空数组）")
     be_friend_time: datetime = Field(..., description="成为好友的时间")
+    conversation_id: int = Field(None, description="与该好友的私聊会话ID（若不存在则为null）")
 
 
 class FriendListResponse(BaseResponse):

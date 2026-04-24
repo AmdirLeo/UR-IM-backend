@@ -27,11 +27,11 @@ class ConversationSyncItem(BaseModel):
     )
     unread_count: int = Field(..., ge=0, description="该会话当前的未读消息总数")
     last_ack_msg_id: Optional[int] = Field(
-        None, gt=0, description="当前用户在该会话中最后一次确认（已读）的消息 ID")
+        None, description="当前用户在该会话中最后一次确认（已读）的消息 ID")
     last_msg_id: Optional[int] = Field(
         None, gt=0, description="该会话中最新一条消息的全局 ID")
-    last_msg_type: MessageType = Field(
-        default=MessageType.TEXT, description="最新一条消息的类型")
+    last_msg_type: Optional[MessageType] = Field(
+        None, description="最新一条消息的类型（无消息时为 None）")
     last_msg_sender_id: Optional[int] = Field(
         None, description="最新一条消息的发送者 ID")
     last_msg_content: Optional[str] = Field(None, description="最新一条消息的内容")
@@ -39,6 +39,8 @@ class ConversationSyncItem(BaseModel):
         None, description="最新一条消息的服务端时间")
     is_pinned: bool = Field(default=False, description="当前用户是否将该会话置顶")
     is_muted: bool = Field(default=False, description="当前用户是否对该会话开启免打扰")
+    target_id: Optional[int] = Field(
+        None, description="私聊对方的用户ID（仅当 type='private' 时有值）")
 
 
 class SyncAggregatedResponse(BaseModel):

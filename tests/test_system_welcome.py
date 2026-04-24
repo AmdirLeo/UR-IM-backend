@@ -29,6 +29,11 @@ async def test_registration_triggers_system_message(mock_ws_send, mock_generate_
             VALUES (-1, '系统通知助手', 'system_fake_password', 'system@ur-im.com')
             ON CONFLICT (user_id) DO NOTHING;
         """)
+        await conn.execute("""
+            INSERT INTO user_account (user_id, username, password, email)
+            VALUES (-2, '群聊通知助手', 'system_fake_password', 'system_group@ur-im.com')
+            ON CONFLICT (user_id) DO NOTHING;
+        """)
         break  # 拿一次连接执行完就退出
 
     # ==========================================

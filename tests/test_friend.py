@@ -56,6 +56,26 @@ async def test_friend_journey_and_edge_cases():
         user_b_id = await db_create_user(conn, "friend_user_B", hashed_pw, "friend_b@test.com")
         # type: ignore
         user_c_id = await db_create_user(conn, "friend_user_C", hashed_pw, "friend_c@test.com")
+
+        for uid in (user_a_id, user_b_id, user_c_id):
+            sys_conv_id = await conn.fetchval("""
+                SELECT c.conversation_id
+                FROM conversation c
+                JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
+                JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+                WHERE c.type = 'private'
+                AND cm1.member_user_id = $1
+                AND cm2.member_user_id = -1
+            """, uid)
+            if sys_conv_id is None:
+                sys_conv_id = await conn.fetchval(
+                    "INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id"
+                )
+                await conn.execute(
+                    "INSERT INTO conversation_member (conversation_id, member_user_id) VALUES ($1, $2), ($1, -1)",
+                    sys_conv_id, uid
+                )
+
         break
 
     token_a = create_access_token(data={"sub": str(user_a_id)})
@@ -139,6 +159,12 @@ async def test_friend_journey_and_edge_cases():
         assert res.status_code == 200
         friends = res.json()["data"]
         assert any(f["user_id"] == user_b_id for f in friends)
+
+        for friend in friends:
+            assert "conversation_id" in friend
+            conv_id = friend["conversation_id"]
+            # conversation_id 可以是整数或 None
+            assert isinstance(conv_id, int)  # 必定为 int，不会是 None
 
         # ---------------------------------------------------------
         # 5. 好友分组标签流转 (Tag Journey) - 多标签版
@@ -329,10 +355,131 @@ async def test_friend_journey_and_edge_cases():
         # 💡 核心断言：这里的 conv_id 是你在前面步骤 5.5 获取的那个旧 ID
         assert new_conv_id == conv_id, "底层架构 Bug：重新加好友产生了新的会话，没有复用旧的！"
 
+# ==========================================
+# 测试用例 1.5：获取待处理好友申请列表（卡片格式）
+# ==========================================
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_get_pending_friend_requests_success():
+    """
+    测试获取待处理好友申请列表接口
+    - 用户 B 应该能查看到 A 和 C 发送的 pending 申请
+    - 返回格式为卡片数组，包含必要字段
+    - 验证隔离性：不会返回发给其他人的申请
+    """
+    user_a_id = None
+    user_b_id = None
+    user_c_id = None
+
+    # 1. 准备测试数据
+    async for conn in get_db_conn():
+        # 确保系统助手存在（如果之前的测试没做）
+        await conn.execute("""
+            INSERT INTO user_account (user_id, username, password, email)
+            VALUES ($1, '系统助手', 'nopass', 'sys_pending@ur-im.com')
+            ON CONFLICT (user_id) DO NOTHING
+        """, SYSTEM_ID)
+
+        hashed_pw = get_password_hash("test123")
+        user_a_id = await conn.fetchval(
+            "INSERT INTO user_account (username, password, email) VALUES ($1, $2, $3) RETURNING user_id",
+            "PendingUserA", hashed_pw, "pending_a@test.com"
+        )
+        user_b_id = await conn.fetchval(
+            "INSERT INTO user_account (username, password, email) VALUES ($1, $2, $3) RETURNING user_id",
+            "PendingUserB", hashed_pw, "pending_b@test.com"
+        )
+        user_c_id = await conn.fetchval(
+            "INSERT INTO user_account (username, password, email) VALUES ($1, $2, $3) RETURNING user_id",
+            "PendingUserC", hashed_pw, "pending_c@test.com"
+        )
+
+        # 创建两条发给 B 的申请
+        await conn.execute("""
+            INSERT INTO friend_request (sender_id, receiver_id, message, status)
+            VALUES ($1, $2, 'Hello from A', 'pending')
+        """, user_a_id, user_b_id)
+        await conn.execute("""
+            INSERT INTO friend_request (sender_id, receiver_id, message, status)
+            VALUES ($1, $2, 'Hello from C', 'pending')
+        """, user_c_id, user_b_id)
+
+        # 创建一条发给 C 的申请（用于验证隔离性）
+        await conn.execute("""
+            INSERT INTO friend_request (sender_id, receiver_id, message, status)
+            VALUES ($1, $2, 'A wants C', 'pending')
+        """, user_a_id, user_c_id)
+
+        break
+
+    # 2. B 登录
+    token_b = create_access_token(data={"sub": str(user_b_id)})
+    headers_b = get_auth_headers(token_b)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:
+        # 3. 调用待处理申请接口
+        res = await client.get("/api/friend/requests/pending", headers=headers_b)
+        assert res.status_code == 200
+
+        json_data = res.json()
+        assert json_data["code"] == 200
+        data = json_data["data"]
+        total = json_data["total"]
+
+        # 断言返回了两条申请
+        assert total == 2
+        assert isinstance(data, list)
+        assert len(data) == 2
+
+        # 4. 验证卡片格式
+        for card in data:
+            assert card["card_type"] == "friend_apply"
+            assert "request_id" in card
+            assert "sender_id" in card
+            assert "sender_name" in card
+            assert "sender_avatar" in card
+            assert "reason" in card
+            assert card["status"] == "pending"
+            assert "create_time" in card
+            assert card["sender_id"] in (user_a_id, user_c_id)
+
+        # 5. 验证发送者姓名正确
+        sender_names = [card["sender_name"] for card in data]
+        assert "PendingUserA" in sender_names
+        assert "PendingUserC" in sender_names
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_get_pending_friend_requests_empty():
+    """
+    测试无待处理申请时返回空列表
+    """
+    user_id = None
+    async for conn in get_db_conn():
+        hashed_pw = get_password_hash("test123")
+        user_id = await conn.fetchval(
+            "INSERT INTO user_account (username, password, email) VALUES ($1, $2, $3) RETURNING user_id",
+            "EmptyPendingUser", hashed_pw, "empty_pending@test.com"
+        )
+        break
+
+    token = create_access_token(data={"sub": str(user_id)})
+    headers = get_auth_headers(token)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:
+        res = await client.get("/api/friend/requests/pending", headers=headers)
+        assert res.status_code == 200
+        json_data = res.json()
+        assert json_data["code"] == 200
+        assert json_data["data"] == []
+        assert json_data["total"] == 0
 
 # ==========================================
 # 测试用例 2：A 申请加好友，B 收到系统助手发来的 JSONB 多态卡片
 # ==========================================
+
+
 @pytest.mark.asyncio(loop_scope="session")
 @patch("core.ws_manager.manager.send_personal_message")
 async def test_friend_request_triggers_system_card(mock_ws_send):
@@ -436,8 +583,28 @@ async def test_friend_accept_triggers_system_notification(mock_ws_send):
                 SYSTEM_ID
             )
 
+            # 为 user_a 和 user_b 创建与 -1 的系统私聊会话
+            for uid in (user_a_id, user_b_id):
+                sys_conv = await conn.fetchval("""
+                    SELECT c.conversation_id
+                    FROM conversation c
+                    JOIN conversation_member cm1 ON c.conversation_id = cm1.conversation_id
+                    JOIN conversation_member cm2 ON c.conversation_id = cm2.conversation_id
+                    WHERE c.type = 'private'
+                      AND cm1.member_user_id = $1
+                      AND cm2.member_user_id = -1
+                """, uid)
+                if sys_conv is None:
+                    sys_conv = await conn.fetchval(
+                        "INSERT INTO conversation (type) VALUES ('private') RETURNING conversation_id"
+                    )
+                    await conn.execute(
+                        "INSERT INTO conversation_member (conversation_id, member_user_id) VALUES ($1, $2), ($1, -1)",
+                        sys_conv, uid
+                    )
+
             req_id = await conn.fetchval(
-                "INSERT INTO friend_request (sender_id, receiver_id, status) "
+                "INSERT INTO    friend_request (sender_id, receiver_id, status) "
                 "VALUES ($1, $2, 'pending') RETURNING request_id",
                 user_a_id, user_b_id
             )
@@ -467,14 +634,31 @@ async def test_friend_accept_triggers_system_notification(mock_ws_send):
 
             if target_id == user_a_id and ws_payload["type"] == "NEW_CHAT_MESSAGE":
                 msg_data = ws_payload["data"]
-                if msg_data.get("conversation_id") == http_conv_id:
+                extra = msg_data.get("extra", {})
+                if extra.get("action") == "friend_accept" and extra.get("conversation_id") == http_conv_id:
                     # 💡 新架构断言：检查指令类型和内容
-                    assert msg_data["sender_id"] == SYSTEM_ID, "发件人必须是系统上帝账号"
+                    assert msg_data["sender_id"] == SYSTEM_ID
                     assert msg_data["msg_type"] == "notify"
-                    extra = msg_data.get("extra", {})
-                    assert extra.get("action") == "friend_accept"
-
                     a_received_notification = True
                     break
 
-        assert a_received_notification, "严重错误：User A 未能在【私聊会话】中收到系统同意通知！"
+        assert a_received_notification, "User A 未收到系统同意通知"
+
+        # ==========================================
+        # 👇 新增：验证 B 发送的欢迎消息
+        # ==========================================
+        a_received_welcome = False
+        for call in mock_ws_send.call_args_list:
+            ws_payload, target_id = call[0][0], call[0][1]
+
+            if target_id == user_a_id and ws_payload["type"] == "NEW_CHAT_MESSAGE":
+                msg_data = ws_payload["data"]
+                # 欢迎消息的特征：会话 ID 为新好友会话，发送者为 B，类型为 text，内容为欢迎语
+                if (msg_data.get("conversation_id") == http_conv_id and
+                    msg_data.get("sender_id") == user_b_id and
+                    msg_data.get("msg_type") == "text" and
+                        msg_data.get("content") == "我们已经是好友啦，一起聊天吧！"):
+                    a_received_welcome = True
+                    break
+
+        assert a_received_welcome, "User A 未收到来自 B 的欢迎消息"
