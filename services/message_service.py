@@ -180,13 +180,15 @@ async def search_message_service(
 
     result = []
     for msg in history:
+        body = msg.get("msg_body", {})
+        content_text = body.get("content", "") if isinstance(body, dict) else str(body)
         result.append(
             {
                 "user_id": msg.get("sender_id", 0),
                 "conversation_id": req.conversation_id,
                 "msg_id": msg.get("msg_id", 0),
-                "msg": msg.get("msg_content", ""),
-                "time": msg.get("create_time", datetime.now(timezone.utc)),
+                "msg": content_text,
+                "time": msg.get("created_at", datetime.now(timezone.utc)),
             }
         )
 
