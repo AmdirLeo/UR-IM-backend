@@ -41,6 +41,12 @@ class ConversationSyncItem(BaseModel):
     is_muted: bool = Field(default=False, description="当前用户是否对该会话开启免打扰")
     target_id: Optional[int] = Field(
         None, description="私聊对方的用户ID（仅当 type='private' 时有值）")
+    name: Optional[str] = Field(
+        None, description="群聊名称或自定义会话名称"
+    )
+    avatar_url: Optional[str] = Field(
+        None, description="群聊头像或自定义会话头像"
+    )
 
 
 class SyncAggregatedResponse(BaseModel):
