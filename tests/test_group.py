@@ -144,8 +144,11 @@ async def test_group_journey_and_edge_cases():
             msg_text = group_creation_msg["message_content"]
             assert owner_name in msg_text, f"通知中未包含创建者 {owner_name}"
             assert "创建了群聊" in msg_text
-            extra = group_creation_msg["extra_data"]
-            if extra:
+
+            extra_raw = group_creation_msg["extra_data"]
+            if extra_raw:
+                # 将字符串解析为 Python 字典（兼容可能已经被 asyncpg 解析的情况）
+                extra = json.loads(extra_raw) if isinstance(extra_raw, str) else extra_raw
                 assert extra.get("action") == "group_created"
                 assert extra.get("creator_id") == user_owner_id
             break
@@ -190,8 +193,9 @@ async def test_group_journey_and_edge_cases():
                 assert invite_msg is not None, f"用户 {invited_id} 未收到被加入群聊的系统通知"
                 msg_text = invite_msg["message_content"]
                 assert "被邀请加入群聊" in msg_text or "将你加入了群聊" in msg_text
-                extra = invite_msg["extra_data"]
-                if extra:
+                extra_raw = invite_msg["extra_data"]
+                if extra_raw:
+                    extra = json.loads(extra_raw) if isinstance(extra_raw, str) else extra_raw
                     assert extra.get("action") == "added_to_group"
                     assert extra.get("conversation_id") == conversation_id
                     assert extra.get("creator_id") == user_owner_id
@@ -312,14 +316,14 @@ async def test_group_journey_and_edge_cases():
             role_change_msg = await conn.fetchrow(
                 """
                 SELECT
-                    (m.msg_body->>'content')::jsonb->>'content' as message_content,
-                    (m.msg_body->>'content')::jsonb->>'extra' as extra_data
+                    m.msg_body->>'content' as message_content,
+                    m.msg_body->>'extra' as extra_data
                 FROM message m
                 JOIN conversation_message cm ON m.msg_id = cm.msg_id
                 WHERE cm.conversation_id = $1
                 AND cm.sender_id = -2
                 AND m.msg_body->>'type' = 'notify'
-                AND (m.msg_body->>'content')::jsonb->>'extra' LIKE '%group_admin_set%'
+                AND m.msg_body->>'extra' LIKE '%group_admin_set%'
                 ORDER BY cm.msg_id DESC
                 LIMIT 1
                 """,
@@ -356,8 +360,8 @@ async def test_group_journey_and_edge_cases():
             private_msg = await conn.fetchrow(
                 """
                 SELECT
-                    (m.msg_body->>'content')::jsonb->>'content' as message_content,
-                    (m.msg_body->>'content')::jsonb->>'extra' as extra_data
+                    m.msg_body->>'content' as message_content,
+                    m.msg_body->>'extra' as extra_data
                 FROM message m
                 WHERE m.msg_id = (
                     SELECT cm.msg_id
@@ -368,7 +372,7 @@ async def test_group_journey_and_edge_cases():
                     LIMIT 1
                 )
                 AND m.msg_body->>'type' = 'notify'
-                AND (m.msg_body->>'content')::jsonb->>'extra' LIKE '%group_admin_set_to_you%'
+                AND m.msg_body->>'extra' LIKE '%group_admin_set_to_you%'
                 """,
                 system_conv
             )
@@ -424,8 +428,8 @@ async def test_group_journey_and_edge_cases():
             revoke_msg = await conn.fetchrow(
                 """
                 SELECT
-                    (m.msg_body->>'content')::jsonb->>'content' as message_content,
-                    (m.msg_body->>'content')::jsonb->>'extra' as extra_data
+                    m.msg_body->>'content' as message_content,
+                    m.msg_body->>'extra' as extra_data
                 FROM message m
                 WHERE m.msg_id = (
                     SELECT cm.msg_id
@@ -436,7 +440,7 @@ async def test_group_journey_and_edge_cases():
                     LIMIT 1
                 )
                 AND m.msg_body->>'type' = 'notify'
-                AND (m.msg_body->>'content')::jsonb->>'extra' LIKE '%group_admin_unset%'
+                AND m.msg_body->>'extra' LIKE '%group_admin_unset%'
                 """,
                 conversation_id
             )
@@ -471,8 +475,8 @@ async def test_group_journey_and_edge_cases():
             private_revoke_msg = await conn.fetchrow(
                 """
                 SELECT
-                    (m.msg_body->>'content')::jsonb->>'content' as message_content,
-                    (m.msg_body->>'content')::jsonb->>'extra' as extra_data
+                    m.msg_body->>'content' as message_content,
+                    m.msg_body->>'extra' as extra_data
                 FROM message m
                 WHERE m.msg_id = (
                     SELECT cm.msg_id
@@ -483,7 +487,7 @@ async def test_group_journey_and_edge_cases():
                     LIMIT 1
                 )
                 AND m.msg_body->>'type' = 'notify'
-                AND (m.msg_body->>'content')::jsonb->>'extra' LIKE '%group_admin_unset_from_you%'
+                AND m.msg_body->>'extra' LIKE '%group_admin_unset_from_you%'
                 """,
                 system_conv
             )
@@ -723,8 +727,9 @@ async def test_group_journey_and_edge_cases():
             assert inviter_name in msg_text, f"通知中未包含邀请人 {inviter_name}"
             assert invitee_name in msg_text, f"通知中未包含被邀请人 {invitee_name}"
             assert "拉入了群聊" in msg_text
-            extra = group_msg["extra_data"]
-            if extra:
+            extra_raw = group_msg["extra_data"]
+            if extra_raw:
+                extra = json.loads(extra_raw) if isinstance(extra_raw, str) else extra_raw
                 assert extra.get("action") == "group_member_invited"
             break
 
@@ -764,10 +769,10 @@ async def test_group_journey_and_edge_cases():
             assert invitee_msg is not None, "被邀请人未收到系统私聊通知"
             msg_text = invitee_msg["message_content"]
             assert "入群申请已通过" in msg_text or "批准" in msg_text
-            extra = invitee_msg["extra_data"]
-            if extra:
-                assert extra.get(
-                    "action") == "group_invite_approved_for_invitee"
+            extra_raw = invitee_msg["extra_data"]
+            if extra_raw:
+                extra = json.loads(extra_raw) if isinstance(extra_raw, str) else extra_raw
+                assert extra.get("action") == "group_invite_approved_for_invitee"
                 assert extra.get("conversation_id") == conversation_id
             break
 
@@ -820,8 +825,8 @@ async def test_group_journey_and_edge_cases():
             kick_msg = await conn.fetchrow(
                 """
                 SELECT
-                    (m.msg_body->>'content')::jsonb->>'content' as message_content,
-                    (m.msg_body->>'content')::jsonb->>'extra' as extra_data
+                    m.msg_body->>'content' as message_content,
+                    m.msg_body->>'extra' as extra_data
                 FROM message m
                 WHERE m.msg_id = (
                     SELECT cm.msg_id
@@ -832,7 +837,7 @@ async def test_group_journey_and_edge_cases():
                     LIMIT 1
                 )
                 AND m.msg_body->>'type' = 'notify'
-                AND (m.msg_body->>'content')::jsonb->>'extra' LIKE '%kicked_from_group%'
+                AND m.msg_body->>'extra' LIKE '%kicked_from_group%'
                 """,
                 system_conv
             )
@@ -884,8 +889,8 @@ async def test_group_journey_and_edge_cases():
             quit_msg = await conn.fetchrow(
                 """
                 SELECT
-                    (m.msg_body->>'content')::jsonb->>'content' as message_content,
-                    (m.msg_body->>'content')::jsonb->>'extra' as extra_data
+                    m.msg_body->>'content' as message_content,
+                    m.msg_body->>'extra' as extra_data
                 FROM message m
                 WHERE m.msg_id = (
                     SELECT cm.msg_id
@@ -896,7 +901,7 @@ async def test_group_journey_and_edge_cases():
                     LIMIT 1
                 )
                 AND m.msg_body->>'type' = 'notify'
-                AND (m.msg_body->>'content')::jsonb->>'extra' LIKE '%left_group%'
+                AND m.msg_body->>'extra' LIKE '%left_group%'
                 """,
                 system_conv
             )
@@ -941,14 +946,14 @@ async def test_group_journey_and_edge_cases():
             disband_msg = await conn.fetchrow(
                 """
                 SELECT
-                    (m.msg_body->>'content')::jsonb->>'content' as message_content,
-                    (m.msg_body->>'content')::jsonb->>'extra' as extra_data
+                    m.msg_body->>'content' as message_content,
+                    m.msg_body->>'extra' as extra_data
                 FROM message m
                 JOIN conversation_message cm ON m.msg_id = cm.msg_id
                 WHERE cm.conversation_id = $1
                   AND cm.sender_id = -2
                   AND m.msg_body->>'type' = 'notify'
-                  AND (m.msg_body->>'content')::jsonb->>'extra' LIKE '%group_disbanded%'
+                  AND m.msg_body->>'extra' LIKE '%group_disbanded%'
                 ORDER BY cm.msg_id DESC
                 LIMIT 1
                 """,
