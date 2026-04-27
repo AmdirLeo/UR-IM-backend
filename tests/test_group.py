@@ -144,7 +144,7 @@ async def test_group_journey_and_edge_cases():
             msg_text = group_creation_msg["message_content"]
             assert owner_name in msg_text, f"通知中未包含创建者 {owner_name}"
             assert "创建了群聊" in msg_text
-                
+
             extra_raw = group_creation_msg["extra_data"]
             if extra_raw:
                 # 将字符串解析为 Python 字典（兼容可能已经被 asyncpg 解析的情况）
