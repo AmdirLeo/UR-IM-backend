@@ -13,7 +13,8 @@ QUERY_GET_NEXT_SEQ = "SELECT COALESCE(MAX(seq_id), 0) + 1 FROM conversation_mess
 
 QUERY_INSERT_CONV_MSG = (
     "INSERT INTO conversation_message (conversation_id, msg_id, sender_id, seq_id) "
-    "VALUES ($1, $2, $3, $4);")
+    "VALUES ($1, $2, $3, $4);"
+)
 
 QUERY_UPDATE_CONV_SORT = """
     UPDATE conversation
@@ -48,14 +49,13 @@ async def db_send_message(
 
     # 开启强事务，保证发消息的一致性
     async with conn.transaction():
-        msg_body = {"type": msg_type, "content": msg_content}
-        # 2. 插入消息本体
         insert_msg_query = """
             INSERT INTO message (msg_body, quote_id)
             VALUES ($1::jsonb, $2)
             RETURNING msg_id;
         """
-        msg_id = await conn.fetchval(insert_msg_query, json.dumps(msg_body), quote_id)
+        # 注意这里的 $1 直接接收 msg_content
+        msg_id = await conn.fetchval(insert_msg_query, msg_content, quote_id)
 
         if not msg_id:
             raise MessageException(MessageErrors.MessageNotFound)
@@ -106,9 +106,7 @@ async def db_send_message(
     return {"msg_id": msg_id, "seq_id": next_seq_id}
 
 
-async def db_get_all_unread_counts(
-        conn: asyncpg.Connection,
-        user_id: int) -> dict:
+async def db_get_all_unread_counts(conn: asyncpg.Connection, user_id: int) -> dict:
     """
     获取当前用户所有会话的未读消息数 (对应 GET /api/conversation/unread)
     返回格式: {conversation_id: unread_count, ...} 比如 {101: 5, 102: 12}
@@ -261,8 +259,7 @@ async def db_get_message_history(
     else:
         # 第一次打开，没有游标
         rows = await conn.fetch(
-            query +
-            f" ORDER BY cm.seq_id DESC LIMIT {limit};", user_id, conversation_id
+            query + f" ORDER BY cm.seq_id DESC LIMIT {limit};", user_id, conversation_id
         )
 
     # 4. 格式化返回
@@ -293,10 +290,8 @@ async def db_get_message_history(
 
 
 async def db_delete_local_messages(
-        conn: asyncpg.Connection,
-        user_id: int,
-        conversation_id: int,
-        msg_ids: list[int]) -> None:
+    conn: asyncpg.Connection, user_id: int, conversation_id: int, msg_ids: list[int]
+) -> None:
     """
     删除用户的本地聊天记录 (对应 DELETE /api/message/delete)
     注意：这只是从当前用户的收件箱中抹去记录，不影响真正的 message 实体和其他群成员。
@@ -312,10 +307,8 @@ async def db_delete_local_messages(
 
 
 async def db_set_conversation_mute(
-        conn: asyncpg.Connection,
-        user_id: int,
-        conversation_id: int,
-        is_muted: bool) -> None:
+    conn: asyncpg.Connection, user_id: int, conversation_id: int, is_muted: bool
+) -> None:
     """设置消息免打扰 (对应 PUT /api/conversation/mute)"""
     query = "UPDATE conversation_member SET is_muted = $1 WHERE conversation_id = $2 AND member_user_id = $3;"
     status = await conn.execute(query, is_muted, conversation_id, user_id)
@@ -324,10 +317,8 @@ async def db_set_conversation_mute(
 
 
 async def db_set_conversation_pin(
-        conn: asyncpg.Connection,
-        user_id: int,
-        conversation_id: int,
-        is_pinned: bool) -> None:
+    conn: asyncpg.Connection, user_id: int, conversation_id: int, is_pinned: bool
+) -> None:
     """设置置顶会话 (对应 PUT /api/conversation/pin)"""
     query = "UPDATE conversation_member SET is_pinned = $1 WHERE conversation_id = $2 AND member_user_id = $3;"
     status = await conn.execute(query, is_pinned, conversation_id, user_id)
@@ -392,7 +383,12 @@ async def db_filter_messages(
     if filters.keyword:
         params.append(f"%{filters.keyword}%")
         # 使用 ->> 提取 JSONB 中的字符串进行模糊匹配
-        conditions.append(f"m.msg_body->>'content' ILIKE ${len(params)}")
+        conditions.append(
+            f"(CASE "
+            f"  WHEN m.msg_body->>'content' LIKE '{{%}}' THEN (m.msg_body->>'content')::jsonb->>'content' "
+            f"  ELSE m.msg_body->>'content' "
+            f"END) ILIKE ${len(params)}"
+        )
 
     # B. 发送者筛选
     if filters.sender_id is not None:
@@ -447,9 +443,11 @@ async def db_filter_messages(
                 "sender_id": row["sender_id"],
                 "msg_body": body_dict,
                 "created_at": (
-                    row["create_time"].isoformat() if row["create_time"] else None),
+                    row["create_time"].isoformat() if row["create_time"] else None
+                ),
                 "reply_to_id": row["quote_id"],
-            })
+            }
+        )
 
     return result
 
