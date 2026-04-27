@@ -41,7 +41,7 @@ async def db_create_friend_request(
     发起好友申请 (对应 POST /api/friend/apply)
     """
 
-    # 2. 校验是否已经是好友
+    # 1. 校验是否已经是好友
     is_already_friend = await conn.fetchval(
         "SELECT EXISTS(SELECT 1 FROM friend_relationship WHERE user_id = $1 AND friend_user_id = $2)",
         sender_id,
@@ -50,7 +50,7 @@ async def db_create_friend_request(
     if is_already_friend:
         raise FriendException(FriendErrors.AlreadyFriends)
 
-    # 3. 校验是否有待处理的申请 (双向拦截)
+    # 2. 校验是否有待处理的申请 (双向拦截)
     has_pending = await conn.fetchval(
         """
         SELECT EXISTS(
@@ -68,12 +68,31 @@ async def db_create_friend_request(
     if has_pending:
         raise FriendException(FriendErrors.RequestPending)
 
-    query = """
-        INSERT INTO friend_request (sender_id, receiver_id, message)
-        VALUES ($1, $2, $3)
+    # 第一步：先尝试寻找一条旧的、被拒绝过或忽略过的申请，把它“变废为宝”
+    update_query = """
+        UPDATE friend_request
+        SET status = 'pending',
+            message = $3,
+            create_time = CURRENT_TIMESTAMP
+        WHERE request_id = (
+            SELECT request_id FROM friend_request
+            WHERE sender_id = $1 AND receiver_id = $2 AND status != 'pending'
+            ORDER BY create_time DESC
+            LIMIT 1
+        )
         RETURNING request_id;
     """
-    request_id = await conn.fetchval(query, sender_id, receiver_id, message)
+    request_id = await conn.fetchval(update_query, sender_id, receiver_id, message)
+
+    # 第二步：如果没有找到旧的废弃申请，说明是真正的第一次加好友，正常插入新记录
+    if not request_id:
+        insert_query = """
+            INSERT INTO friend_request (sender_id, receiver_id, message)
+            VALUES ($1, $2, $3)
+            RETURNING request_id;
+        """
+        request_id = await conn.fetchval(insert_query, sender_id, receiver_id, message)
+
     if not request_id:
         raise BusinessException(status_code=500, detail="系统异常，申请发送失败")
     return request_id
