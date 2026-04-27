@@ -298,8 +298,10 @@ async def db_post_group_announcement(
 
 
 async def db_invite_to_group(
-    conn: asyncpg.Connection, inviter_id: int, conversation_id: int, invitee_id: int
-) -> int:
+        conn: asyncpg.Connection,
+        inviter_id: int,
+        conversation_id: int,
+        invitee_id: int) -> int:
     """
     邀请好友加入群聊 (对应 POST /api/group/invite)
     产生一条 pending 状态的邀请记录，等待审核
@@ -447,7 +449,9 @@ async def db_review_group_invite(
             await conn.execute(insert_member, conversation_id, invitee_id)
 
 
-async def db_get_pending_group_invite_count(conn: asyncpg.Connection, user_id: int) -> int:
+async def db_get_pending_group_invite_count(
+        conn: asyncpg.Connection,
+        user_id: int) -> int:
     """
     统计当前用户作为群主/管理员，待我审批的邀请数量
     （基于 group_invite_admin_state 表中 state='pending' 且邀请全局 status='pending'）
@@ -468,7 +472,9 @@ async def db_get_pending_group_invite_count(conn: asyncpg.Connection, user_id: i
     return count or 0
 
 
-async def db_get_group_admins(conn: asyncpg.Connection, conversation_id: int) -> list[int]:
+async def db_get_group_admins(
+        conn: asyncpg.Connection,
+        conversation_id: int) -> list[int]:
     """返回该群所有具有管理权限的用户 ID（群主 + 管理员）"""
     rows = await conn.fetch("""
         SELECT member_user_id
@@ -607,7 +613,9 @@ async def db_assert_can_remove_member(
     return operator_role, target_role
 
 
-async def db_clean_group_invites(conn: asyncpg.Connection, conversation_id: int):
+async def db_clean_group_invites(
+        conn: asyncpg.Connection,
+        conversation_id: int):
     await conn.execute("""
         DELETE FROM group_invite_admin_state
         WHERE invite_id IN (SELECT invite_id FROM group_invite WHERE conversation_id = $1)

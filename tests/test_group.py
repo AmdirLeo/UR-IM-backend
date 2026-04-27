@@ -67,7 +67,12 @@ async def test_group_journey_and_edge_cases():
             conn, "group_outsider", hashed_pw, "g_outsider@test.com"
         )
         # 👇 新增：为每个用户创建与群聊助手(-2)的私聊会话
-        for uid in [user_owner_id, user_admin_id, user_member_id, user_stranger_id, user_outsider_id]:
+        for uid in [
+                user_owner_id,
+                user_admin_id,
+                user_member_id,
+                user_stranger_id,
+                user_outsider_id]:
             conv_id = await conn.fetchval("""
                 SELECT c.conversation_id
                 FROM conversation c
@@ -148,7 +153,8 @@ async def test_group_journey_and_edge_cases():
             extra_raw = group_creation_msg["extra_data"]
             if extra_raw:
                 # 将字符串解析为 Python 字典（兼容可能已经被 asyncpg 解析的情况）
-                extra = json.loads(extra_raw) if isinstance(extra_raw, str) else extra_raw
+                extra = json.loads(extra_raw) if isinstance(
+                    extra_raw, str) else extra_raw
                 assert extra.get("action") == "group_created"
                 assert extra.get("creator_id") == user_owner_id
             break
@@ -195,7 +201,8 @@ async def test_group_journey_and_edge_cases():
                 assert "被邀请加入群聊" in msg_text or "将你加入了群聊" in msg_text
                 extra_raw = invite_msg["extra_data"]
                 if extra_raw:
-                    extra = json.loads(extra_raw) if isinstance(extra_raw, str) else extra_raw
+                    extra = json.loads(extra_raw) if isinstance(
+                        extra_raw, str) else extra_raw
                     assert extra.get("action") == "added_to_group"
                     assert extra.get("conversation_id") == conversation_id
                     assert extra.get("creator_id") == user_owner_id
@@ -526,8 +533,8 @@ async def test_group_journey_and_edge_cases():
         )
         assert res_pending_admin_after.status_code == 200
         cards_after = res_pending_admin_after.json()["data"]
-        assert not any(card["conversation_id"] == conversation_id for card in cards_after), \
-            "撤销管理员后，其待处理列表中不应再看到该群的任何申请"
+        assert not any(card["conversation_id"] ==
+                       conversation_id for card in cards_after), "撤销管理员后，其待处理列表中不应再看到该群的任何申请"
         # ========== 撤销管理员测试结束 ==========
 
         res = await client.put(
@@ -729,7 +736,8 @@ async def test_group_journey_and_edge_cases():
             assert "拉入了群聊" in msg_text
             extra_raw = group_msg["extra_data"]
             if extra_raw:
-                extra = json.loads(extra_raw) if isinstance(extra_raw, str) else extra_raw
+                extra = json.loads(extra_raw) if isinstance(
+                    extra_raw, str) else extra_raw
                 assert extra.get("action") == "group_member_invited"
             break
 
@@ -771,8 +779,10 @@ async def test_group_journey_and_edge_cases():
             assert "入群申请已通过" in msg_text or "批准" in msg_text
             extra_raw = invitee_msg["extra_data"]
             if extra_raw:
-                extra = json.loads(extra_raw) if isinstance(extra_raw, str) else extra_raw
-                assert extra.get("action") == "group_invite_approved_for_invitee"
+                extra = json.loads(extra_raw) if isinstance(
+                    extra_raw, str) else extra_raw
+                assert extra.get(
+                    "action") == "group_invite_approved_for_invitee"
                 assert extra.get("conversation_id") == conversation_id
             break
 
@@ -1078,8 +1088,8 @@ async def test_group_invite_triggers_assistant_card(mock_ws_send):
                 received_payloads.append((target_user_id, payload))
 
         # 应该有两个管理员收到消息
-        assert len(
-            received_payloads) == 2, f"预期推送给2个管理员，实际收到 {len(received_payloads)} 个"
+        assert len(received_payloads) == 2, f"预期推送给2个管理员，实际收到 {
+            len(received_payloads)} 个"
 
         # 验证每条消息的内容
         for target_user_id, payload in received_payloads:

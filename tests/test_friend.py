@@ -635,7 +635,8 @@ async def test_friend_accept_triggers_system_notification(mock_ws_send):
             if target_id == user_a_id and ws_payload["type"] == "NEW_CHAT_MESSAGE":
                 msg_data = ws_payload["data"]
                 extra = msg_data.get("extra", {})
-                if extra.get("action") == "friend_accept" and extra.get("conversation_id") == http_conv_id:
+                if extra.get("action") == "friend_accept" and extra.get(
+                        "conversation_id") == http_conv_id:
                     # 💡 新架构断言：检查指令类型和内容
                     assert msg_data["sender_id"] == SYSTEM_ID
                     assert msg_data["msg_type"] == "notify"

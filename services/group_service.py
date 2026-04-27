@@ -48,8 +48,9 @@ QUERY_GET_USERNAME_BY_ID = "SELECT username FROM user_account WHERE user_id = $1
 
 
 async def create_group_service(
-    db_session: asyncpg.Connection, current_user_id: int, req: GroupCreateRequest
-) -> dict:
+        db_session: asyncpg.Connection,
+        current_user_id: int,
+        req: GroupCreateRequest) -> dict:
     if not req.user_ids:
         raise GroupException(GroupErrors.InvalidRequest, "好友列表不能为空")
     # 假设如果被邀请的人不存在或者其他问题，在底层的 db 层（没有提及详细错误，但通常由外键抛出或忽略）处理
@@ -81,8 +82,9 @@ async def create_group_service(
 
 
 async def get_group_info_service(
-    db_session: asyncpg.Connection, current_user_id: int, req: GroupGenericRequest
-) -> dict:
+        db_session: asyncpg.Connection,
+        current_user_id: int,
+        req: GroupGenericRequest) -> dict:
     # 调用底层接口，如果不在群里抛出 GroupErrors.NotInGroup
     info = await db_get_group_info(db_session, current_user_id, req.conversation_id)
     # 从 info["members"] 中提取 top_members, member_count, owner_id 和 my_role
@@ -137,8 +139,9 @@ async def get_group_info_service(
 
 
 async def get_group_members_service(
-    db_session: asyncpg.Connection, current_user_id: int, req: GroupMembersRequest
-) -> dict:
+        db_session: asyncpg.Connection,
+        current_user_id: int,
+        req: GroupMembersRequest) -> dict:
     # 复用 get_group_info 来获取成员列表
     info = await db_get_group_info(db_session, current_user_id, req.conversation_id)
     members = info.get("members", [])
@@ -168,8 +171,9 @@ async def get_group_members_service(
 
 
 async def manage_group_admin_service(
-    db_session: asyncpg.Connection, current_user_id: int, req: GroupAdminRequest
-) -> None:
+        db_session: asyncpg.Connection,
+        current_user_id: int,
+        req: GroupAdminRequest) -> None:
     if current_user_id == req.user_id:
         raise GroupException(GroupErrors.PermissionDenied, "不能操作自己")
 
@@ -216,8 +220,9 @@ async def manage_group_admin_service(
 
 
 async def remove_group_member_service(
-    db_session: asyncpg.Connection, current_user_id: int, req: GroupRemoveMemberRequest
-) -> None:
+        db_session: asyncpg.Connection,
+        current_user_id: int,
+        req: GroupRemoveMemberRequest) -> None:
     # 1. 提前鉴权（通知需要在删除前发送）
     await db_assert_can_remove_member(
         db_session,
@@ -250,8 +255,9 @@ async def remove_group_member_service(
 
 
 async def quit_group_service(
-    db_session: asyncpg.Connection, current_user_id: int, req: GroupGenericRequest
-) -> None:
+        db_session: asyncpg.Connection,
+        current_user_id: int,
+        req: GroupGenericRequest) -> None:
     # 1. 提前鉴权（通知需要在删除前发送）
     await db_assert_can_quit_group(db_session, current_user_id, req.conversation_id)
     # 2. 发送主动退群私聊通知
@@ -271,8 +277,9 @@ async def quit_group_service(
 
 
 async def disband_group_service(
-    db_session: asyncpg.Connection, current_user_id: int, req: GroupGenericRequest
-) -> None:
+        db_session: asyncpg.Connection,
+        current_user_id: int,
+        req: GroupGenericRequest) -> None:
     # 1. 提前鉴权（通知必须在删除前发送）
     await db_assert_can_disband_group(db_session, current_user_id, req.conversation_id)
     # 2. 发送群内解散通知
@@ -286,8 +293,9 @@ async def disband_group_service(
 
 
 async def post_group_announcement_service(
-    db_session: asyncpg.Connection, current_user_id: int, req: GroupAnnouncementRequest
-) -> dict:
+        db_session: asyncpg.Connection,
+        current_user_id: int,
+        req: GroupAnnouncementRequest) -> dict:
     # 插入公告到数据库
     announcement_id = await db_post_group_announcement(
         conn=db_session,
@@ -313,8 +321,9 @@ async def post_group_announcement_service(
 
 
 async def invite_to_group_service(
-    db_session: asyncpg.Connection, current_user_id: int, req: GroupInviteRequest
-) -> dict:
+        db_session: asyncpg.Connection,
+        current_user_id: int,
+        req: GroupInviteRequest) -> dict:
     # 1. 创建入群申请记录（邀请制）
     invite_id = await db_invite_to_group(
         conn=db_session,
@@ -561,8 +570,9 @@ async def notify_invitee_approved(
 
 
 async def review_group_invite_service(
-    db_session: asyncpg.Connection, current_user_id: int, req: GroupInviteReviewRequest
-) -> None:
+        db_session: asyncpg.Connection,
+        current_user_id: int,
+        req: GroupInviteReviewRequest) -> None:
     action = "approved" if req.status == "APPROVED" else "ignored"
     # 执行审核（若通过，会将被邀请人加入群成员）
     await db_review_group_invite(

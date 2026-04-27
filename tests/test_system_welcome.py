@@ -16,7 +16,8 @@ NEW_USER_PASSWORD = "password123"
 @pytest.mark.asyncio(loop_scope="session")
 @patch("services.user_service.generate_verification_code", return_value="666666")
 @patch("core.ws_manager.manager.send_personal_message")
-async def test_registration_triggers_system_message(mock_ws_send, mock_generate_code):
+async def test_registration_triggers_system_message(
+        mock_ws_send, mock_generate_code):
     """
     测试新用户注册时，系统是否成功创建了会话并发送了欢迎消息。
     """

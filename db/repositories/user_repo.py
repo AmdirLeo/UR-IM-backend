@@ -3,7 +3,11 @@ from core.exceptions import UserErrors, UserException
 from typing import Optional
 
 
-async def db_create_user(conn: asyncpg.Connection, username: str, password_hash: str, email: str) -> int:
+async def db_create_user(
+        conn: asyncpg.Connection,
+        username: str,
+        password_hash: str,
+        email: str) -> int:
     """
     创建一个新用户
     返回新创建的 user_id
@@ -24,7 +28,9 @@ async def db_create_user(conn: asyncpg.Connection, username: str, password_hash:
         raise UserException(UserErrors.AlreadyExists)
 
 
-async def db_get_user_by_email(conn: asyncpg.Connection, email: str) -> dict | None:
+async def db_get_user_by_email(
+        conn: asyncpg.Connection,
+        email: str) -> dict | None:
     """
     通过邮箱查找用户（主要用于登录时校验密码，或注册时检查邮箱是否已存在）
     """
@@ -34,7 +40,9 @@ async def db_get_user_by_email(conn: asyncpg.Connection, email: str) -> dict | N
     return dict(row) if row else None
 
 
-async def db_get_user_by_id(conn: asyncpg.Connection, user_id: int) -> dict | None:
+async def db_get_user_by_id(
+        conn: asyncpg.Connection,
+        user_id: int) -> dict | None:
     """
     通过 ID 获取用户信息（用于展示个人主页）
     注意：这里刻意没有 SELECT password 字段，防止密码哈希被意外泄露给前端
@@ -50,7 +58,9 @@ async def db_get_user_by_id(conn: asyncpg.Connection, user_id: int) -> dict | No
     return dict(row)
 
 
-async def db_get_password_by_id(conn: asyncpg.Connection, user_id: int) -> str | None:
+async def db_get_password_by_id(
+        conn: asyncpg.Connection,
+        user_id: int) -> str | None:
     """
     通过 ID 获取用户的密码哈希（仅用于登录时验证密码）
     注意：这个函数只返回 password 字段，其他信息都不返回
@@ -81,8 +91,8 @@ async def db_delete_user(conn: asyncpg.Connection, user_id: int):
     # 1. 执行脱敏更新
     # 我们修改用户名、清空头像、设置删除标记
     query = """
-    UPDATE user_account 
-    SET 
+    UPDATE user_account
+    SET
         username = '已注销用户',
         avatar_url = NULL,
         password = 'DELETED_' || gen_random_uuid(), -- 销毁密码，防止再次登录
@@ -99,7 +109,11 @@ async def db_delete_user(conn: asyncpg.Connection, user_id: int):
     if status != "UPDATE 1":
         raise UserException(UserErrors.NotFound)
 
-async def db_update_user_password(conn: asyncpg.Connection, user_id: int, new_password_hash: str):
+
+async def db_update_user_password(
+        conn: asyncpg.Connection,
+        user_id: int,
+        new_password_hash: str):
     """
     专门用于修改密码（对应忘记密码或主动修改密码接口）
     """
@@ -146,7 +160,11 @@ async def db_update_user_profile(
     return status == "UPDATE 1"
 
 
-async def db_search_users(conn: asyncpg.Connection, keyword: str, page: int = 1, page_size: int = 20) -> dict:
+async def db_search_users(
+        conn: asyncpg.Connection,
+        keyword: str,
+        page: int = 1,
+        page_size: int = 20) -> dict:
     """
     通过用户名模糊查找用户 (支持分页)
 

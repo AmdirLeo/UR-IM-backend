@@ -33,7 +33,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
             hashed_password.encode("utf-8")
         )
     except ValueError:
-        # 如果 hashed_password 根本不是合法的 bcrypt 格式 
+        # 如果 hashed_password 根本不是合法的 bcrypt 格式
         # (例如被改成了 'DELETED_xxx'，或者旧系统迁移过来的脏数据)
         # 直接返回 False，拒绝验证通过，而不是抛出异常让应用崩溃。
         return False

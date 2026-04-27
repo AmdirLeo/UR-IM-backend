@@ -43,7 +43,11 @@ from fastapi import UploadFile
 from services.message_service import send_message_service
 
 
-async def search_users(db_session, keyword: str, page: int = 1, page_size: int = 20) -> List[UserSearchResult]:
+async def search_users(
+        db_session,
+        keyword: str,
+        page: int = 1,
+        page_size: int = 20) -> List[UserSearchResult]:
     # 直接调用 repository 层已实现的函数
     users = await db_search_users(
         db_session,
@@ -133,7 +137,8 @@ async def forget_password_send_service(conn, email: str) -> EmailResponse:
     )
 
 
-async def forget_password_set_service(conn, request: UserForgetPWD) -> BaseResponse:
+async def forget_password_set_service(
+        conn, request: UserForgetPWD) -> BaseResponse:
     if not await db_verify_code(request.email, request.verification_code):
         raise BusinessException(status_code=400, detail="验证码错误")
     new_password_hash = get_password_hash(request.password)
@@ -178,7 +183,10 @@ async def logout_service(current_user_id: int) -> BaseResponse:
     return BaseResponse(code=200, msg="登出成功")
 
 
-async def delete_account_service(conn, current_user_id: int, plain_password: str) -> BaseResponse:
+async def delete_account_service(
+        conn,
+        current_user_id: int,
+        plain_password: str) -> BaseResponse:
     # 1. 尝试获取用户信息
     user = await db_get_user_by_id(conn, current_user_id)
 
@@ -221,7 +229,10 @@ async def _verify_current_password(conn, user_id: int, plain_password: str):
 # ----------------------------------------
 # 修改用户名 Service (不需要密码)
 # ----------------------------------------
-async def edit_username_service(conn, current_user_id: int, edit_data: UsernameEdit) -> BaseResponse:
+async def edit_username_service(
+        conn,
+        current_user_id: int,
+        edit_data: UsernameEdit) -> BaseResponse:
     success = await db_update_user_profile(conn, current_user_id, username=edit_data.new_username)
     if not success:
         raise BusinessException(status_code=400, detail="用户名更新失败")
@@ -231,7 +242,10 @@ async def edit_username_service(conn, current_user_id: int, edit_data: UsernameE
 # ----------------------------------------
 # 修改密码 Service
 # ----------------------------------------
-async def edit_password_service(conn, current_user_id: int, edit_data: PasswordEdit) -> BaseResponse:
+async def edit_password_service(
+        conn,
+        current_user_id: int,
+        edit_data: PasswordEdit) -> BaseResponse:
     # 1. 直接调用辅助函数，一行代码完成验证！
     await _verify_current_password(conn, current_user_id, edit_data.old_password)
 
@@ -250,7 +264,10 @@ async def edit_password_service(conn, current_user_id: int, edit_data: PasswordE
 # ----------------------------------------
 # 修改邮箱 Service (现在需要密码了)
 # ----------------------------------------
-async def edit_email_service(conn, current_user_id: int, edit_data: EmailEdit) -> BaseResponse:
+async def edit_email_service(
+        conn,
+        current_user_id: int,
+        edit_data: EmailEdit) -> BaseResponse:
     # 1. 同样调用辅助函数，先验密码！
     await _verify_current_password(conn, current_user_id, edit_data.password)
 
@@ -320,7 +337,8 @@ async def edit_portrait_service(conn, current_user_id: int, file: UploadFile):
     )
 
 
-async def get_user_info_service(conn, current_user_id: int) -> UserInfoResponse:
+async def get_user_info_service(
+        conn, current_user_id: int) -> UserInfoResponse:
     """
     获取当前用户个人信息的业务逻辑
     """

@@ -97,7 +97,8 @@ def get_db_pool() -> asyncpg.Pool:
     return db_pool
 
 
-async def get_db_conn() -> AsyncGenerator[asyncpg.pool.PoolConnectionProxy, None]:
+async def get_db_conn(
+) -> AsyncGenerator[asyncpg.pool.PoolConnectionProxy, None]:
     """
     当 API 路由被访问时，这个函数会从连接池中借出一个连接，
     通过 yield 交给你的 Repo 函数使用，执行完毕后自动归还给连接池。

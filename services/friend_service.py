@@ -92,8 +92,10 @@ async def apply_friend(
 
 
 async def handle_friend_request(
-    db_session: asyncpg.Connection, current_user_id: int, request_id: int, action: str
-) -> dict:
+        db_session: asyncpg.Connection,
+        current_user_id: int,
+        request_id: int,
+        action: str) -> dict:
     """
     处理好友申请的业务逻辑，并附带发送系统通知。
     """
@@ -198,7 +200,9 @@ async def remove_friend(
         await send_message_service(db_session, -1, notify_req)
 
 
-async def get_friend_list(db_session: asyncpg.Connection, current_user_id: int) -> List[Dict]:
+async def get_friend_list(
+        db_session: asyncpg.Connection,
+        current_user_id: int) -> List[Dict]:
     """
     获取当前用户的好友列表。
     """
@@ -207,14 +211,20 @@ async def get_friend_list(db_session: asyncpg.Connection, current_user_id: int) 
     return friends
 
 
-async def create_friend_tag(db_session: asyncpg.Connection, user_id: int, tag_name: str) -> None:
+async def create_friend_tag(
+        db_session: asyncpg.Connection,
+        user_id: int,
+        tag_name: str) -> None:
     """
     新建好友分组
     """
     await db_create_friend_tag(db_session, user_id, tag_name)
 
 
-async def delete_friend_tag(db_session: asyncpg.Connection, user_id: int, tag_name: str) -> None:
+async def delete_friend_tag(
+        db_session: asyncpg.Connection,
+        user_id: int,
+        tag_name: str) -> None:
     """
     删除好友分组
     """
@@ -222,15 +232,20 @@ async def delete_friend_tag(db_session: asyncpg.Connection, user_id: int, tag_na
 
 
 async def add_friends_to_tag(
-    db_session: asyncpg.Connection, user_id: int, tag_name: str, friend_ids: list[int]
-) -> None:
+        db_session: asyncpg.Connection,
+        user_id: int,
+        tag_name: str,
+        friend_ids: list[int]) -> None:
     """
     将好友移入分组
     """
     await db_add_friends_to_tag(db_session, user_id, tag_name, friend_ids)
 
 
-async def get_friends_by_tag(db_session: asyncpg.Connection, user_id: int, tag_name: str) -> list[dict]:
+async def get_friends_by_tag(
+        db_session: asyncpg.Connection,
+        user_id: int,
+        tag_name: str) -> list[dict]:
     """
     获取某分组下的所有好友
     """
@@ -238,8 +253,10 @@ async def get_friends_by_tag(db_session: asyncpg.Connection, user_id: int, tag_n
 
 
 async def remove_friend_from_tag(
-    db_session: asyncpg.Connection, user_id: int, friend_user_id: int, tag_name: str
-) -> None:
+        db_session: asyncpg.Connection,
+        user_id: int,
+        friend_user_id: int,
+        tag_name: str) -> None:
     """
     将特定好友移出分组
     """
@@ -284,7 +301,9 @@ async def get_other_user_info_service(
     )
 
 
-async def get_friend_tag_list(db_session: asyncpg.Connection, current_user_id: int) -> list[str]:
+async def get_friend_tag_list(
+        db_session: asyncpg.Connection,
+        current_user_id: int) -> list[str]:
     """
     获取当前用户的所有好友分组标签列表。
     """

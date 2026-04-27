@@ -8,7 +8,9 @@ from typing import Optional, Dict, Any
 router = APIRouter()
 
 
-async def authenticate_websocket(websocket: WebSocket, token: str) -> Optional[int]:
+async def authenticate_websocket(
+        websocket: WebSocket,
+        token: str) -> Optional[int]:
     """提取鉴权逻辑：返回 user_id 或 None"""
     try:
         payload = jwt.decode(
