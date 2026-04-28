@@ -41,6 +41,7 @@ import uuid
 import shutil
 from fastapi import UploadFile
 from services.message_service import send_message_service
+from db.repositories.friend_repo import db_remove_friend
 
 
 async def search_users(
@@ -208,6 +209,16 @@ async def delete_account_service(
 
     # 5. 验证通过，执行注销逻辑
     # 这里的 db_delete_user 就是你之前写的那个 DELETE SQL
+    # 3. 删除所有双向好友关系
+    friend_rows = await conn.fetch(
+        "SELECT friend_user_id FROM friend_relationship WHERE user_id = $1",
+        current_user_id,
+    )
+    friend_ids = [row["friend_user_id"] for row in friend_rows]
+
+    for friend_id in friend_ids:
+        await db_remove_friend(conn, current_user_id, friend_id, delete_history=False)
+
     await db_delete_user(conn, current_user_id)
     return BaseResponse(code=200, msg="账号已彻底注销")
 
