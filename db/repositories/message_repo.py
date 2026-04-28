@@ -37,8 +37,13 @@ async def db_send_message(
     # 1. 权限校验：你必须在这个会话里才能发消息
     check_member_query = """
         SELECT EXISTS(
-            SELECT 1 FROM conversation_member
-            WHERE conversation_id = $1 AND member_user_id = $2 AND is_active = true
+            SELECT 1
+            FROM conversation_member cm
+            JOIN user_account u ON cm.member_user_id = u.user_id
+            WHERE conversation_id = $1
+              AND member_user_id = $2
+              AND is_active = true
+              AND u.is_deleted = false
         );
     """
     is_member = await conn.fetchval(check_member_query, conversation_id, sender_id)
@@ -260,7 +265,8 @@ async def db_get_message_history(
     else:
         # 第一次打开，没有游标
         rows = await conn.fetch(
-            query + f" ORDER BY cm.seq_id DESC LIMIT {limit};", user_id, conversation_id
+            query +
+            f" ORDER BY cm.seq_id DESC LIMIT {limit};", user_id, conversation_id
         )
 
     # 4. 格式化返回
@@ -497,7 +503,11 @@ async def db_sync_conversations(
             -- 动态判断存活状态
             -- 如果左连表能连上 member 表，说明我还在里面；连不上，说明我被踢了/退群了
             CASE
-                WHEN cm.member_user_id IS NOT NULL AND cm.is_active = true THEN 'normal'
+                WHEN cm.member_user_id IS NOT NULL
+                    AND cm.is_active = true
+                    AND u_self.is_deleted IS NOT TRUE
+                    AND (c.type != 'private' OR u_target.is_deleted IS NOT TRUE)
+                THEN 'normal'
                 ELSE 'abnormal'
             END AS status,
 
@@ -529,7 +539,8 @@ async def db_sync_conversations(
         FROM my_all_convs mc
         JOIN conversation c ON mc.conversation_id = c.conversation_id
         LEFT JOIN private_targets pt ON c.conversation_id = pt.conversation_id AND c.type = 'private'
-
+        LEFT JOIN user_account u_self ON u_self.user_id = $1
+        LEFT JOIN user_account u_target ON pt.target_id = u_target.user_id AND c.type = 'private'
         -- 使用 LEFT JOIN 试探性地去 member 表里找我
         LEFT JOIN conversation_member cm ON c.conversation_id = cm.conversation_id AND cm.member_user_id = $1
 
