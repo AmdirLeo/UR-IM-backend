@@ -276,18 +276,20 @@ async def test_group_journey_and_edge_cases():
         # 4.1 再发布几条公告，用于测试分页
         res_anno2 = await client.post(
             "/api/group/announcement",
-            json={"conversation_id": conversation_id, "msg": "Second Announcement"},
+            json={"conversation_id": conversation_id,
+                  "msg": "Second Announcement"},
             headers=headers_owner,
         )
         assert res_anno2.status_code == 200
-        
+
         res_anno3 = await client.post(
             "/api/group/announcement",
-            json={"conversation_id": conversation_id, "msg": "Third Announcement"},
+            json={"conversation_id": conversation_id,
+                  "msg": "Third Announcement"},
             headers=headers_owner,
         )
         assert res_anno3.status_code == 200  # admin 有权限发公告
-        
+
         # 4.2 测试获取公告列表 - 默认分页
         res_list = await client.post(
             "/api/group/announcements",
@@ -311,11 +313,12 @@ async def test_group_journey_and_edge_cases():
             assert "create_time" in item
             assert "sender_name" in item
             assert isinstance(item["create_time"], int)
-        
+
         # 4.3 测试分页功能 - page=1, page_size=2
         res_page1 = await client.post(
             "/api/group/announcements",
-            json={"conversation_id": conversation_id, "page": 1, "page_size": 2},
+            json={"conversation_id": conversation_id,
+                  "page": 1, "page_size": 2},
             headers=headers_owner,
         )
         assert res_page1.status_code == 200
@@ -326,11 +329,12 @@ async def test_group_journey_and_edge_cases():
         assert len(page1_data["items"]) == 2
         assert page1_data["items"][0]["content"] == "Third Announcement"
         assert page1_data["items"][1]["content"] == "Second Announcement"
-        
+
         # 4.4 测试分页功能 - page=2, page_size=2（应该只有1条）
         res_page2 = await client.post(
             "/api/group/announcements",
-            json={"conversation_id": conversation_id, "page": 2, "page_size": 2},
+            json={"conversation_id": conversation_id,
+                  "page": 2, "page_size": 2},
             headers=headers_owner,
         )
         assert res_page2.status_code == 200
@@ -340,7 +344,7 @@ async def test_group_journey_and_edge_cases():
         assert page2_data["page_size"] == 2
         assert len(page2_data["items"]) == 1
         assert page2_data["items"][0]["content"] == "Assemble!"
-        
+
         # 4.5 测试权限：非群成员无法获取公告列表
         res_forbidden_list = await client.post(
             "/api/group/announcements",
@@ -348,7 +352,7 @@ async def test_group_journey_and_edge_cases():
             headers=headers_stranger,  # stranger 不在群里
         )
         assert res_forbidden_list.status_code == 403
-        
+
         # 4.6 测试参数校验 - conversation_id 必须大于0
         res_invalid_conv = await client.post(
             "/api/group/announcements",
@@ -356,7 +360,7 @@ async def test_group_journey_and_edge_cases():
             headers=headers_owner,
         )
         assert res_invalid_conv.status_code == 422
-        
+
         # 4.7 测试参数校验 - page_size 不能超过100
         res_invalid_size = await client.post(
             "/api/group/announcements",
@@ -364,7 +368,7 @@ async def test_group_journey_and_edge_cases():
             headers=headers_owner,
         )
         assert res_invalid_size.status_code == 422
-        
+
         # 4.8 普通成员也能查看公告列表（只读权限）
         res_member_list = await client.post(
             "/api/group/announcements",
@@ -377,7 +381,6 @@ async def test_group_journey_and_edge_cases():
         assert len(member_list_data["items"]) == 3
         # ========== 新增测试结束 ==========
 
-        
         # 获取群信息，验证公告存在
         res_info = await client.post(
             "/api/group/info",

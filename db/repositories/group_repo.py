@@ -639,6 +639,7 @@ async def db_clean_group_invites(
         DELETE FROM group_invite WHERE conversation_id = $1
     """, conversation_id)
 
+
 async def db_get_group_announcements(
     conn: asyncpg.Connection,
     user_id: int,
@@ -653,7 +654,7 @@ async def db_get_group_announcements(
     # 1. 鉴权：必须是该群成员
     role = await conn.fetchval(QUERY_GET_MEMBER_ROLE, conversation_id, user_id)
     if not role:  # 非成员（角色不存在）
-        raise GroupException(GroupErrors.NotInGroup)  
+        raise GroupException(GroupErrors.NotInGroup)
 
     # 2. 分页查询
     offset = (page - 1) * page_size

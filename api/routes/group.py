@@ -169,6 +169,7 @@ async def list_pending_group_invites(
         "total": len(cards)
     }
 
+
 @router.post(
     "/announcements",  # 注意路径用了复数，避免与已有的 POST /announcement 冲突
     summary="获取群公告列表",

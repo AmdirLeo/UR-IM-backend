@@ -904,6 +904,7 @@ async def send_group_disbanded_notification(
     )
     await send_message_service(conn, -2, send_req)
 
+
 async def get_group_announcements_service(
     db_session: asyncpg.Connection,
     current_user_id: int,
