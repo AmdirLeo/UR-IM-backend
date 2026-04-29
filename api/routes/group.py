@@ -15,6 +15,8 @@ from schemas.group import (
     GroupInviteRequest,
     GroupInviteData,
     GroupInviteReviewRequest,
+    GroupAnnouncementListData,
+    GroupAnnouncementsRequest,
 )
 from services.group_service import (
     create_group_service,
@@ -28,6 +30,7 @@ from services.group_service import (
     invite_to_group_service,
     review_group_invite_service,
     get_pending_group_invites_as_cards,
+    get_group_announcements_service,
 )
 
 
@@ -165,3 +168,22 @@ async def list_pending_group_invites(
         "data": cards,
         "total": len(cards)
     }
+
+@router.post(
+    "/announcements",  # 注意路径用了复数，避免与已有的 POST /announcement 冲突
+    summary="获取群公告列表",
+    response_model=GroupGenericResponse[GroupAnnouncementListData],
+)
+async def get_group_announcements(  # 函数名也区分一下
+    req: GroupAnnouncementsRequest,
+    current_user_id: CurrentUserId,
+    db_session: DBConnection,
+):
+    data = await get_group_announcements_service(
+        db_session=db_session,
+        current_user_id=current_user_id,
+        conversation_id=req.conversation_id,
+        page=req.page,
+        page_size=req.page_size,
+    )
+    return GroupGenericResponse(data=data)

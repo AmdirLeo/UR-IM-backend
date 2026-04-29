@@ -104,3 +104,14 @@ class GroupInviteReviewRequest(BaseModel):
     status: str = Field(...,
                         pattern="^(APPROVED|IGNORED)$",
                         description="审核操作")
+
+class GroupAnnouncementListData(BaseModel):
+    items: List[AnnouncementItem] = Field(..., description="公告列表")
+    total: int = Field(..., description="符合条件的总记录数")
+    page: int = Field(..., ge=1, description="当前页码")
+    page_size: int = Field(..., ge=1, le=100, description="每页条数")
+
+class GroupAnnouncementsRequest(BaseModel):
+    conversation_id: int = Field(..., gt=0, description="会话ID")
+    page: int = Field(1, ge=1, description="当前页码")
+    page_size: int = Field(20, ge=1, le=100, description="每页数量")

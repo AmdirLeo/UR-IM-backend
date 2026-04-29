@@ -31,6 +31,7 @@ from db.repositories.group_repo import (
     db_assert_can_disband_group,
     db_clean_group_invites,
     db_assert_can_remove_member,
+    db_get_group_announcements,
 )
 from schemas.message import SendMessageRequest, MessageType
 from services.message_service import send_message_service
@@ -902,3 +903,21 @@ async def send_group_disbanded_notification(
         }
     )
     await send_message_service(conn, -2, send_req)
+
+async def get_group_announcements_service(
+    db_session: asyncpg.Connection,
+    current_user_id: int,
+    conversation_id: int,
+    page: int = 1,
+    page_size: int = 20,
+) -> dict:
+    """
+    获取群公告列表服务。
+    """
+    return await db_get_group_announcements(
+        conn=db_session,
+        user_id=current_user_id,
+        conversation_id=conversation_id,
+        page=page,
+        page_size=page_size,
+    )
