@@ -240,6 +240,47 @@ async def test_group_journey_and_edge_cases():
         )
         assert res_forbidden.status_code == 403
         # ---------------------------------------------------------
+        # 2.5 获取群聊列表 (GET /api/group)
+        # ---------------------------------------------------------
+        # Owner 获取自己的群聊列表
+        res_list_owner = await client.get(
+            "/api/group",
+            headers=headers_owner,
+        )
+        assert res_list_owner.status_code == 200
+        owner_groups = res_list_owner.json()["data"]
+        assert len(owner_groups) >= 1
+
+        # 验证返回的群信息与 Owner 角色
+        target_group = next(
+            (g for g in owner_groups if g["conversation_id"] == conversation_id), None)
+        assert target_group is not None, "Owner 的群聊列表中未找到刚刚创建的群"
+        assert target_group["conversation_name"] == "Test Avengers"
+        assert target_group["role"] == "owner"
+        assert "join_time" in target_group
+
+        # Member 获取自己的群聊列表，验证身份降级显示正常
+        res_list_member = await client.get(
+            "/api/group",
+            headers=headers_member,
+        )
+        assert res_list_member.status_code == 200
+        member_groups = res_list_member.json()["data"]
+        target_group_member = next(
+            (g for g in member_groups if g["conversation_id"] == conversation_id), None)
+        assert target_group_member is not None, "Member 的群聊列表中未找到该群"
+        assert target_group_member["role"] == "member"
+
+        # Stranger (尚未入群的局外人) 获取群聊列表，必须严格不包含该群
+        res_list_stranger = await client.get(
+            "/api/group",
+            headers=headers_stranger,
+        )
+        assert res_list_stranger.status_code == 200
+        stranger_groups = res_list_stranger.json()["data"]
+        assert not any(g["conversation_id"] ==
+                       conversation_id for g in stranger_groups), "Stranger 不应该在群聊列表中看到不属于自己的群"
+        # ---------------------------------------------------------
         # 3. 成员分页与查询 (POST /api/group/members)
         # ---------------------------------------------------------
         res = await client.post(

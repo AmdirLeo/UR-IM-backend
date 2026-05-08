@@ -685,3 +685,26 @@ async def db_get_group_announcements(
         "page": page,
         "page_size": page_size,
     }
+
+
+async def db_get_group_list(conn: asyncpg.Connection, user_id: int) -> list[dict]:
+    """
+    获取当前用户所在的群聊列表。
+    需要联表查询 conversation 表拿到群名称和头像。
+    """
+    query = """
+        SELECT
+            c.conversation_id,
+            c.conversation_name,
+            c.avatar_url,
+            cm.role,
+            cm.join_time
+        FROM conversation_member cm
+        JOIN conversation c ON cm.conversation_id = c.conversation_id
+        WHERE cm.member_user_id = $1
+          AND c.type = 'group'
+          AND cm.is_active = true
+        ORDER BY cm.join_time DESC; -- 按加入时间倒序排列（或按你业务需求的字段排序）
+    """
+    rows = await conn.fetch(query, user_id)
+    return [dict(row) for row in rows]

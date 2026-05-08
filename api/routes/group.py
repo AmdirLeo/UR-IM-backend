@@ -17,6 +17,8 @@ from schemas.group import (
     GroupInviteReviewRequest,
     GroupAnnouncementListData,
     GroupAnnouncementsRequest,
+    GroupInfo,
+    GroupListResponse,
 )
 from services.group_service import (
     create_group_service,
@@ -31,6 +33,7 @@ from services.group_service import (
     review_group_invite_service,
     get_pending_group_invites_as_cards,
     get_group_announcements_service,
+    get_group_list,
 )
 
 
@@ -188,3 +191,18 @@ async def get_group_announcements(  # 函数名也区分一下
         page_size=req.page_size,
     )
     return GroupGenericResponse(data=data)
+
+
+@router.get("", response_model=GroupListResponse, summary="获取群聊列表")
+async def list_groups(
+    current_user_id: CurrentUserId,
+    db_session: DBConnection,
+):
+    """
+    获取当前用户加入的所有群聊列表。
+    包含群聊基本信息、用户在群内的角色以及加入时间。
+    """
+    groups = await get_group_list(db_session, current_user_id)
+    data = [GroupInfo(**g) for g in groups]
+
+    return GroupListResponse(code=200, msg="获取成功", data=data)

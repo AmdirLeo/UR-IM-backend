@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Generic, List, Optional, TypeVar
+from datetime import datetime
+from typing import List, Optional
 
 
 T = TypeVar("T")
@@ -117,3 +119,17 @@ class GroupAnnouncementsRequest(BaseModel):
     conversation_id: int = Field(..., gt=0, description="会话ID")
     page: int = Field(1, ge=1, description="当前页码")
     page_size: int = Field(20, ge=1, le=100, description="每页数量")
+
+
+class GroupInfo(BaseModel):
+    conversation_id: int = Field(..., description="群聊(会话) ID")
+    conversation_name: Optional[str] = Field(None, description="群聊名称")
+    avatar_url: Optional[str] = Field(None, description="群聊头像")
+    role: str = Field(..., description="用户在该群的角色 (owner/admin/member)")
+    join_time: datetime = Field(..., description="用户加入该群的时间")
+
+
+class GroupListResponse(BaseModel):
+    code: int = Field(200, description="状态码")
+    msg: str = Field("获取成功", description="提示信息")
+    data: List[GroupInfo] = Field(..., description="群聊列表数据")

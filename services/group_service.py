@@ -1,6 +1,6 @@
 import asyncpg
 import uuid
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime, timezone
 from schemas.group import (
     GroupCreateRequest,
@@ -32,6 +32,7 @@ from db.repositories.group_repo import (
     db_clean_group_invites,
     db_assert_can_remove_member,
     db_get_group_announcements,
+    db_get_group_list,
 )
 from schemas.message import SendMessageRequest, MessageType
 from services.message_service import send_message_service
@@ -922,3 +923,13 @@ async def get_group_announcements_service(
         page=page,
         page_size=page_size,
     )
+
+
+async def get_group_list(
+        db_session: asyncpg.Connection,
+        current_user_id: int) -> List[Dict]:
+    """
+    获取当前用户加入的群聊列表。
+    """
+    groups = await db_get_group_list(db_session, current_user_id)
+    return groups
