@@ -310,8 +310,13 @@ async def post_group_announcement_service(
         conversation_id=req.conversation_id,
         local_id=str(uuid.uuid4()),
         message_content=f"[群公告] {req.msg}",
-        msg_type="text",
+        msg_type="notify",
         quote_message_id=None,
+        extra_data={
+            "action": "group_announcement",
+            "announcement_id": announcement_id,
+            "content": req.msg  # 方便前端直接拿纯净的公告内容去渲染特殊 UI
+        }
     )
     # 调用 message 服务
     send_res = await send_message_service(db_session, current_user_id, msg_req)
