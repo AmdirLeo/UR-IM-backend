@@ -13,8 +13,7 @@ QUERY_GET_NEXT_SEQ = "SELECT COALESCE(MAX(seq_id), 0) + 1 FROM conversation_mess
 
 QUERY_INSERT_CONV_MSG = (
     "INSERT INTO conversation_message (conversation_id, msg_id, sender_id, seq_id) "
-    "VALUES ($1, $2, $3, $4);"
-)
+    "VALUES ($1, $2, $3, $4);")
 
 QUERY_UPDATE_CONV_SORT = """
     UPDATE conversation
@@ -38,8 +37,13 @@ async def db_send_message(
     # 1. 权限校验：你必须在这个会话里才能发消息
     check_member_query = """
         SELECT EXISTS(
-            SELECT 1 FROM conversation_member
-            WHERE conversation_id = $1 AND member_user_id = $2 AND is_active = true
+            SELECT 1
+            FROM conversation_member cm
+            JOIN user_account u ON cm.member_user_id = u.user_id
+            WHERE conversation_id = $1
+              AND member_user_id = $2
+              AND is_active = true
+              AND u.is_deleted = false
         );
     """
     is_member = await conn.fetchval(check_member_query, conversation_id, sender_id)
@@ -106,7 +110,9 @@ async def db_send_message(
     return {"msg_id": msg_id, "seq_id": next_seq_id}
 
 
-async def db_get_all_unread_counts(conn: asyncpg.Connection, user_id: int) -> dict:
+async def db_get_all_unread_counts(
+        conn: asyncpg.Connection,
+        user_id: int) -> dict:
     """
     获取当前用户所有会话的未读消息数 (对应 GET /api/conversation/unread)
     返回格式: {conversation_id: unread_count, ...} 比如 {101: 5, 102: 12}
@@ -259,7 +265,8 @@ async def db_get_message_history(
     else:
         # 第一次打开，没有游标
         rows = await conn.fetch(
-            query + f" ORDER BY cm.seq_id DESC LIMIT {limit};", user_id, conversation_id
+            query +
+            f" ORDER BY cm.seq_id DESC LIMIT {limit};", user_id, conversation_id
         )
 
     # 4. 格式化返回
@@ -290,8 +297,10 @@ async def db_get_message_history(
 
 
 async def db_delete_local_messages(
-    conn: asyncpg.Connection, user_id: int, conversation_id: int, msg_ids: list[int]
-) -> None:
+        conn: asyncpg.Connection,
+        user_id: int,
+        conversation_id: int,
+        msg_ids: list[int]) -> None:
     """
     删除用户的本地聊天记录 (对应 DELETE /api/message/delete)
     注意：这只是从当前用户的收件箱中抹去记录，不影响真正的 message 实体和其他群成员。
@@ -307,8 +316,10 @@ async def db_delete_local_messages(
 
 
 async def db_set_conversation_mute(
-    conn: asyncpg.Connection, user_id: int, conversation_id: int, is_muted: bool
-) -> None:
+        conn: asyncpg.Connection,
+        user_id: int,
+        conversation_id: int,
+        is_muted: bool) -> None:
     """设置消息免打扰 (对应 PUT /api/conversation/mute)"""
     query = "UPDATE conversation_member SET is_muted = $1 WHERE conversation_id = $2 AND member_user_id = $3;"
     status = await conn.execute(query, is_muted, conversation_id, user_id)
@@ -317,8 +328,10 @@ async def db_set_conversation_mute(
 
 
 async def db_set_conversation_pin(
-    conn: asyncpg.Connection, user_id: int, conversation_id: int, is_pinned: bool
-) -> None:
+        conn: asyncpg.Connection,
+        user_id: int,
+        conversation_id: int,
+        is_pinned: bool) -> None:
     """设置置顶会话 (对应 PUT /api/conversation/pin)"""
     query = "UPDATE conversation_member SET is_pinned = $1 WHERE conversation_id = $2 AND member_user_id = $3;"
     status = await conn.execute(query, is_pinned, conversation_id, user_id)
@@ -443,16 +456,16 @@ async def db_filter_messages(
                 "sender_id": row["sender_id"],
                 "msg_body": body_dict,
                 "created_at": (
-                    row["create_time"].isoformat() if row["create_time"] else None
-                ),
+                    row["create_time"].isoformat() if row["create_time"] else None),
                 "reply_to_id": row["quote_id"],
-            }
-        )
+            })
 
     return result
 
 
-async def db_sync_conversations(conn: asyncpg.Connection, user_id: int) -> list[dict]:
+async def db_sync_conversations(
+        conn: asyncpg.Connection,
+        user_id: int) -> list[dict]:
     """
     同步会话列表及未读信息 (支持“被踢出群聊依然保留入口”的高级特性)
     """
@@ -490,7 +503,11 @@ async def db_sync_conversations(conn: asyncpg.Connection, user_id: int) -> list[
             -- 动态判断存活状态
             -- 如果左连表能连上 member 表，说明我还在里面；连不上，说明我被踢了/退群了
             CASE
-                WHEN cm.member_user_id IS NOT NULL AND cm.is_active = true THEN 'normal'
+                WHEN cm.member_user_id IS NOT NULL
+                    AND cm.is_active = true
+                    AND u_self.is_deleted IS NOT TRUE
+                    AND (c.type != 'private' OR u_target.is_deleted IS NOT TRUE)
+                THEN 'normal'
                 ELSE 'abnormal'
             END AS status,
 
@@ -522,7 +539,8 @@ async def db_sync_conversations(conn: asyncpg.Connection, user_id: int) -> list[
         FROM my_all_convs mc
         JOIN conversation c ON mc.conversation_id = c.conversation_id
         LEFT JOIN private_targets pt ON c.conversation_id = pt.conversation_id AND c.type = 'private'
-
+        LEFT JOIN user_account u_self ON u_self.user_id = $1
+        LEFT JOIN user_account u_target ON pt.target_id = u_target.user_id AND c.type = 'private'
         -- 使用 LEFT JOIN 试探性地去 member 表里找我
         LEFT JOIN conversation_member cm ON c.conversation_id = cm.conversation_id AND cm.member_user_id = $1
 

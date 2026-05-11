@@ -12,7 +12,10 @@ redis_client = redis.from_url(
     decode_responses=True)
 
 
-async def db_save_verification_code(email: str, code: str, expire_minutes: int = 5) -> None:
+async def db_save_verification_code(
+        email: str,
+        code: str,
+        expire_minutes: int = 5) -> None:
     """
     将验证码存入 Redis，并设置过期时间
     """
@@ -81,7 +84,9 @@ async def db_get_ttl(key: str) -> int:
 # 幂等性 Token 相关操作 (追加到文件末尾)
 # ==========================================
 
-async def db_create_idempotent_token(token: str, expire_seconds: int = 300) -> None:
+async def db_create_idempotent_token(
+        token: str,
+        expire_seconds: int = 300) -> None:
     """
     存入一个幂等性 Token (默认 5 分钟有效)
     """

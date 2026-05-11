@@ -3,7 +3,11 @@ from core.exceptions import UserErrors, UserException
 from typing import Optional
 
 
-async def db_create_user(conn: asyncpg.Connection, username: str, password_hash: str, email: str) -> int:
+async def db_create_user(
+        conn: asyncpg.Connection,
+        username: str,
+        password_hash: str,
+        email: str) -> int:
     """
     创建一个新用户
     返回新创建的 user_id
@@ -24,7 +28,9 @@ async def db_create_user(conn: asyncpg.Connection, username: str, password_hash:
         raise UserException(UserErrors.AlreadyExists)
 
 
-async def db_get_user_by_email(conn: asyncpg.Connection, email: str) -> dict | None:
+async def db_get_user_by_email(
+        conn: asyncpg.Connection,
+        email: str) -> dict | None:
     """
     通过邮箱查找用户（主要用于登录时校验密码，或注册时检查邮箱是否已存在）
     """
@@ -34,7 +40,9 @@ async def db_get_user_by_email(conn: asyncpg.Connection, email: str) -> dict | N
     return dict(row) if row else None
 
 
-async def db_get_user_by_id(conn: asyncpg.Connection, user_id: int) -> dict | None:
+async def db_get_user_by_id(
+        conn: asyncpg.Connection,
+        user_id: int) -> dict | None:
     """
     通过 ID 获取用户信息（用于展示个人主页）
     注意：这里刻意没有 SELECT password 字段，防止密码哈希被意外泄露给前端
@@ -50,7 +58,9 @@ async def db_get_user_by_id(conn: asyncpg.Connection, user_id: int) -> dict | No
     return dict(row)
 
 
-async def db_get_password_by_id(conn: asyncpg.Connection, user_id: int) -> str | None:
+async def db_get_password_by_id(
+        conn: asyncpg.Connection,
+        user_id: int) -> str | None:
     """
     通过 ID 获取用户的密码哈希（仅用于登录时验证密码）
     注意：这个函数只返回 password 字段，其他信息都不返回
@@ -74,20 +84,36 @@ async def db_update_user_login_time(conn: asyncpg.Connection, user_id: int):
 
 async def db_delete_user(conn: asyncpg.Connection, user_id: int):
     """
-    注销用户账号。
-    得益于建表时的 ON DELETE CASCADE 机制，
-    删除此行会自动清理 friend_relationship, conversation_member, user_inbox 等表中的关联数据。
+    软删除用户账号。
+    不再物理删除 user_account 行，因此不会触发 ON DELETE CASCADE。
+    关联的聊天记录、群成员信息将被保留，但用户身份将被脱敏。
     """
-    query = "DELETE FROM user_account WHERE user_id = $1;"
+    # 1. 执行脱敏更新
+    # 我们修改用户名、清空头像、设置删除标记
+    query = """
+    UPDATE user_account
+    SET
+        username = '已注销用户',
+        avatar_url = NULL,
+        password = 'DELETED_' || gen_random_uuid(), -- 销毁密码，防止再次登录
+        email = 'deleted_' || user_id || '@deleted.local', -- 脱敏邮箱，释放原邮箱占用（视需求而定）
+        is_deleted = TRUE,
+        deleted_at = CURRENT_TIMESTAMP
+    WHERE user_id = $1 AND is_deleted = FALSE;
+    """
 
-    # execute 返回的是命令状态字符串，例如成功删除了1行会返回 'DELETE 1'
+    # execute 返回执行状态
     status = await conn.execute(query, user_id)
 
-    if status != "DELETE 1":
+    # 如果没有更新任何行，说明用户不存在或已经注销过了
+    if status != "UPDATE 1":
         raise UserException(UserErrors.NotFound)
 
 
-async def db_update_user_password(conn: asyncpg.Connection, user_id: int, new_password_hash: str):
+async def db_update_user_password(
+        conn: asyncpg.Connection,
+        user_id: int,
+        new_password_hash: str):
     """
     专门用于修改密码（对应忘记密码或主动修改密码接口）
     """
@@ -134,7 +160,11 @@ async def db_update_user_profile(
     return status == "UPDATE 1"
 
 
-async def db_search_users(conn: asyncpg.Connection, keyword: str, page: int = 1, page_size: int = 20) -> dict:
+async def db_search_users(
+        conn: asyncpg.Connection,
+        keyword: str,
+        page: int = 1,
+        page_size: int = 20) -> dict:
     """
     通过用户名模糊查找用户 (支持分页)
 

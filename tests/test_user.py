@@ -414,7 +414,7 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
             LOGIN_API_PATH,
             json={"id": str(user_id), "password": "recoveredpassword"},
         )
-        assert response.status_code == 404
+        assert response.status_code == 400
 
 
 @pytest.mark.asyncio

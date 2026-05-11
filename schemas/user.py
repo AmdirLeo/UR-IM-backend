@@ -16,7 +16,7 @@ class EmailResponse(BaseModel):
 
 class UserRegister(BaseModel):
     username: str = Field(..., min_length=3, max_length=20, description="用户名")
-    password: str = Field(..., min_length=6, max_length=20, description="明文密码")
+    password: str = Field(..., min_length=6, max_length=65, description="明文密码")
     email: EmailStr = Field(..., description="用户邮箱")
     verification_code: str = Field(..., description="邮箱验证码")
 
@@ -42,7 +42,7 @@ class LoginResponse(BaseModel):
 
 # 忘记密码
 class UserForgetPWD(BaseModel):
-    password: str = Field(..., min_length=6, max_length=50, description="明文密码")
+    password: str = Field(..., min_length=6, max_length=65, description="明文密码")
     email: EmailStr = Field(..., description="用户邮箱")
     verification_code: str = Field(..., description="邮箱验证码")
 
@@ -66,14 +66,14 @@ class UsernameEdit(BaseModel):
 # 更改密码
 class PasswordEdit(BaseModel):
     old_password: str = Field(..., min_length=6,
-                              max_length=50, description="旧密码")
+                              max_length=65, description="旧密码")
     new_password: str = Field(..., min_length=6,
-                              max_length=50, description="新密码")
+                              max_length=65, description="新密码")
 
 
 # 更改邮箱
 class EmailEdit(BaseModel):
-    password: str = Field(..., min_length=6, max_length=50,
+    password: str = Field(..., min_length=6, max_length=65,
                           description="当前明文密码，用于验证身份")
     # 注意：新文档中写的是 new-email，在 Pydantic 中可以通过 alias 完美映射到 Python 变量
     new_email: EmailStr = Field(..., alias="new-email", description="新邮箱地址")

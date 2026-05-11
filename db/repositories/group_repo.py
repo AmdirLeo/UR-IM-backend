@@ -1,6 +1,7 @@
 import asyncpg
 import json
 from core.exceptions import GroupException, GroupErrors
+from schemas.group import AnnouncementItem
 
 # Sonar
 QUERY_GET_MEMBER_ROLE = "SELECT role FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2;"
@@ -17,6 +18,20 @@ QUERY_GET_CONVERSATION_LIST = """
     WHERE cm.member_user_id = $1
     -- NULLS LAST 保证新建的、还没发过消息的群排在最下面
     ORDER BY c.last_msg_time DESC NULLS LAST;
+"""
+
+QUERY_GET_GROUP_ANNOUNCEMENTS = """
+    SELECT
+        a.announcement_id,
+        a.content,
+        EXTRACT(EPOCH FROM a.create_time)::bigint AS create_time,
+        u.username AS sender_name,
+        COUNT(*) OVER() AS total
+    FROM group_announcement a
+    LEFT JOIN "user_account" u ON a.sender_id = u.user_id
+    WHERE a.conversation_id = $1
+    ORDER BY a.is_pinned DESC, a.create_time DESC
+    OFFSET $2 LIMIT $3
 """
 
 
@@ -298,8 +313,10 @@ async def db_post_group_announcement(
 
 
 async def db_invite_to_group(
-    conn: asyncpg.Connection, inviter_id: int, conversation_id: int, invitee_id: int
-) -> int:
+        conn: asyncpg.Connection,
+        inviter_id: int,
+        conversation_id: int,
+        invitee_id: int) -> int:
     """
     邀请好友加入群聊 (对应 POST /api/group/invite)
     产生一条 pending 状态的邀请记录，等待审核
@@ -447,7 +464,9 @@ async def db_review_group_invite(
             await conn.execute(insert_member, conversation_id, invitee_id)
 
 
-async def db_get_pending_group_invite_count(conn: asyncpg.Connection, user_id: int) -> int:
+async def db_get_pending_group_invite_count(
+        conn: asyncpg.Connection,
+        user_id: int) -> int:
     """
     统计当前用户作为群主/管理员，待我审批的邀请数量
     （基于 group_invite_admin_state 表中 state='pending' 且邀请全局 status='pending'）
@@ -468,7 +487,9 @@ async def db_get_pending_group_invite_count(conn: asyncpg.Connection, user_id: i
     return count or 0
 
 
-async def db_get_group_admins(conn: asyncpg.Connection, conversation_id: int) -> list[int]:
+async def db_get_group_admins(
+        conn: asyncpg.Connection,
+        conversation_id: int) -> list[int]:
     """返回该群所有具有管理权限的用户 ID（群主 + 管理员）"""
     rows = await conn.fetch("""
         SELECT member_user_id
@@ -607,7 +628,9 @@ async def db_assert_can_remove_member(
     return operator_role, target_role
 
 
-async def db_clean_group_invites(conn: asyncpg.Connection, conversation_id: int):
+async def db_clean_group_invites(
+        conn: asyncpg.Connection,
+        conversation_id: int):
     await conn.execute("""
         DELETE FROM group_invite_admin_state
         WHERE invite_id IN (SELECT invite_id FROM group_invite WHERE conversation_id = $1)
@@ -615,3 +638,73 @@ async def db_clean_group_invites(conn: asyncpg.Connection, conversation_id: int)
     await conn.execute("""
         DELETE FROM group_invite WHERE conversation_id = $1
     """, conversation_id)
+
+
+async def db_get_group_announcements(
+    conn: asyncpg.Connection,
+    user_id: int,
+    conversation_id: int,
+    page: int = 1,
+    page_size: int = 20,
+) -> dict:
+    """
+    查询群公告列表，需鉴权为群成员。
+    返回包含 items、total、page、page_size 的字典。
+    """
+    # 1. 鉴权：必须是该群成员
+    role = await conn.fetchval(QUERY_GET_MEMBER_ROLE, conversation_id, user_id)
+    if not role:  # 非成员（角色不存在）
+        raise GroupException(GroupErrors.NotInGroup)
+
+    # 2. 分页查询
+    offset = (page - 1) * page_size
+    rows = await conn.fetch(
+        QUERY_GET_GROUP_ANNOUNCEMENTS,
+        conversation_id,
+        offset,
+        page_size,
+    )
+
+    # 3. 提取总数（从窗口函数返回的 total）
+    total = rows[0]["total"] if rows else 0
+
+    # 4. 构造 AnnouncementItem 列表
+    items = [
+        AnnouncementItem(
+            announcement_id=row["announcement_id"],
+            content=row["content"],
+            create_time=int(row["create_time"]),  # 已经是 bigint
+            sender_name=row["sender_name"],
+        )
+        for row in rows
+    ]
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+async def db_get_group_list(conn: asyncpg.Connection, user_id: int) -> list[dict]:
+    """
+    获取当前用户所在的群聊列表。
+    需要联表查询 conversation 表拿到群名称和头像。
+    """
+    query = """
+        SELECT
+            c.conversation_id,
+            c.conversation_name,
+            c.avatar_url,
+            cm.role,
+            cm.join_time
+        FROM conversation_member cm
+        JOIN conversation c ON cm.conversation_id = c.conversation_id
+        WHERE cm.member_user_id = $1
+          AND c.type = 'group'
+          AND cm.is_active = true
+        ORDER BY cm.join_time DESC; -- 按加入时间倒序排列（或按你业务需求的字段排序）
+    """
+    rows = await conn.fetch(query, user_id)
+    return [dict(row) for row in rows]

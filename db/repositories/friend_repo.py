@@ -99,8 +99,10 @@ async def db_create_friend_request(
 
 
 async def db_handle_friend_request(
-    conn: asyncpg.Connection, request_id: int, current_user_id: int, action: str
-) -> dict:
+        conn: asyncpg.Connection,
+        request_id: int,
+        current_user_id: int,
+        action: str) -> dict:
     if action not in ("accepted", "rejected"):
         raise FriendException(FriendErrors.InvalidAction)
         
@@ -258,7 +260,9 @@ async def db_get_friend_requests(
     return result
 
 
-async def db_get_friend_list(conn: asyncpg.Connection, user_id: int) -> list[dict]:
+async def db_get_friend_list(
+        conn: asyncpg.Connection,
+        user_id: int) -> list[dict]:
     """
     获取好友列表及信息 (对应 GET /api/friend)
     需要联表查询 (JOIN) 拿到好友的具体信息（头像、昵称等）
@@ -384,8 +388,10 @@ async def db_get_friend_tags(
 
 
 async def db_add_friends_to_tag(
-    conn: asyncpg.Connection, user_id: int, tag_name: str, friend_ids: list[int]
-) -> None:
+        conn: asyncpg.Connection,
+        user_id: int,
+        tag_name: str,
+        friend_ids: list[int]) -> None:
     check_tag = await conn.fetchval(
         "SELECT EXISTS(SELECT 1 FROM user_friend_tag WHERE user_id = $1 AND tag_name = $2)",
         user_id,
@@ -444,7 +450,9 @@ async def db_remove_friend_from_tag(
         raise BusinessException(status_code=404, detail="该好友不在当前分组中")
 
 
-async def db_get_pending_request_count(conn: asyncpg.Connection, user_id: int) -> int:
+async def db_get_pending_request_count(
+        conn: asyncpg.Connection,
+        user_id: int) -> int:
     """
     查询指定用户当前未处理的好友申请数量
     """

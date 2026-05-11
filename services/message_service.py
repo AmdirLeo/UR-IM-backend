@@ -73,7 +73,10 @@ async def verify_conversation_membership(
             )
 
 
-async def send_message_service(db_session: asyncpg.Connection, user_id: int, req: SendMessageRequest) -> dict:
+async def send_message_service(
+        db_session: asyncpg.Connection,
+        user_id: int,
+        req: SendMessageRequest) -> dict:
     """发送消息逻辑处理(多态 JSONB 版)"""
 
     # ==========================================
@@ -181,7 +184,9 @@ async def search_message_service(
     result = []
     for msg in history:
         body = msg.get("msg_body", {})
-        content_text = body.get("content", "") if isinstance(body, dict) else str(body)
+        content_text = body.get(
+            "content", "") if isinstance(
+            body, dict) else str(body)
         result.append(
             {
                 "user_id": msg.get("sender_id", 0),

@@ -101,7 +101,8 @@ def setup_exception_handlers(app):
 
     # 捕获我们自定义的业务异常
     @app.exception_handler(BusinessException)
-    async def business_exception_handler(request: Request, exc: BusinessException):
+    async def business_exception_handler(
+            request: Request, exc: BusinessException):
         # BusinessException 自身已经携带了 status_code 和 detail，直接取用即可！
         return JSONResponse(
             status_code=exc.status_code,
@@ -153,7 +154,8 @@ def setup_exception_handlers(app):
 
     # 捕获消息模块异常
     @app.exception_handler(MessageException)
-    async def message_exception_handler(request: Request, exc: MessageException):
+    async def message_exception_handler(
+            request: Request, exc: MessageException):
         error_mapping = {
             MessageErrors.NotInConversation: (403, "无权限：不是好友或不在群里"),
             MessageErrors.ConversationNotFound: (404, "conversation_id不存在"),
