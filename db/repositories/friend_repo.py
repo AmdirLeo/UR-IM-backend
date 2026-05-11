@@ -103,23 +103,42 @@ async def db_handle_friend_request(
 ) -> dict:
     if action not in ("accepted", "rejected"):
         raise FriendException(FriendErrors.InvalidAction)
+        
     async with conn.transaction():
-        # 1. 鉴权并更新状态
-        update_query = """
-            UPDATE friend_request
-            SET status = $1
-            WHERE request_id = $2
-              AND receiver_id = $3
-              AND status = 'pending'
-            RETURNING sender_id;
-        """
-        sender_id = await conn.fetchval(
-            update_query, action, request_id, current_user_id
-        )
+        # 1. 锁住记录并获取发送者信息
+        req_record = await conn.fetchrow("""
+            SELECT sender_id, status FROM friend_request
+            WHERE request_id = $1 AND receiver_id = $2
+            FOR UPDATE;
+        """, request_id, current_user_id)
 
-        if not sender_id:
+        if not req_record or req_record["status"] != 'pending':
             raise FriendException(FriendErrors.RequestNotFound)
-        # 2. 如果是同意，执行初始化逻辑
+
+        sender_id = req_record["sender_id"]
+
+        # 2. 【核心修复】检查发送者是否还存活（处理注销账号的情况）
+        is_sender_alive = False
+        if sender_id is not None:
+            is_sender_alive = await conn.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM user_account WHERE user_id = $1)",
+                sender_id
+            )
+
+        if not is_sender_alive:
+            # 对方已注销，强制将这条“幽灵申请”状态改为 rejected，让它失效并消耗掉
+            await conn.execute(
+                "UPDATE friend_request SET status = 'rejected' WHERE request_id = $1",
+                request_id
+            )
+            return {"status": "sender_deleted", "friend_id": sender_id}
+
+        # 3. 正常更新状态
+        await conn.execute("""
+            UPDATE friend_request SET status = $1 WHERE request_id = $2
+        """, action, request_id)
+        
+        # 4. 如果是同意，执行初始化逻辑
         if action == "accepted":
             insert_friend_query = """
                 INSERT INTO friend_relationship (user_id, friend_user_id)
@@ -141,9 +160,7 @@ async def db_handle_friend_request(
             conv_id = await conn.fetchval(find_conv_query, current_user_id, sender_id)
 
             if conv_id:
-                # ==========================================
-                # 【核心修复】：复用旧会话！把双方的 is_active 都恢复成 true
-                # ==========================================
+                # 复用旧会话！把双方的 is_active 都恢复成 true
                 await conn.execute("""
                     UPDATE conversation_member
                     SET is_active = true
@@ -431,12 +448,13 @@ async def db_get_pending_request_count(conn: asyncpg.Connection, user_id: int) -
     """
     查询指定用户当前未处理的好友申请数量
     """
+    # 🌟 修复红点 Bug：加上 JOIN 过滤掉已经注销的幽灵用户
     query = """
         SELECT COUNT(1)
-        FROM friend_request
-        WHERE receiver_id = $1 AND status = 'pending';
+        FROM friend_request fr
+        JOIN user_account u ON fr.sender_id = u.user_id
+        WHERE fr.receiver_id = $1 AND fr.status = 'pending';
     """
-    # fetchval 专门用来获取单行单列的单一值，非常适合 COUNT() 查询
     count = await conn.fetchval(query, user_id)
 
     return count or 0
