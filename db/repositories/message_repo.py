@@ -498,7 +498,7 @@ async def db_sync_conversations(
         SELECT
             c.conversation_id,
             c.type,
-            c.conversation_name,
+            c.conversation_name AS name,
             c.avatar_url,
             -- 动态判断存活状态
             -- 如果左连表能连上 member 表，说明我还在里面；连不上，说明我被踢了/退群了
