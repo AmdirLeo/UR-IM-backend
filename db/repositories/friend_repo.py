@@ -105,7 +105,7 @@ async def db_handle_friend_request(
         action: str) -> dict:
     if action not in ("accepted", "rejected"):
         raise FriendException(FriendErrors.InvalidAction)
-        
+
     async with conn.transaction():
         # 1. 锁住记录并获取发送者信息
         req_record = await conn.fetchrow("""
@@ -139,7 +139,7 @@ async def db_handle_friend_request(
         await conn.execute("""
             UPDATE friend_request SET status = $1 WHERE request_id = $2
         """, action, request_id)
-        
+
         # 4. 如果是同意，执行初始化逻辑
         if action == "accepted":
             insert_friend_query = """
