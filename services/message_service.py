@@ -116,7 +116,7 @@ async def send_message_service(
     quote_sender_name = None
     if req.quote_message_id:
         quote_sender_name = await db_session.fetchval("""
-            SELECT u.username 
+            SELECT u.username
             FROM conversation_message cm
             JOIN user_account u ON cm.sender_id = u.user_id
             WHERE cm.msg_id = $1 AND cm.conversation_id = $2
