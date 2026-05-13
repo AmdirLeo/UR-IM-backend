@@ -106,6 +106,22 @@ async def send_message_service(
     # 从字典中提取出真正的 msg_id
     real_msg_id = db_result["msg_id"] if isinstance(
         db_result, dict) else db_result
+
+    # 👇 新增 1：查询当前发送者的名字
+    sender_name = await db_session.fetchval(
+        "SELECT username FROM user_account WHERE user_id = $1", user_id
+    )
+
+    # 👇 新增 2：如果引用了消息，查出被引用者的名字
+    quote_sender_name = None
+    if req.quote_message_id:
+        quote_sender_name = await db_session.fetchval("""
+            SELECT u.username
+            FROM conversation_message cm
+            JOIN user_account u ON cm.sender_id = u.user_id
+            WHERE cm.msg_id = $1 AND cm.conversation_id = $2
+        """, req.quote_message_id, req.conversation_id)
+
     # 提前获取一下服务器时间，因为推送和返回都要用到
     server_time = datetime.now(timezone.utc)
 
@@ -124,7 +140,9 @@ async def send_message_service(
             "content": req.message_content,
             "extra": req.extra_data or {},  # 👈 前端靠这个字段渲染卡片或执行指令
             "create_time": server_time.isoformat(),
-            "quote_message_id": req.quote_message_id
+            "quote_message_id": req.quote_message_id,
+            "sender_name": sender_name,
+            "quote_sender_name": quote_sender_name,
         }
     }
 
@@ -141,6 +159,8 @@ async def send_message_service(
         "msg_id": real_msg_id,  # 这里填入提取出来的整数
         "server_time": server_time,
         "local_id": req.local_id,
+        "sender_name": sender_name,
+        "quote_sender_name": quote_sender_name,
     }
 
 
@@ -192,8 +212,10 @@ async def search_message_service(
                 "user_id": msg.get("sender_id", 0),
                 "conversation_id": req.conversation_id,
                 "msg_id": msg.get("msg_id", 0),
-                "msg": content_text,
-                "time": msg.get("created_at", datetime.now(timezone.utc)),
+                "msg": msg.get("msg_content", ""),
+                "time": msg.get("create_time", datetime.now(timezone.utc)),
+                "sender_name": msg.get("sender_name"),
+                "quote_sender_name": msg.get("quote_sender_name"),
             }
         )
 
