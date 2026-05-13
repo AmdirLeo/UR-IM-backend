@@ -234,6 +234,8 @@ async def db_get_message_history(
             cm.sender_id,
             cm.create_time,
             m.quote_id,
+            u_msg.username AS sender_name,
+            u_quote.username AS quote_sender_name,
 
             (
                 SELECT COUNT(1)
@@ -247,6 +249,11 @@ async def db_get_message_history(
         FROM conversation_message cm
         JOIN message m ON cm.msg_id = m.msg_id
         JOIN user_inbox ui ON ui.msg_id = m.msg_id AND ui.user_id = $1 AND ui.conversation_id = $2
+
+        LEFT JOIN user_account u_msg ON cm.sender_id = u_msg.user_id
+        LEFT JOIN conversation_message qcm ON m.quote_id = qcm.msg_id AND qcm.conversation_id = $2
+        LEFT JOIN user_account u_quote ON qcm.sender_id = u_quote.user_id
+
         WHERE cm.conversation_id = $2  -- 👈 增加规范的 WHERE 条件，防止游标拼接出错
     """
 
@@ -290,6 +297,8 @@ async def db_get_message_history(
                 "create_time": row["create_time"],
                 "quote_msg_id": row["quote_id"],
                 "quote_num": row["quote_num"],
+                "sender_name": row["sender_name"],
+                "quote_sender_name": row["quote_sender_name"],
             }
         )
 
@@ -378,10 +387,15 @@ async def db_filter_messages(
             m.msg_body,
             cm.create_time,
             cm.seq_id,
-            m.quote_id
+            m.quote_id,
+            u_msg.username AS sender_name,
+            u_quote.username AS quote_sender_name
         FROM user_inbox ui
         JOIN message m ON ui.msg_id = m.msg_id
         JOIN conversation_message cm ON m.msg_id = cm.msg_id AND cm.conversation_id = ui.conversation_id
+        LEFT JOIN user_account u_msg ON cm.sender_id = u_msg.user_id
+        LEFT JOIN conversation_message qcm ON m.quote_id = qcm.msg_id AND qcm.conversation_id = ui.conversation_id
+        LEFT JOIN user_account u_quote ON qcm.sender_id = u_quote.user_id
         WHERE ui.user_id = $1 AND ui.conversation_id = $2
     """
 
@@ -458,6 +472,8 @@ async def db_filter_messages(
                 "created_at": (
                     row["create_time"].isoformat() if row["create_time"] else None),
                 "reply_to_id": row["quote_id"],
+                "sender_name": row.get("sender_name"),
+                "quote_sender_name": row.get("quote_sender_name"),
             })
 
     return result

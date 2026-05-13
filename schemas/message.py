@@ -46,6 +46,8 @@ class SendMessageData(BaseModel):
     msg_id: int = Field(..., gt=0, description="服务器生成的消息 ID")
     server_time: datetime = Field(..., description="服务器时间戳")
     local_id: str = Field(..., description="客户端发送时的本地消息 ID")
+    sender_name: Optional[str] = None
+    quote_sender_name: Optional[str] = None
 
 
 class MessageHistoryRequest(BaseModel):
@@ -67,6 +69,8 @@ class MessageHistoryItem(BaseModel):
     create_time: datetime = Field(..., description="消息在服务端的落库时间")
     quote_msg_id: Optional[int] = Field(None, gt=0, description="引用的目标消息 ID")
     quote_num: int = Field(0, ge=0, description="该条消息被其他消息引用的次数")
+    sender_name: Optional[str] = None
+    quote_sender_name: Optional[str] = None
 
 
 class MessageSearchRequest(BaseModel):
@@ -85,6 +89,8 @@ class MessageSearchItem(BaseModel):
     msg_id: int = Field(..., description="消息 ID")
     msg: str = Field(..., description="消息内容")
     time: datetime = Field(..., description="发送时间")
+    sender_name: Optional[str] = None
+    quote_sender_name: Optional[str] = None
 
 
 class DeleteMessageRequest(BaseModel):
