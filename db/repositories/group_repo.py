@@ -255,7 +255,7 @@ async def db_manage_group_role(
         QUERY_GET_MEMBER_ROLE, conversation_id, target_user_id
     )
     if not target_role:
-        raise GroupException(GroupErrors.NotInGroup)
+        raise GroupException(GroupErrors.NotInGroup, message="该成员已退出群聊")
 
     async with conn.transaction():
         if new_role == "owner":
@@ -616,8 +616,11 @@ async def db_assert_can_remove_member(
     operator_role = role_map.get(operator_id)
     target_role = role_map.get(target_user_id)
 
-    if not operator_role or not target_role:
-        raise GroupException(GroupErrors.NotInGroup)
+    if not operator_role:
+        raise GroupException(GroupErrors.NotInGroup, message="你已不在群聊中")
+
+    if not target_role:
+        raise GroupException(GroupErrors.NotInGroup, message="该成员已退出群聊")
 
     # 等级压制
     if operator_role == "member":
