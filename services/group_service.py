@@ -184,7 +184,7 @@ async def manage_group_admin_service(
         req.conversation_id, req.user_id
     )
     if not old_role:
-        raise GroupException(GroupErrors.NotInGroup)
+        raise GroupException(GroupErrors.NotInGroup, message="该成员已不在群聊中")
 
     await db_manage_group_role(
         conn=db_session,
