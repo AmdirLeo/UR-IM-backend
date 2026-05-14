@@ -618,7 +618,6 @@ async def db_assert_can_remove_member(
 
     if not operator_role:
         raise GroupException(GroupErrors.NotInGroup, message="你已不在群聊中")
-
     if not target_role:
         raise GroupException(GroupErrors.NotInGroup, message="该成员已退出群聊")
 
