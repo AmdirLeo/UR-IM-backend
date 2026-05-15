@@ -11,7 +11,6 @@ class MessageType(str, Enum):
     IMAGE = "image"
     CARD = "card"     # 互动卡片（如好友申请）
     NOTIFY = "notify"  # 系统指令（前端静默处理或显示小灰条）
-    ANNOUNCEMENT = "announcement"
 
 
 class MessageGenericResponse(BaseModel, Generic[T]):

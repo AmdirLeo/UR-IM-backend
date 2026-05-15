@@ -313,7 +313,7 @@ async def post_group_announcement_service(
         conversation_id=req.conversation_id,
         local_id=str(uuid.uuid4()),
         message_content=f"[群公告] {req.msg}",
-        msg_type="announcement",
+        msg_type="notify",
         quote_message_id=None,
         extra_data={
             "action": "group_announcement",
