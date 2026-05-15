@@ -700,6 +700,73 @@ async def test_group_journey_and_edge_cases():
         assert res.status_code == 200
 
         # ---------------------------------------------------------
+        # 5.5 修改群聊名称 (PUT /api/group/name)
+        # ---------------------------------------------------------
+        new_group_name = "Avengers: Infinity War"
+
+        # 1. 普通 Member 尝试修改 -> 报错 403 PermissionDenied
+        res_rename_fail = await client.put(
+            "/api/group/name",
+            json={"conversation_id": conversation_id, "new_name": "Member Hub"},
+            headers=headers_member,
+        )
+        assert res_rename_fail.status_code == 403
+
+        # 2. Admin 合法修改群名称
+        res_rename = await client.put(
+            "/api/group/name",
+            json={"conversation_id": conversation_id,
+                  "new_name": new_group_name},
+            headers=headers_admin,
+        )
+        assert res_rename.status_code == 200
+        assert res_rename.json()["data"]["new_name"] == new_group_name
+
+        # 3. 重新获取群信息，确认名称已真正更新
+        res_info_after_rename = await client.post(
+            "/api/group/info",
+            json={"conversation_id": conversation_id},
+            headers=headers_owner,
+        )
+        assert res_info_after_rename.status_code == 200
+        assert res_info_after_rename.json(
+        )["data"]["conversation_name"] == new_group_name
+
+        # 4. ========== 验证群内收到改名的系统通知 ==========
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            admin_name = await conn.fetchval("SELECT username FROM user_account WHERE user_id = $1", user_admin_id)
+
+            rename_msg = await conn.fetchrow(
+                """
+                SELECT
+                    m.msg_body->>'content' as message_content,
+                    m.msg_body->>'extra' as extra_data
+                FROM message m
+                JOIN conversation_message cm ON m.msg_id = cm.msg_id
+                WHERE cm.conversation_id = $1
+                  AND cm.sender_id = -2
+                  AND m.msg_body->>'type' = 'notify'
+                  AND m.msg_body->>'extra' LIKE '%group_name_updated%'
+                ORDER BY cm.msg_id DESC
+                LIMIT 1
+                """,
+                conversation_id
+            )
+            assert rename_msg is not None, "群聊内未收到改名的通知"
+            msg_text = rename_msg["message_content"]
+            assert admin_name in msg_text
+            assert new_group_name in msg_text
+            assert "修改" in msg_text
+
+            extra_str = rename_msg["extra_data"]
+            extra = json.loads(extra_str) if extra_str else {}
+            assert extra.get("action") == "group_name_updated"
+            assert extra.get("operator_id") == user_admin_id
+            assert extra.get("new_name") == new_group_name
+            break
+        # ========== 改名通知验证结束 ==========
+        # ---------------------------------------------------------
         # 6. 群邀请与审核 (POST /api/group/invite & POST /api/group/invite/review)
         # ---------------------------------------------------------
         # Member 邀请 Stranger (合法的 member 邀请流程)

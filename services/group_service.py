@@ -1,5 +1,6 @@
 import asyncpg
 import uuid
+import json
 from typing import List, Optional, Dict
 from datetime import datetime, timezone
 from schemas.group import (
@@ -11,6 +12,7 @@ from schemas.group import (
     GroupAnnouncementRequest,
     GroupInviteRequest,
     GroupInviteReviewRequest,
+    GroupUpdateNameRequest,
 )
 from schemas.message import MessageType
 from core.exceptions import GroupException, GroupErrors
@@ -33,6 +35,7 @@ from db.repositories.group_repo import (
     db_assert_can_remove_member,
     db_get_group_announcements,
     db_get_group_list,
+    db_update_group_name,
 )
 from schemas.message import SendMessageRequest, MessageType
 from services.message_service import send_message_service
@@ -938,3 +941,66 @@ async def get_group_list(
     """
     groups = await db_get_group_list(db_session, current_user_id)
     return groups
+
+
+async def send_group_name_update_notification(
+    conn: asyncpg.Connection,
+    conversation_id: int,
+    operator_id: int,
+    new_name: str
+) -> None:
+    """助手 (-2) 在群内发送改名通知"""
+    # 也可以复用你的 QUERY_GET_USERNAME_BY_ID
+    operator_name = await conn.fetchval(
+        "SELECT username FROM user_account WHERE user_id = $1", operator_id
+    ) or str(operator_id)
+
+    message_text = f"{operator_name} 修改了群名称为“{new_name}”"
+
+    send_req = SendMessageRequest(
+        conversation_id=conversation_id,
+        local_id=str(uuid.uuid4()),
+        message_content=message_text,
+        msg_type=MessageType.NOTIFY,  # 或者 "notify"，视你定义的 Enum 而定
+        extra_data={
+            "action": "group_name_updated",
+            "operator_id": operator_id,
+            "new_name": new_name
+        }
+    )
+    # 调用底层封装好的发消息服务，发送者是群聊助手 (-2)
+    await send_message_service(conn, -2, send_req)
+
+
+async def update_group_name_service(
+    db_session: asyncpg.Connection,
+    current_user_id: int,
+    req: GroupUpdateNameRequest
+) -> dict:
+    """处理修改群聊名称的业务逻辑"""
+    # 1. 校验权限：仅 owner 和 admin 可以修改
+    query_role = """
+        SELECT role FROM conversation_member
+        WHERE conversation_id = $1 AND member_user_id = $2
+    """
+    role = await db_session.fetchval(query_role, req.conversation_id, current_user_id)
+
+    if not role:
+        # 请替换为你的业务异常类，返回 403 或 404
+        raise GroupException(GroupErrors.NotInGroup)
+    if role not in ("owner", "admin"):
+        # 如果你有定义 GroupException 和状态码映射，请抛出对应 403 的异常
+        raise GroupException(GroupErrors.PermissionDenied)
+
+    # 2. 更新数据库中的名称
+    await db_update_group_name(db_session, req.conversation_id, req.new_name)
+
+    # 3. 发送系统通知
+    await send_group_name_update_notification(
+        conn=db_session,
+        conversation_id=req.conversation_id,
+        operator_id=current_user_id,
+        new_name=req.new_name
+    )
+
+    return {"conversation_id": req.conversation_id, "new_name": req.new_name}
