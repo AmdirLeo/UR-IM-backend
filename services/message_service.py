@@ -212,7 +212,7 @@ async def search_message_service(
                 "user_id": msg.get("sender_id", 0),
                 "conversation_id": req.conversation_id,
                 "msg_id": msg.get("msg_id", 0),
-                "msg": msg.get("msg_content", ""),
+                "msg": content_text,
                 "time": msg.get("create_time", datetime.now(timezone.utc)),
                 "sender_name": msg.get("sender_name"),
                 "quote_sender_name": msg.get("quote_sender_name"),
