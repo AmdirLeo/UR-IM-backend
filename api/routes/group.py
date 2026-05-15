@@ -19,6 +19,7 @@ from schemas.group import (
     GroupAnnouncementsRequest,
     GroupInfo,
     GroupListResponse,
+    GroupUpdateNameRequest,
 )
 from services.group_service import (
     create_group_service,
@@ -34,6 +35,7 @@ from services.group_service import (
     get_pending_group_invites_as_cards,
     get_group_announcements_service,
     get_group_list,
+    update_group_name_service,
 )
 
 
@@ -206,3 +208,18 @@ async def list_groups(
     data = [GroupInfo(**g) for g in groups]
 
     return GroupListResponse(code=200, msg="获取成功", data=data)
+
+
+@router.put("/name", summary="修改群聊名称")
+async def update_group_name(
+    request: GroupUpdateNameRequest,
+    current_user_id: CurrentUserId,
+    db_session: DBConnection,
+):
+    res = await update_group_name_service(
+        db_session=db_session,
+        current_user_id=current_user_id,
+        req=request,
+    )
+    # 假设你有类似 GenericResponse 的统一返回模型
+    return {"code": 200, "msg": "群名称修改成功", "data": res}

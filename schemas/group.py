@@ -15,7 +15,7 @@ class GroupGenericResponse(BaseModel, Generic[T]):
 
 class GroupCreateRequest(BaseModel):
     user_ids: List[int] = Field(..., max_length=50, description="被邀请的好友ID列表")
-    name: str = Field(..., min_length=1, max_length=100, description="群名称")
+    name: str = Field(..., min_length=1, max_length=50, description="群名称")
     avatar: Optional[str] = Field(None, description="群头像")
 
 
@@ -133,3 +133,8 @@ class GroupListResponse(BaseModel):
     code: int = Field(200, description="状态码")
     msg: str = Field("获取成功", description="提示信息")
     data: List[GroupInfo] = Field(..., description="群聊列表数据")
+
+
+class GroupUpdateNameRequest(BaseModel):
+    conversation_id: int = Field(..., description="群聊会话ID")
+    new_name: str = Field(..., min_length=1, max_length=50, description="新群名称")

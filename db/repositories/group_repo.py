@@ -710,3 +710,62 @@ async def db_get_group_list(conn: asyncpg.Connection, user_id: int) -> list[dict
     """
     rows = await conn.fetch(query, user_id)
     return [dict(row) for row in rows]
+
+
+async def db_resolve_pending_invites_for_group(conn: asyncpg.Connection, conversation_id: int) -> list[int]:
+    """
+    【核心状态机】群邀请状态全局结算函数。 (适配“新管理员不审核老申请”的规则)
+    """
+    query = """
+        WITH invite_stats AS (
+            -- 针对该群所有还在 pending 的邀请，统计它们的“专属审核委员会”的投票情况
+            SELECT 
+                gias.invite_id,
+                
+                -- 【分母】：当年分配到这个邀请的管理员里，现在还没退群、没被撤职的人数
+                COUNT(gias.admin_id)::int AS eligible_admin_count,
+                
+                -- 【分子】：这些合法的管理员里，已经点了 'ignored' 的人数
+                COUNT(CASE WHEN gias.state = 'ignored' THEN 1 END)::int AS ignored_count
+                
+            FROM group_invite_admin_state gias
+            -- 核心联表：确保这个管理员现在依然在群里，且依然是管理层
+            -- （因为你改成了物理删除，只要能 JOIN 到 conversation_member，就说明人还在）
+            JOIN conversation_member cm 
+              ON gias.admin_id = cm.member_user_id
+              AND cm.conversation_id = $1
+              AND cm.role IN ('owner', 'admin')
+            WHERE gias.invite_id IN (
+                SELECT invite_id FROM group_invite WHERE conversation_id = $1 AND status = 'pending'
+            )
+            GROUP BY gias.invite_id
+        )
+        -- 将符合条件的申请，批量置为 rejected
+        UPDATE group_invite gi
+        SET status = 'rejected'
+        FROM invite_stats stats
+        WHERE gi.invite_id = stats.invite_id
+          AND stats.eligible_admin_count > 0 
+          AND stats.ignored_count >= stats.eligible_admin_count
+          AND gi.status = 'pending'
+        RETURNING gi.invite_id;
+    """
+
+    records = await conn.fetch(query, conversation_id)
+    return [record["invite_id"] for record in records]
+
+
+async def db_update_group_name(
+    conn: asyncpg.Connection,
+    conversation_id: int,
+    new_name: str
+) -> None:
+    """
+    更新群聊名称
+    """
+    query = """
+        UPDATE conversation
+        SET conversation_name = $1
+        WHERE conversation_id = $2 AND type = 'group';
+    """
+    await conn.execute(query, new_name, conversation_id)
