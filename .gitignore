@@ -21,3 +21,4 @@ reset_db.py
 
 #头像存储
 static/avatars/
+init_minio.py
