@@ -739,7 +739,7 @@ async def test_group_journey_and_edge_cases():
 
             rename_msg = await conn.fetchrow(
                 """
-                SELECT 
+                SELECT
                     m.msg_body->>'content' as message_content,
                     m.msg_body->>'extra' as extra_data
                 FROM message m

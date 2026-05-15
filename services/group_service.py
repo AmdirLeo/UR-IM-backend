@@ -980,7 +980,7 @@ async def update_group_name_service(
     """处理修改群聊名称的业务逻辑"""
     # 1. 校验权限：仅 owner 和 admin 可以修改
     query_role = """
-        SELECT role FROM conversation_member 
+        SELECT role FROM conversation_member
         WHERE conversation_id = $1 AND member_user_id = $2
     """
     role = await db_session.fetchval(query_role, req.conversation_id, current_user_id)
