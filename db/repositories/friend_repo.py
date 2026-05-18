@@ -34,6 +34,40 @@ ERR_TAG_NOT_FOUND = "分组不存在"
 ERR_TAG_CONFLICT = "该分组已存在"
 
 
+async def db_check_is_friend(
+    conn: asyncpg.Connection, user_id: int, target_user_id: int
+) -> bool:
+    """
+    检查 target_user_id 是否是 user_id 的好友
+    (用于群聊单人邀请鉴权等场景)
+    """
+    query = """
+        SELECT EXISTS(
+            SELECT 1 FROM friend_relationship
+            WHERE user_id = $1 AND friend_user_id = $2
+        )
+    """
+    return await conn.fetchval(query, user_id, target_user_id)
+
+
+async def db_filter_valid_friends(
+    conn: asyncpg.Connection, user_id: int, target_ids: list[int]
+) -> list[int]:
+    """
+    批量过滤：传入一批 ID，返回其中真正是 user_id 好友的 ID 列表
+    (用于批量群聊邀请智能过滤)
+    """
+    if not target_ids:
+        return []
+
+    query = """
+        SELECT friend_user_id FROM friend_relationship
+        WHERE user_id = $1 AND friend_user_id = ANY($2::int[])
+    """
+    records = await conn.fetch(query, user_id, target_ids)
+    return [record["friend_user_id"] for record in records]
+
+
 async def db_create_friend_request(
     conn: asyncpg.Connection, sender_id: int, receiver_id: int, message: str
 ) -> int:

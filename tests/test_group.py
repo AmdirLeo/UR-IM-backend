@@ -66,13 +66,18 @@ async def test_group_journey_and_edge_cases():
         user_outsider_id = await db_create_user(
             conn, "group_outsider", hashed_pw, "g_outsider@test.com"
         )
+        # 👇 新增：创建一个完全没有好友关系的纯路人
+        user_non_friend_id = await db_create_user(
+            conn, "pure_stranger", hashed_pw, "pure_stranger@test.com"
+        )
         # 👇 新增：为每个用户创建与群聊助手(-2)的私聊会话
         for uid in [
                 user_owner_id,
                 user_admin_id,
                 user_member_id,
                 user_stranger_id,
-                user_outsider_id]:
+                user_outsider_id,
+                user_non_friend_id]:
             conv_id = await conn.fetchval("""
                 SELECT c.conversation_id
                 FROM conversation c
@@ -545,6 +550,18 @@ async def test_group_journey_and_edge_cases():
         # ========== 设置管理员通知验证结束 ==========
 
         # ========== 新增：撤销管理员并验证通知及待处理列表清理 ==========
+        # 👇👇👇 新增：确立 member 和 outsider 的好友关系，通过鉴权 👇👇👇
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            await conn.execute(
+                """
+                INSERT INTO friend_relationship (user_id, friend_user_id)
+                VALUES ($1, $2), ($2, $1) ON CONFLICT DO NOTHING;
+                """,
+                user_member_id, user_outsider_id
+            )
+            break
+        # 👆👆👆 新增结束 👆👆👆
         # 先让 member 再创建一个新的入群申请，确保待处理列表中有数据可供后续验证清理
         res_invite2 = await client.post(
             "/api/group/invite",
@@ -766,9 +783,30 @@ async def test_group_journey_and_edge_cases():
             assert extra.get("new_name") == new_group_name
             break
         # ========== 改名通知验证结束 ==========
+
+        # ========== 新增：手动缔结好友关系（为了通过单人邀请的鉴权） ==========
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            await conn.execute(
+                """
+                INSERT INTO friend_relationship (user_id, friend_user_id)
+                VALUES ($1, $2), ($2, $1) ON CONFLICT DO NOTHING;
+                """,
+                user_member_id, user_stranger_id
+            )
+            break
+        # =================================================================
         # ---------------------------------------------------------
         # 6. 群邀请与审核 (POST /api/group/invite & POST /api/group/invite/review)
         # ---------------------------------------------------------
+        # ========== 👇 新增测试：验证非好友单人邀请被拦截 ==========
+        res_invite_forbidden = await client.post(
+            "/api/group/invite",
+            json={"conversation_id": conversation_id, "user_id": user_non_friend_id},
+            headers=headers_member,
+        )
+        assert res_invite_forbidden.status_code == 403, "安全漏洞：竟然可以邀请非好友！"
+        # =========================================================
         # Member 邀请 Stranger (合法的 member 邀请流程)
         res_invite = await client.post(
             "/api/group/invite",
@@ -1027,6 +1065,15 @@ async def test_group_journey_and_edge_cases():
             batch_invitee_2_id = await db_create_user(
                 conn, "batch_user_2", hashed_pw, "batch2@test.com"
             )
+            # 新增：手动缔结批量好友关系
+            await conn.execute(
+                """
+                INSERT INTO friend_relationship (user_id, friend_user_id)
+                VALUES ($1, $2), ($2, $1), ($1, $3), ($3, $1) ON CONFLICT DO NOTHING;
+                """,
+                user_member_id, batch_invitee_1_id, batch_invitee_2_id
+            )
+            # 新增结束
             break
 
         # Member 尝试批量邀请这两个新人，外加他自己（测试过滤逻辑）
@@ -1035,7 +1082,8 @@ async def test_group_journey_and_edge_cases():
             "user_ids": [
                 batch_invitee_1_id,
                 batch_invitee_2_id,
-                user_member_id]}
+                user_member_id,
+                user_non_friend_id]}
 
         res_batch_invite = await client.post(
             "/api/group/invite/batch",
@@ -1049,6 +1097,10 @@ async def test_group_journey_and_edge_cases():
 
         # 验证返回数据：应只生成2条申请记录（过滤掉了自己）
         assert len(applies) == 2, "批量邀请应过滤掉自己，生成两条记录"
+
+        # 验证生成的申请记录里绝对没有那个非好友
+        assert not any(
+            item["user_id"] == user_non_friend_id for item in applies), "安全漏洞：非好友被成功批量邀请了"
 
         apply_id_1 = next(
             item["apply_id"] for item in applies if item["user_id"] == batch_invitee_1_id)
@@ -1354,6 +1406,16 @@ async def test_group_invite_triggers_assistant_card(mock_ws_send):
                        ($1, $3, 'admin'),
                        ($1, $4, 'member')
             """, group_conv_id, user_owner_id, user_admin_id, user_member_id)
+
+            # 👇👇👇 新增：建立邀请人(member)和被邀请人(invitee)的好友关系 👇👇👇
+            await conn.execute(
+                """
+                INSERT INTO friend_relationship (user_id, friend_user_id)
+                VALUES ($1, $2), ($2, $1) ON CONFLICT DO NOTHING;
+                """,
+                user_member_id, user_invitee_id
+            )
+            # 👆👆👆 新增结束 👆👆👆
 
             break
 

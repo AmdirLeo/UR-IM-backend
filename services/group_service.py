@@ -40,6 +40,7 @@ from db.repositories.group_repo import (
 )
 from schemas.message import SendMessageRequest, MessageType
 from services.message_service import send_message_service
+from db.repositories.friend_repo import db_check_is_friend, db_filter_valid_friends
 
 QUERY_FIND_SYSTEM_PRIVATE_CONV = """
     SELECT c.conversation_id
@@ -335,6 +336,16 @@ async def invite_to_group_service(
         db_session: asyncpg.Connection,
         current_user_id: int,
         req: GroupInviteRequest) -> dict:
+
+    # ========== 新增：好友关系鉴权 ==========
+    is_friend = await db_check_is_friend(db_session, current_user_id, req.user_id)
+    if not is_friend:
+        # 使用统一的 GroupException 格式
+        raise GroupException(
+            GroupErrors.PermissionDenied,
+            "权限不足：只能邀请自己的好友加入群聊")
+    # ========================================
+
     # 1. 创建入群申请记录（邀请制）
     invite_id = await db_invite_to_group(
         conn=db_session,
@@ -397,10 +408,22 @@ async def invite_to_group_batch_service(
         current_user_id: int,
         req: GroupBatchInviteRequest) -> dict:
 
+    # ========== 新增：批量好友过滤 ==========
+    valid_friend_ids = await db_filter_valid_friends(
+        db_session, current_user_id, req.user_ids
+    )
+
+    if not valid_friend_ids:
+        # 如果传过来的所有 ID 都不是当前用户的好友，直接按照统一格式阻断
+        raise GroupException(
+            GroupErrors.PermissionDenied,
+            "权限不足：只能邀请自己的好友加入群聊")
+    # ========================================
+
     # 1. 批量创建入群申请记录（使用事务保证数据一致性）
     apply_records = []
     async with db_session.transaction():
-        for invitee_id in req.user_ids:
+        for invitee_id in valid_friend_ids:
             # 过滤掉自己邀请自己的情况（容错）
             if invitee_id == current_user_id:
                 continue
