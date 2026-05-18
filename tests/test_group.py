@@ -1142,6 +1142,94 @@ async def test_group_journey_and_edge_cases():
             )
             assert is_member_1 is True, "批量邀请被批准后，用户应加入群聊"
             break
+
+        # =================================================================
+        # 🌟 新增：6.6 测试状态机自动结算机制（边缘案例与核心动态分母）
+        # =================================================================
+
+        # 【当前状态快照】：
+        # 群里有权审批的人（委员会）：Owner(user_owner_id) 和 Admin(user_admin_id)
+        # 待处理申请：apply_id_2 (由 batch_invitee_2_id 触发)
+
+        # ---- 触发器测试 A：管理员变动/降级导致申请自动拒绝 ----
+
+        # 1. 首先让群主 (Owner) 忽略这个 apply_id_2
+        res_owner_ignore = await client.post(
+            "/api/group/invite/review",
+            json={"apply_id": apply_id_2, "status": "IGNORED"},
+            headers=headers_owner,
+        )
+        assert res_owner_ignore.status_code == 200
+
+        # 2. 检查数据库：此时 Owner 忽略了，但 Admin 还没操作，全局状态应该还是 pending
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            g_status = await conn.fetchval("SELECT status FROM group_invite WHERE invite_id = $1", apply_id_2)
+            assert g_status == "pending", "仅一人忽略时，申请不应该死掉"
+            break
+
+        # 3. 核心大招：Owner 突然撤销了 Admin 的管理员职位（降级为普通成员）
+        # 这会触发 db_remove_admin_invite_states，清除 Admin 的待办，并重新计算分母！
+        res_demote_admin = await client.put(
+            "/api/group/admin",
+            json={
+                "conversation_id": conversation_id,
+                "user_id": user_admin_id,
+                "role": "member",
+            },
+            headers=headers_owner,
+        )
+        assert res_demote_admin.status_code == 200
+
+        # 4. 强力断言：此时群里唯一的“有效在职管理员”只剩下 Owner 自己了，而 Owner 之前已经点了忽略。
+        # 也就是说，“有效忽略率”达到了 100%，申请应该被系统默默置为 'rejected'！
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            g_status = await conn.fetchval("SELECT status FROM group_invite WHERE invite_id = $1", apply_id_2)
+            assert g_status == "rejected", "🌟 状态机故障：管理员降级后，老申请未被自动拒绝！"
+            break
+
+        # ---- 触发器测试 B：全员忽略导致申请自动拒绝 ----
+
+        # 为了测试纯粹的“全员忽略”，我们先恢复 Admin 身份，并由 Member 触发一笔崭新的加群申请
+        res_restore_admin = await client.put(
+            "/api/group/admin",
+            json={"conversation_id": conversation_id, "user_id": user_admin_id, "role": "admin"},
+            headers=headers_owner,
+        )
+        assert res_restore_admin.status_code == 200
+
+        # Member 再次邀请 batch_invitee_2_id 入群，产生全新 pending 申请
+        res_new_invite = await client.post(
+            "/api/group/invite",
+            json={"conversation_id": conversation_id, "user_id": batch_invitee_2_id},
+            headers=headers_member,
+        )
+        apply_id_3 = res_new_invite.json()["data"]["apply_id"]
+
+        # 1. 现任管理员之一 Admin 点忽略
+        await client.post(
+            "/api/group/invite/review",
+            json={"apply_id": apply_id_3, "status": "IGNORED"},
+            headers=headers_admin,
+        )
+        # 2. 现任管理员之二 Owner 也点忽略
+        await client.post(
+            "/api/group/invite/review",
+            json={"apply_id": apply_id_3, "status": "IGNORED"},
+            headers=headers_owner,
+        )
+
+        # 3. 强力断言：所有人都点忽略了，数据库全局状态必须自动变成 'rejected'
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            g_status = await conn.fetchval("SELECT status FROM group_invite WHERE invite_id = $1", apply_id_3)
+            assert g_status == "rejected", "🌟 状态机故障：所有管理员选择忽略后，全局状态未转为 rejected！"
+            break
+
+        # =================================================================
+        # 🌟 新增测试结束，顺畅接入后续的踢人流程
+        # =================================================================
         # ---------------------------------------------------------
         # 7. 踢人 (DELETE /api/group/member)
         # ---------------------------------------------------------

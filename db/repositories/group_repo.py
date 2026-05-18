@@ -393,7 +393,7 @@ async def db_invite_to_group(
 
 async def db_review_group_invite(
     conn: asyncpg.Connection, reviewer_id: int, invite_id: int, action: str
-) -> None:
+) -> list[int]:
     """
     审核群邀请 (对应 PUT /api/group/invite/review)
     action 必须是 'approved' 或 'ignored'
@@ -462,6 +462,12 @@ async def db_review_group_invite(
                 ON CONFLICT (conversation_id, member_user_id) DO NOTHING;
             """
             await conn.execute(insert_member, conversation_id, invitee_id)
+            return []
+
+        elif action == "ignored":
+            # 🌟 挂载点：当有人点忽略时，调用全局结算钩子！
+            rejected_ids = await db_resolve_pending_invites_for_group(conn, conversation_id)
+            return rejected_ids
 
 
 async def db_get_pending_group_invite_count(
@@ -555,20 +561,26 @@ async def db_remove_admin_invite_states(
     conn: asyncpg.Connection,
     conversation_id: int,
     admin_id: int,
-) -> None:
+) -> list[int]:
     """
     删除指定管理员在某群的所有待处理邀请审核状态记录。
     用于当管理员被撤销或群主转让后，不再参与该群入群审核。
     """
-    query = """
-        DELETE FROM group_invite_admin_state
-        WHERE admin_id = $1
-          AND invite_id IN (
-              SELECT invite_id FROM group_invite
-              WHERE conversation_id = $2 AND status = 'pending'
-          )
-    """
-    await conn.execute(query, admin_id, conversation_id)
+    async with conn.transaction():
+        query = """
+            DELETE FROM group_invite_admin_state
+            WHERE admin_id = $1
+            AND invite_id IN (
+                SELECT invite_id FROM group_invite
+                WHERE conversation_id = $2 AND status = 'pending'
+            )
+        """
+        await conn.execute(query, admin_id, conversation_id)
+
+        # 2. 🌟 挂载点：此时分母已经改变，立刻召唤“全局结算钩子”！
+        # 如果因为他的离开，剩下的管理员全是点过“忽略”的，这个申请就会当场暴毙。
+        rejected_ids = await db_resolve_pending_invites_for_group(conn, conversation_id)
+    return rejected_ids
 
 
 async def db_assert_can_quit_group(
