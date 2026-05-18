@@ -785,3 +785,50 @@ async def db_update_group_name(
         WHERE conversation_id = $2 AND type = 'group';
     """
     await conn.execute(query, new_name, conversation_id)
+
+
+async def db_get_owned_groups(
+        conn: asyncpg.Connection,
+        user_id: int) -> list[str]:
+    """
+    获取用户作为群主的所有群聊名称。
+    """
+    query = """
+        SELECT c.conversation_name
+        FROM conversation_member cm
+        JOIN conversation c ON cm.conversation_id = c.conversation_id
+        WHERE cm.member_user_id = $1
+          AND cm.role = 'owner'
+          AND c.type = 'group'
+          AND c.is_disbanded = false;
+    """
+    rows = await conn.fetch(query, user_id)
+    # 处理可能存在的未命名群聊
+    return [row["conversation_name"] or "未命名群聊" for row in rows]
+
+
+async def db_disband_all_owned_groups(
+        conn: asyncpg.Connection,
+        user_id: int) -> list[int]:
+    """
+    【强力注销专用】批量解散用户作为群主的所有群聊。
+    返回被解散的 conversation_id 列表，以便外层发送系统通知。
+    """
+    # 1. 先查出所有需要解散的群 ID
+    query_get_ids = """
+        SELECT conversation_id
+        FROM conversation_member
+        WHERE member_user_id = $1 AND role = 'owner'
+    """
+    rows = await conn.fetch(query_get_ids, user_id)
+    conv_ids = [row["conversation_id"] for row in rows]
+
+    if not conv_ids:
+        return []
+
+    # 2. 循环复用现成的解散函数
+    for conv_id in conv_ids:
+        # 内部自带了鉴权和事务，直接调就行
+        await db_disband_group(conn, user_id, conv_id)
+
+    return conv_ids

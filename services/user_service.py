@@ -33,6 +33,12 @@ from schemas.user import (
     PortraitResponse,
     UserInfoResponse,
 )
+from db.repositories.group_repo import (
+    db_get_owned_groups,
+    db_disband_all_owned_groups,
+    db_clean_group_invites,
+)
+from services.group_service import send_group_disbanded_notification
 from schemas.message import SendMessageRequest
 from typing import List
 from core.ws_manager import manager
@@ -207,9 +213,17 @@ async def delete_account_service(
         # 为了安全，注销时的密码错误可以直接提示“密码错误”
         raise BusinessException(status_code=400, detail="注销失败：验证密码错误")
 
-    # 5. 验证通过，执行注销逻辑
+    # 5. 🌟【核心新增】拦截群主
+    owned_groups = await db_get_owned_groups(conn, current_user_id)
+    if owned_groups:
+        group_names_str = "、".join(owned_groups)
+        raise BusinessException(
+            status_code=400,
+            detail=f"注销失败：您还是以下群聊的群主（{group_names_str}）。请先解散群聊或转让群主身份，或使用强制注销功能。")
+
+    # 6. 验证通过，执行注销逻辑
     # 这里的 db_delete_user 就是你之前写的那个 DELETE SQL
-    # 3. 删除所有双向好友关系
+    # 6.1. 删除所有双向好友关系
     friend_rows = await conn.fetch(
         "SELECT friend_user_id FROM friend_relationship WHERE user_id = $1",
         current_user_id,
@@ -221,6 +235,58 @@ async def delete_account_service(
 
     await db_delete_user(conn, current_user_id)
     return BaseResponse(code=200, msg="账号已彻底注销")
+
+
+async def force_delete_account_service(
+        conn,
+        current_user_id: int,
+        plain_password: str) -> BaseResponse:
+    """强力注销接口：无视群主身份，连带解散名下所有群"""
+
+    # 1. 身份与密码验证
+    user = await db_get_user_by_id(conn, current_user_id)
+    if not user:
+        raise BusinessException(status_code=404, detail="用户不存在")
+
+    hashed_pwd = await db_get_password_by_id(conn, current_user_id)
+    if not hashed_pwd:
+        raise BusinessException(status_code=400, detail="账号数据异常，无法验证身份")
+
+    if not verify_password(plain_password, hashed_pwd):
+        raise BusinessException(status_code=400, detail="强力注销失败：验证密码错误")
+
+    # 2. 🌟【核心逻辑】批量解散名下所有群聊
+    disbanded_conv_ids = await db_disband_all_owned_groups(conn, current_user_id)
+
+    # 2. 🌟 循环补上服务层的附属动作（发通知 + 清理残余记录）
+    if disbanded_conv_ids:
+        for conv_id in disbanded_conv_ids:
+            # 告诉群员们：群主跑路了，群解散了
+            await send_group_disbanded_notification(conn, conv_id, current_user_id)
+            # 清理针对这个群的悬而未决的入群申请
+            await db_clean_group_invites(conn, conv_id)
+
+    # 💡 建议提示：如果你的系统有全局的消息下发机制（例如系统助手），
+    # 可以在这里遍历 disbanded_conv_ids，给被解散的群成员发送“群聊已解散”的通知。
+
+    # 3. 删除所有双向好友关系
+    friend_rows = await conn.fetch(
+        "SELECT friend_user_id FROM friend_relationship WHERE user_id = $1",
+        current_user_id,
+    )
+    friend_ids = [row["friend_user_id"] for row in friend_rows]
+
+    for friend_id in friend_ids:
+        await db_remove_friend(conn, current_user_id, friend_id, delete_history=False)
+
+    # 4. 软删除用户
+    await db_delete_user(conn, current_user_id)
+
+    msg = "账号已强制注销"
+    if disbanded_conv_ids:
+        msg += f"，并连带解散了 {len(disbanded_conv_ids)} 个群聊"
+
+    return BaseResponse(code=200, msg=msg)
 
 
 async def _verify_current_password(conn, user_id: int, plain_password: str):

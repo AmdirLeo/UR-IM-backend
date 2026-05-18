@@ -66,11 +66,25 @@ async def test_registration_triggers_system_message(
         # ==========================================
         assert mock_ws_send.called, "系统欢迎消息没有被推送！"
 
-        # 偷看邮局拦截下来的第一封信件
-        sent_ws_data = mock_ws_send.call_args_list[0][0][0]
-        target_user_id = mock_ws_send.call_args_list[0][0][1]
+        # 遍历所有的推送记录，找到发给新用户的那一次调用
+        received_user_ids = []
+        sent_ws_data = None
 
-        assert target_user_id == new_user_id
+        for call in mock_ws_send.call_args_list:
+            payload = call[0][0]
+            target_uid = call[0][1]
+            received_user_ids.append(target_uid)
+
+            # 如果这个推送是发给新用户的，我们就把 payload 保存下来
+            if target_uid == new_user_id:
+                sent_ws_data = payload
+                break
+
+        # 断言新用户确实在接收名单里
+            assert new_user_id in received_user_ids, f"推送名单中未找到新用户，实际推送给了: {received_user_ids}"
+            assert sent_ws_data is not None
+
+        assert target_uid == new_user_id
         assert sent_ws_data["type"] == "NEW_CHAT_MESSAGE"
 
         msg_payload = sent_ws_data["data"]
