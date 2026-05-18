@@ -1011,6 +1011,85 @@ async def test_group_journey_and_edge_cases():
             headers=headers_stranger,
         )
         assert res_stranger_info.status_code == 200
+
+        # ---------------------------------------------------------
+        # 6.5 批量邀请成员 (POST /api/group/invite/batch)
+        # ---------------------------------------------------------
+        # 准备两个新的陌生人用于批量邀请测试
+        batch_invitee_1_id = None
+        batch_invitee_2_id = None
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            hashed_pw = get_password_hash("password123")
+            batch_invitee_1_id = await db_create_user(
+                conn, "batch_user_1", hashed_pw, "batch1@test.com"
+            )
+            batch_invitee_2_id = await db_create_user(
+                conn, "batch_user_2", hashed_pw, "batch2@test.com"
+            )
+            break
+
+        # Member 尝试批量邀请这两个新人，外加他自己（测试过滤逻辑）
+        batch_payload = {
+            "conversation_id": conversation_id,
+            "user_ids": [
+                batch_invitee_1_id,
+                batch_invitee_2_id,
+                user_member_id]}
+
+        res_batch_invite = await client.post(
+            "/api/group/invite/batch",
+            json=batch_payload,
+            headers=headers_member,
+        )
+        assert res_batch_invite.status_code == 200, "批量邀请接口应返回成功"
+
+        batch_data = res_batch_invite.json().get("data", {})
+        applies = batch_data.get("applies", [])
+
+        # 验证返回数据：应只生成2条申请记录（过滤掉了自己）
+        assert len(applies) == 2, "批量邀请应过滤掉自己，生成两条记录"
+
+        apply_id_1 = next(
+            item["apply_id"] for item in applies if item["user_id"] == batch_invitee_1_id)
+        apply_id_2 = next(
+            item["apply_id"] for item in applies if item["user_id"] == batch_invitee_2_id)
+
+        assert apply_id_1 > 0 and apply_id_2 > 0
+
+        # ========== 验证：管理员/群主待处理列表包含这两条新申请 ==========
+        res_pending_admin_batch = await client.get(
+            "/api/group/invites/pending",
+            headers=headers_admin,
+        )
+        assert res_pending_admin_batch.status_code == 200
+        pending_cards_batch = res_pending_admin_batch.json()["data"]
+
+        found_apply_1 = any(
+            card["apply_id"] == apply_id_1 for card in pending_cards_batch)
+        found_apply_2 = any(
+            card["apply_id"] == apply_id_2 for card in pending_cards_batch)
+
+        assert found_apply_1 and found_apply_2, "Admin的待处理列表中应包含批量邀请生成的两条申请"
+
+        # ========== 验证：这两条申请可以在后续通过相同的 review 接口审批 ==========
+        # Admin 批准第一个申请
+        res_approve_batch_1 = await client.post(
+            "/api/group/invite/review",
+            json={"apply_id": apply_id_1, "status": "APPROVED"},
+            headers=headers_admin,
+        )
+        assert res_approve_batch_1.status_code == 200
+
+        # 验证批量邀请的第一个人已入群
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            is_member_1 = await conn.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2)",
+                conversation_id, batch_invitee_1_id
+            )
+            assert is_member_1 is True, "批量邀请被批准后，用户应加入群聊"
+            break
         # ---------------------------------------------------------
         # 7. 踢人 (DELETE /api/group/member)
         # ---------------------------------------------------------

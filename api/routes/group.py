@@ -20,6 +20,8 @@ from schemas.group import (
     GroupInfo,
     GroupListResponse,
     GroupUpdateNameRequest,
+    GroupBatchInviteRequest,
+    GroupBatchInviteData,
 )
 from services.group_service import (
     create_group_service,
@@ -36,6 +38,7 @@ from services.group_service import (
     get_group_announcements_service,
     get_group_list,
     update_group_name_service,
+    invite_to_group_batch_service,
 )
 
 
@@ -144,6 +147,17 @@ async def invite_to_group(
     db_session: DBConnection,
 ):
     data = await invite_to_group_service(db_session, current_user_id, req)
+    return GroupGenericResponse(data=data)
+
+
+@router.post("/invite/batch", summary="批量邀请成员",
+             response_model=GroupGenericResponse[GroupBatchInviteData])
+async def invite_to_group_batch(
+    req: GroupBatchInviteRequest,
+    current_user_id: CurrentUserId,
+    db_session: DBConnection,
+):
+    data = await invite_to_group_batch_service(db_session, current_user_id, req)
     return GroupGenericResponse(data=data)
 
 

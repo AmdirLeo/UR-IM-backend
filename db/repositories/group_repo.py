@@ -689,7 +689,9 @@ async def db_get_group_announcements(
     }
 
 
-async def db_get_group_list(conn: asyncpg.Connection, user_id: int) -> list[dict]:
+async def db_get_group_list(
+        conn: asyncpg.Connection,
+        user_id: int) -> list[dict]:
     """
     获取当前用户所在的群聊列表。
     需要联表查询 conversation 表拿到群名称和头像。
@@ -712,7 +714,9 @@ async def db_get_group_list(conn: asyncpg.Connection, user_id: int) -> list[dict
     return [dict(row) for row in rows]
 
 
-async def db_resolve_pending_invites_for_group(conn: asyncpg.Connection, conversation_id: int) -> list[int]:
+async def db_resolve_pending_invites_for_group(
+        conn: asyncpg.Connection,
+        conversation_id: int) -> list[int]:
     """
     【核心状态机】群邀请状态全局结算函数。 (适配“新管理员不审核老申请”的规则)
     """
