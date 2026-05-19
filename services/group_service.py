@@ -78,13 +78,6 @@ async def create_group_service(
         member_ids=req.user_ids,
     )
 
-    # 2. 在群聊内发送创建通知
-    await send_group_creation_notification(
-        conn=db_session,
-        conversation_id=conv_id,
-        creator_id=current_user_id,
-    )
-
     return {"conversation_id": conv_id, "name": req.name, "avatar": req.avatar}
 
 
@@ -200,15 +193,6 @@ async def manage_group_admin_service(
     )
     # 发送通知（仅当角色确实发生变化时）
     if old_role != req.role:
-        # 1. 群内通知
-        await send_role_change_group_notification(
-            conn=db_session,
-            conversation_id=req.conversation_id,
-            operator_id=current_user_id,
-            target_user_id=req.user_id,
-            old_role=old_role,
-            new_role=req.role,
-        )
         # 2. 被操作者私聊通知
         await send_role_change_private_notification(
             conn=db_session,
@@ -289,8 +273,6 @@ async def disband_group_service(
         req: GroupGenericRequest) -> None:
     # 1. 提前鉴权（通知必须在删除前发送）
     await db_assert_can_disband_group(db_session, current_user_id, req.conversation_id)
-    # 2. 发送群内解散通知
-    await send_group_disbanded_notification(db_session, req.conversation_id, current_user_id)
     # 3. 清理群相关邀请数据（可选）
     await db_clean_group_invites(db_session, req.conversation_id)
     # 4. 执行解散
@@ -561,70 +543,6 @@ async def notify_other_admins_invite_approved(
             print(f"发送通知给管理员 {admin_id} 失败: {e}")
 
 
-async def send_group_invite_approved_notification(
-    conn: asyncpg.Connection,
-    invite_id: int,
-) -> None:
-    """
-    在群聊中发送系统通知：“邀请人 把 被邀请人 拉入了群聊”
-    使用系统助手 -2 发送 NOTIFY 类型消息。
-    """
-    # 1. 查询邀请详情（群ID、邀请人、被邀请人）
-    invite_info = await conn.fetchrow(
-        """
-        SELECT conversation_id, inviter_id, invitee_id
-        FROM group_invite
-        WHERE invite_id = $1
-        """,
-        invite_id,
-    )
-    if not invite_info:
-        # 邀请不存在，静默返回
-        return
-
-    conversation_id = invite_info["conversation_id"]
-    inviter_id = invite_info["inviter_id"]
-    invitee_id = invite_info["invitee_id"]
-
-    # 2. 获取邀请人和被邀请人的显示名称（优先昵称，否则用 user_id）
-    async def get_user_display_name(user_id: int) -> str:
-        row = await conn.fetchrow(
-            QUERY_GET_USERNAME_BY_ID,
-            user_id,
-        )
-        if row:
-            # 假设有 nickname 字段，否则用 username，最后用 user_id
-            return row.get("username") or str(user_id)
-        return str(user_id)
-
-    inviter_name = await get_user_display_name(inviter_id)
-    invitee_name = await get_user_display_name(invitee_id)
-
-    # 3. 构造消息文本
-    message_text = f"{inviter_name} 把 {invitee_name} 拉入了群聊"
-
-    # 4. 构造 NOTIFY 消息请求
-    send_req = SendMessageRequest(
-        conversation_id=conversation_id,          # 在群聊中发送
-        local_id=str(uuid.uuid4()),
-        message_content=message_text,
-        msg_type=MessageType.NOTIFY,
-        extra_data={
-            "action": "group_member_invited",
-            "inviter_id": inviter_id,
-            "invitee_id": invitee_id,
-            "invite_id": invite_id,
-        }
-    )
-
-    # 5. 调用已有的消息发送服务（发送者固定为系统助手 -2）
-    try:
-        await send_message_service(conn, -2, send_req)
-    except Exception as e:
-        # 记录日志但不影响主流程
-        print(f"发送群邀请通知失败: {e}")
-
-
 async def notify_invitee_approved(
     conn: asyncpg.Connection,
     invite_id: int,
@@ -695,10 +613,6 @@ async def review_group_invite_service(
             handled_by_user_id=current_user_id,
         )
 
-        await send_group_invite_approved_notification(
-            conn=db_session,
-            invite_id=req.apply_id,
-        )
         # 通知被邀请人：申请已通过
         await notify_invitee_approved(
             conn=db_session,
@@ -783,96 +697,6 @@ async def notify_members_added_to_group(
         except Exception as e:
             # 记录日志，不影响主流程
             print(f"发送群创建通知给成员 {member_id} 失败: {e}")
-
-
-async def send_group_creation_notification(
-    conn: asyncpg.Connection,
-    conversation_id: int,
-    creator_id: int,
-) -> None:
-    """
-    在新建的群聊中发送系统通知：“xxx 创建了群聊”
-    """
-    # 1. 获取创建者名称
-    creator_name = await conn.fetchval(
-        QUERY_GET_USERNAME_BY_ID,
-        creator_id,
-    )
-    if not creator_name:
-        creator_name = str(creator_id)
-
-    message_text = f"{creator_name} 创建了群聊"
-
-    send_req = SendMessageRequest(
-        conversation_id=conversation_id,
-        local_id=str(uuid.uuid4()),
-        message_content=message_text,
-        msg_type=MessageType.NOTIFY,
-        extra_data={
-            "action": "group_created",
-            "creator_id": creator_id,
-        }
-    )
-
-    try:
-        await send_message_service(conn, -2, send_req)
-    except Exception as e:
-        print(f"发送群创建系统通知失败: {e}")
-
-
-async def send_role_change_group_notification(
-    conn: asyncpg.Connection,
-    conversation_id: int,
-    operator_id: int,
-    target_user_id: int,
-    old_role: str,
-    new_role: str,
-) -> None:
-    """
-    在群内发送角色变更的系统通知
-    """
-    # 获取操作者和目标用户的名称
-    operator_name = await conn.fetchval(
-        QUERY_GET_USERNAME_BY_ID, operator_id
-    )
-    target_name = await conn.fetchval(
-        QUERY_GET_USERNAME_BY_ID, target_user_id
-    )
-    if not operator_name:
-        operator_name = str(operator_id)
-    if not target_name:
-        target_name = str(target_user_id)
-
-    # 根据角色变更构造消息文本
-    if new_role == "owner":
-        message_text = f"{operator_name} 将群主转让给 {target_name}"
-        action = "group_owner_transferred"
-    elif new_role == "admin" and old_role == "member":
-        message_text = f"{operator_name} 设置 {target_name} 为管理员"
-        action = "group_admin_set"
-    elif new_role == "member" and old_role == "admin":
-        message_text = f"{operator_name} 撤销了 {target_name} 的管理员"
-        action = "group_admin_unset"
-    else:
-        return  # 无变化则不通知
-
-    send_req = SendMessageRequest(
-        conversation_id=conversation_id,
-        local_id=str(uuid.uuid4()),
-        message_content=message_text,
-        msg_type=MessageType.NOTIFY,
-        extra_data={
-            "action": action,
-            "operator_id": operator_id,
-            "target_user_id": target_user_id,
-            "old_role": old_role,
-            "new_role": new_role,
-        }
-    )
-    try:
-        await send_message_service(conn, -2, send_req)
-    except Exception as e:
-        print(f"通知发送失败: {e}")
 
 
 async def send_role_change_private_notification(
@@ -986,31 +810,6 @@ async def send_leave_group_notification(
     await send_message_service(conn, -2, send_req)
 
 
-async def send_group_disbanded_notification(
-    conn: asyncpg.Connection,
-    conversation_id: int,
-    operator_id: int,
-) -> None:
-    """在群内发送‘群聊已解散’的系统通知"""
-    operator_name = await conn.fetchval(
-        QUERY_GET_USERNAME_BY_ID, operator_id
-    ) or str(operator_id)
-
-    message_text = f"{operator_name} 已解散该群聊"
-
-    send_req = SendMessageRequest(
-        conversation_id=conversation_id,
-        local_id=str(uuid.uuid4()),
-        message_content=message_text,
-        msg_type=MessageType.NOTIFY,
-        extra_data={
-            "action": "group_disbanded",
-            "operator_id": operator_id,
-        }
-    )
-    await send_message_service(conn, -2, send_req)
-
-
 async def get_group_announcements_service(
     db_session: asyncpg.Connection,
     current_user_id: int,
@@ -1040,35 +839,6 @@ async def get_group_list(
     return groups
 
 
-async def send_group_name_update_notification(
-    conn: asyncpg.Connection,
-    conversation_id: int,
-    operator_id: int,
-    new_name: str
-) -> None:
-    """助手 (-2) 在群内发送改名通知"""
-    # 也可以复用你的 QUERY_GET_USERNAME_BY_ID
-    operator_name = await conn.fetchval(
-        "SELECT username FROM user_account WHERE user_id = $1", operator_id
-    ) or str(operator_id)
-
-    message_text = f"{operator_name} 修改了群名称为“{new_name}”"
-
-    send_req = SendMessageRequest(
-        conversation_id=conversation_id,
-        local_id=str(uuid.uuid4()),
-        message_content=message_text,
-        msg_type=MessageType.NOTIFY,  # 或者 "notify"，视你定义的 Enum 而定
-        extra_data={
-            "action": "group_name_updated",
-            "operator_id": operator_id,
-            "new_name": new_name
-        }
-    )
-    # 调用底层封装好的发消息服务，发送者是群聊助手 (-2)
-    await send_message_service(conn, -2, send_req)
-
-
 async def update_group_name_service(
     db_session: asyncpg.Connection,
     current_user_id: int,
@@ -1091,13 +861,5 @@ async def update_group_name_service(
 
     # 2. 更新数据库中的名称
     await db_update_group_name(db_session, req.conversation_id, req.new_name)
-
-    # 3. 发送系统通知
-    await send_group_name_update_notification(
-        conn=db_session,
-        conversation_id=req.conversation_id,
-        operator_id=current_user_id,
-        new_name=req.new_name
-    )
 
     return {"conversation_id": req.conversation_id, "new_name": req.new_name}

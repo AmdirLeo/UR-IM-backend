@@ -38,7 +38,6 @@ from db.repositories.group_repo import (
     db_disband_all_owned_groups,
     db_clean_group_invites,
 )
-from services.group_service import send_group_disbanded_notification
 from schemas.message import SendMessageRequest
 from typing import List
 from core.ws_manager import manager
@@ -261,8 +260,6 @@ async def force_delete_account_service(
     # 2. 🌟 循环补上服务层的附属动作（发通知 + 清理残余记录）
     if disbanded_conv_ids:
         for conv_id in disbanded_conv_ids:
-            # 告诉群员们：群主跑路了，群解散了
-            await send_group_disbanded_notification(conn, conv_id, current_user_id)
             # 清理针对这个群的悬而未决的入群申请
             await db_clean_group_invites(conn, conv_id)
 

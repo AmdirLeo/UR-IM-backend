@@ -128,42 +128,6 @@ async def test_group_journey_and_edge_cases():
         assert "conversation_id" in data
         conversation_id = data["conversation_id"]
 
-        # ========== 新增：验证创建群聊后的系统通知 ==========
-        # 1. 验证群聊内收到系统消息：“xxx 创建了群聊”
-        async for proxy_conn in get_db_conn():
-            conn = cast(asyncpg.Connection, proxy_conn)
-            owner_name = await conn.fetchval("SELECT username FROM user_account WHERE user_id = $1", user_owner_id)
-            group_creation_msg = await conn.fetchrow(
-                """
-                SELECT m.msg_body->>'content' as message_content,
-                       m.msg_body->'extra' as extra_data
-                FROM message m
-                WHERE m.msg_id = (
-                    SELECT cm.msg_id
-                    FROM conversation_message cm
-                    WHERE cm.conversation_id = $1
-                      AND cm.sender_id = -2
-                    ORDER BY cm.msg_id DESC
-                    LIMIT 1
-                )
-                AND m.msg_body->>'type' = 'notify'
-                """,
-                conversation_id
-            )
-            assert group_creation_msg is not None, "群聊中没有收到群创建系统通知"
-            msg_text = group_creation_msg["message_content"]
-            assert owner_name in msg_text, f"通知中未包含创建者 {owner_name}"
-            assert "创建了群聊" in msg_text
-
-            extra_raw = group_creation_msg["extra_data"]
-            if extra_raw:
-                # 将字符串解析为 Python 字典（兼容可能已经被 asyncpg 解析的情况）
-                extra = json.loads(extra_raw) if isinstance(
-                    extra_raw, str) else extra_raw
-                assert extra.get("action") == "group_created"
-                assert extra.get("creator_id") == user_owner_id
-            break
-
         # 2. 验证被邀请成员（admin 和 member）都收到私聊系统通知
         invited_users = [user_admin_id, user_member_id]
         for invited_id in invited_users:
@@ -470,39 +434,6 @@ async def test_group_journey_and_edge_cases():
         assert res_admin_anno.status_code == 200
 
         # ========== 新增：验证设置管理员后的系统通知 ==========
-        # 验证群内收到角色变更通知（admin 被设为管理员）
-        async for proxy_conn in get_db_conn():
-            conn = cast(asyncpg.Connection, proxy_conn)
-            owner_name = await conn.fetchval("SELECT username FROM user_account WHERE user_id = $1", user_owner_id)
-            admin_name = await conn.fetchval("SELECT username FROM user_account WHERE user_id = $1", user_admin_id)
-
-            role_change_msg = await conn.fetchrow(
-                """
-                SELECT
-                    m.msg_body->>'content' as message_content,
-                    m.msg_body->>'extra' as extra_data
-                FROM message m
-                JOIN conversation_message cm ON m.msg_id = cm.msg_id
-                WHERE cm.conversation_id = $1
-                AND cm.sender_id = -2
-                AND m.msg_body->>'type' = 'notify'
-                AND m.msg_body->>'extra' LIKE '%group_admin_set%'
-                ORDER BY cm.msg_id DESC
-                LIMIT 1
-                """,
-                conversation_id
-            )
-            assert role_change_msg is not None, "群聊内未收到设置管理员的通知"
-            msg_text = role_change_msg["message_content"]
-            assert owner_name in msg_text and admin_name in msg_text
-            assert "设置" in msg_text and "管理员" in msg_text
-            extra_str = role_change_msg["extra_data"]
-            extra = json.loads(extra_str) if extra_str else {}
-            if extra:
-                assert extra.get("action") == "group_admin_set"
-                assert extra.get("operator_id") == user_owner_id
-                assert extra.get("target_user_id") == user_admin_id
-            break
 
         # 2. 验证被操作者 (admin) 收到私聊通知
         async for proxy_conn in get_db_conn():
@@ -593,43 +524,6 @@ async def test_group_journey_and_edge_cases():
             headers=headers_owner,
         )
         assert res_revoke.status_code == 200
-
-        # 验证群内收到撤销管理员的通知
-        async for proxy_conn in get_db_conn():
-            conn = cast(asyncpg.Connection, proxy_conn)
-            owner_name = await conn.fetchval("SELECT username FROM user_account WHERE user_id = $1", user_owner_id)
-            admin_name = await conn.fetchval("SELECT username FROM user_account WHERE user_id = $1", user_admin_id)
-
-            revoke_msg = await conn.fetchrow(
-                """
-                SELECT
-                    m.msg_body->>'content' as message_content,
-                    m.msg_body->>'extra' as extra_data
-                FROM message m
-                WHERE m.msg_id = (
-                    SELECT cm.msg_id
-                    FROM conversation_message cm
-                    WHERE cm.conversation_id = $1
-                    AND cm.sender_id = -2
-                    ORDER BY cm.msg_id DESC
-                    LIMIT 1
-                )
-                AND m.msg_body->>'type' = 'notify'
-                AND m.msg_body->>'extra' LIKE '%group_admin_unset%'
-                """,
-                conversation_id
-            )
-            assert revoke_msg is not None, "群聊内未收到撤销管理员的通知"
-            msg_text = revoke_msg["message_content"]
-            assert owner_name in msg_text and admin_name in msg_text
-            assert "撤销" in msg_text and "管理员" in msg_text
-            extra_str = revoke_msg["extra_data"]
-            extra = json.loads(extra_str) if extra_str else {}
-            if extra:
-                assert extra.get("action") == "group_admin_unset"
-                assert extra.get("operator_id") == user_owner_id
-                assert extra.get("target_user_id") == user_admin_id
-            break
 
         # 验证被撤销者收到私聊通知
         async for proxy_conn in get_db_conn():
@@ -748,41 +642,6 @@ async def test_group_journey_and_edge_cases():
         assert res_info_after_rename.status_code == 200
         assert res_info_after_rename.json(
         )["data"]["conversation_name"] == new_group_name
-
-        # 4. ========== 验证群内收到改名的系统通知 ==========
-        async for proxy_conn in get_db_conn():
-            conn = cast(asyncpg.Connection, proxy_conn)
-            admin_name = await conn.fetchval("SELECT username FROM user_account WHERE user_id = $1", user_admin_id)
-
-            rename_msg = await conn.fetchrow(
-                """
-                SELECT
-                    m.msg_body->>'content' as message_content,
-                    m.msg_body->>'extra' as extra_data
-                FROM message m
-                JOIN conversation_message cm ON m.msg_id = cm.msg_id
-                WHERE cm.conversation_id = $1
-                  AND cm.sender_id = -2
-                  AND m.msg_body->>'type' = 'notify'
-                  AND m.msg_body->>'extra' LIKE '%group_name_updated%'
-                ORDER BY cm.msg_id DESC
-                LIMIT 1
-                """,
-                conversation_id
-            )
-            assert rename_msg is not None, "群聊内未收到改名的通知"
-            msg_text = rename_msg["message_content"]
-            assert admin_name in msg_text
-            assert new_group_name in msg_text
-            assert "修改" in msg_text
-
-            extra_str = rename_msg["extra_data"]
-            extra = json.loads(extra_str) if extra_str else {}
-            assert extra.get("action") == "group_name_updated"
-            assert extra.get("operator_id") == user_admin_id
-            assert extra.get("new_name") == new_group_name
-            break
-        # ========== 改名通知验证结束 ==========
 
         # ========== 新增：手动缔结好友关系（为了通过单人邀请的鉴权） ==========
         async for proxy_conn in get_db_conn():
@@ -962,40 +821,6 @@ async def test_group_journey_and_edge_cases():
         # ========== 结束 ==========
 
         # ========== 新增验证：系统消息 ==========
-        # 1. 验证群聊内收到系统消息（-2 发送的 NOTIFY，内容包含邀请人和被邀请人）
-        async for proxy_conn in get_db_conn():
-            conn = cast(asyncpg.Connection, proxy_conn)
-            inviter_name = await conn.fetchval("SELECT username FROM user_account WHERE user_id = $1", user_member_id)
-            invitee_name = await conn.fetchval("SELECT username FROM user_account WHERE user_id = $1", user_stranger_id)
-
-            group_msg = await conn.fetchrow(
-                """
-                SELECT m.msg_body->>'content' as message_content,
-                    m.msg_body->'extra' as extra_data
-                FROM message m
-                WHERE m.msg_id = (
-                    SELECT cm.msg_id
-                    FROM conversation_message cm
-                    WHERE cm.conversation_id = $1
-                    AND cm.sender_id = -2
-                    ORDER BY cm.msg_id DESC
-                    LIMIT 1
-                )
-                AND m.msg_body->>'type' = 'notify'
-                """,
-                conversation_id
-            )
-            assert group_msg is not None, "群聊中没有收到系统通知"
-            msg_text = group_msg["message_content"]
-            assert inviter_name in msg_text, f"通知中未包含邀请人 {inviter_name}"
-            assert invitee_name in msg_text, f"通知中未包含被邀请人 {invitee_name}"
-            assert "拉入了群聊" in msg_text
-            extra_raw = group_msg["extra_data"]
-            if extra_raw:
-                extra = json.loads(extra_raw) if isinstance(
-                    extra_raw, str) else extra_raw
-                assert extra.get("action") == "group_member_invited"
-            break
 
         # 2. 验证被邀请人收到系统私聊通知
         async for proxy_conn in get_db_conn():
@@ -1387,34 +1212,6 @@ async def test_group_journey_and_edge_cases():
         # 根据 group_repo，如果全被删除了会找不到，也就是 role 获取失败返回 NotInGroup (403)
         assert res_after_bomb.status_code == 403
 
-        # ========== 验证群内收到解散通知 ==========
-        async for proxy_conn in get_db_conn():
-            conn = cast(asyncpg.Connection, proxy_conn)
-            disband_msg = await conn.fetchrow(
-                """
-                SELECT
-                    m.msg_body->>'content' as message_content,
-                    m.msg_body->>'extra' as extra_data
-                FROM message m
-                JOIN conversation_message cm ON m.msg_id = cm.msg_id
-                WHERE cm.conversation_id = $1
-                  AND cm.sender_id = -2
-                  AND m.msg_body->>'type' = 'notify'
-                  AND m.msg_body->>'extra' LIKE '%group_disbanded%'
-                ORDER BY cm.msg_id DESC
-                LIMIT 1
-                """,
-                conversation_id
-            )
-            assert disband_msg is not None, "群聊内未收到解散通知"
-            msg_text = disband_msg["message_content"]
-            assert "已解散" in msg_text or "解散" in msg_text
-            extra_str = disband_msg["extra_data"]
-            extra = json.loads(extra_str) if extra_str else {}
-            assert extra.get("action") == "group_disbanded"
-            assert extra.get("operator_id") == user_owner_id
-            break
-        # ========== 解散通知验证结束 ==========
 
 # ==========================================
 # 测试用例：邀请入群触发群聊助手(-2)私聊卡片通知
