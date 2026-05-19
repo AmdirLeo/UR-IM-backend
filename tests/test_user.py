@@ -407,7 +407,8 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         async for conn in get_db_conn():
             # 强行插入一个群聊
             test_group_id = await conn.fetchval(
-                "INSERT INTO conversation (type, conversation_name) VALUES ('group', '注销连带解散测试群') RETURNING conversation_id;"
+                "INSERT INTO conversation (type, conversation_name)"
+                "VALUES ('group', '注销连带解散测试群') RETURNING conversation_id;"
             )
             # 强行将当前用户设为群主
             await conn.execute(
