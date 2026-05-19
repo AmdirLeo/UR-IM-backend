@@ -514,14 +514,7 @@ async def db_sync_conversations(
             c.avatar_url,
             -- 动态判断存活状态
             -- 如果左连表能连上 member 表，说明我还在里面；连不上，说明我被踢了/退群了
-            CASE
-                WHEN cm.member_user_id IS NOT NULL
-                    AND cm.is_active = true
-                    AND u_self.is_deleted IS NOT TRUE
-                    AND (c.type != 'private' OR u_target.is_deleted IS NOT TRUE)
-                THEN 'normal'
-                ELSE 'abnormal'
-            END AS status,
+            'normal' AS status,
 
             COALESCE(cm.is_pinned, false) AS is_pinned,
             COALESCE(cm.is_muted, false) AS is_muted,
@@ -571,6 +564,10 @@ async def db_sync_conversations(
                   AND cm_sys.member_user_id IN (-1, -2)
             )
         )
+        AND cm.member_user_id IS NOT NULL
+        AND cm.is_active = true
+        AND u_self.is_deleted IS NOT TRUE
+        AND (c.type != 'private' OR u_target.is_deleted IS NOT TRUE)
         ORDER BY c.last_msg_time DESC NULLS LAST;
     """
 
