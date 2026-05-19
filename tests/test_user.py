@@ -401,20 +401,71 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         assert response.status_code == 400
         assert "密码错误" in response.json()["msg"]
 
-        # 10b. 彻底注销账号 (携带正确密码)
+        # =========================================================
+        # 🌟 新增：10b. 准备数据，让该用户成为一个群聊的群主
+        # =========================================================
+        async for conn in get_db_conn():
+            # 强行插入一个群聊
+            test_group_id = await conn.fetchval(
+                "INSERT INTO conversation (type, conversation_name)"
+                "VALUES ('group', '注销连带解散测试群') RETURNING conversation_id;"
+            )
+            # 强行将当前用户设为群主
+            await conn.execute(
+                "INSERT INTO conversation_member (conversation_id, member_user_id, role) VALUES ($1, $2, 'owner');",
+                test_group_id, user_id
+            )
+            break
+
+        # =========================================================
+        # 🌟 新增：10c. 尝试常规注销 -> 预期被拦截，因为他是群主
+        # =========================================================
         response = await client.post(
             "/api/users/delete",
             headers=delete_headers,
-            json={"password": "recoveredpassword"},  # 传入注销所需的确认密码
+            json={"password": "recoveredpassword"},
+        )
+        assert response.status_code == 400
+        assert "您还是以下群聊的群主" in response.text
+        assert "注销连带解散测试群" in response.text
+
+        # =========================================================
+        # 🌟 新增：10d. 使用强制注销接口连带解散群聊
+        # 注意：这里假设你的强力注销路由设计为 /api/users/delete/force，如果不同请自行修改！
+        # =========================================================
+        response = await client.post(
+            "/api/users/delete/force",
+            headers=delete_headers,
+            json={"password": "recoveredpassword"},
         )
         assert response.status_code == 200
+        assert "连带解散了" in response.text
 
-        # 验证注销后无法再次登录
+        # =========================================================
+        # 🌟 新增：10e. 验证注销后无法再次登录，且群聊已物理解散
+        # =========================================================
+        # 验证无法登录
         response = await client.post(
             LOGIN_API_PATH,
             json={"id": str(user_id), "password": "recoveredpassword"},
         )
         assert response.status_code == 400
+
+        # 验证数据库中群聊状态变成了 is_disbanded = true
+        async for conn in get_db_conn():
+            is_disbanded = await conn.fetchval(
+                "SELECT is_disbanded FROM conversation WHERE conversation_id = $1;",
+                test_group_id
+            )
+            assert is_disbanded is True, "强力注销后，群聊没有被成功标记为已解散！"
+
+            # 顺手验证群成员是否被清空
+            member_count = await conn.fetchval(
+                "SELECT count(1) FROM conversation_member WHERE conversation_id = $1;",
+                test_group_id
+            )
+            assert member_count == 0, "强力注销后，群聊成员没有被物理清空！"
+            break
 
 
 @pytest.mark.asyncio

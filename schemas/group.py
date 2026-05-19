@@ -138,3 +138,20 @@ class GroupListResponse(BaseModel):
 class GroupUpdateNameRequest(BaseModel):
     conversation_id: int = Field(..., description="群聊会话ID")
     new_name: str = Field(..., min_length=1, max_length=50, description="新群名称")
+
+
+class GroupBatchInviteRequest(BaseModel):
+    conversation_id: int = Field(..., description="群聊会话ID")
+    user_ids: List[int] = Field(...,
+                                min_length=1,
+                                max_length=50,
+                                description="被邀请的成员ID列表(限制单次最大邀请人数)")
+
+
+class ApplyInfo(BaseModel):
+    user_id: int
+    apply_id: int
+
+
+class GroupBatchInviteData(BaseModel):
+    applies: List[ApplyInfo] = Field(..., description="生成的申请记录列表")

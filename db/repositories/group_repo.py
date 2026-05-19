@@ -393,7 +393,7 @@ async def db_invite_to_group(
 
 async def db_review_group_invite(
     conn: asyncpg.Connection, reviewer_id: int, invite_id: int, action: str
-) -> None:
+) -> list[int]:
     """
     审核群邀请 (对应 PUT /api/group/invite/review)
     action 必须是 'approved' 或 'ignored'
@@ -462,6 +462,12 @@ async def db_review_group_invite(
                 ON CONFLICT (conversation_id, member_user_id) DO NOTHING;
             """
             await conn.execute(insert_member, conversation_id, invitee_id)
+            return []
+
+        elif action == "ignored":
+            # 🌟 挂载点：当有人点忽略时，调用全局结算钩子！
+            rejected_ids = await db_resolve_pending_invites_for_group(conn, conversation_id)
+            return rejected_ids
 
 
 async def db_get_pending_group_invite_count(
@@ -555,20 +561,26 @@ async def db_remove_admin_invite_states(
     conn: asyncpg.Connection,
     conversation_id: int,
     admin_id: int,
-) -> None:
+) -> list[int]:
     """
     删除指定管理员在某群的所有待处理邀请审核状态记录。
     用于当管理员被撤销或群主转让后，不再参与该群入群审核。
     """
-    query = """
-        DELETE FROM group_invite_admin_state
-        WHERE admin_id = $1
-          AND invite_id IN (
-              SELECT invite_id FROM group_invite
-              WHERE conversation_id = $2 AND status = 'pending'
-          )
-    """
-    await conn.execute(query, admin_id, conversation_id)
+    async with conn.transaction():
+        query = """
+            DELETE FROM group_invite_admin_state
+            WHERE admin_id = $1
+            AND invite_id IN (
+                SELECT invite_id FROM group_invite
+                WHERE conversation_id = $2 AND status = 'pending'
+            )
+        """
+        await conn.execute(query, admin_id, conversation_id)
+
+        # 2. 🌟 挂载点：此时分母已经改变，立刻召唤“全局结算钩子”！
+        # 如果因为他的离开，剩下的管理员全是点过“忽略”的，这个申请就会当场暴毙。
+        rejected_ids = await db_resolve_pending_invites_for_group(conn, conversation_id)
+    return rejected_ids
 
 
 async def db_assert_can_quit_group(
@@ -689,7 +701,9 @@ async def db_get_group_announcements(
     }
 
 
-async def db_get_group_list(conn: asyncpg.Connection, user_id: int) -> list[dict]:
+async def db_get_group_list(
+        conn: asyncpg.Connection,
+        user_id: int) -> list[dict]:
     """
     获取当前用户所在的群聊列表。
     需要联表查询 conversation 表拿到群名称和头像。
@@ -712,7 +726,9 @@ async def db_get_group_list(conn: asyncpg.Connection, user_id: int) -> list[dict
     return [dict(row) for row in rows]
 
 
-async def db_resolve_pending_invites_for_group(conn: asyncpg.Connection, conversation_id: int) -> list[int]:
+async def db_resolve_pending_invites_for_group(
+        conn: asyncpg.Connection,
+        conversation_id: int) -> list[int]:
     """
     【核心状态机】群邀请状态全局结算函数。 (适配“新管理员不审核老申请”的规则)
     """
@@ -769,3 +785,50 @@ async def db_update_group_name(
         WHERE conversation_id = $2 AND type = 'group';
     """
     await conn.execute(query, new_name, conversation_id)
+
+
+async def db_get_owned_groups(
+        conn: asyncpg.Connection,
+        user_id: int) -> list[str]:
+    """
+    获取用户作为群主的所有群聊名称。
+    """
+    query = """
+        SELECT c.conversation_name
+        FROM conversation_member cm
+        JOIN conversation c ON cm.conversation_id = c.conversation_id
+        WHERE cm.member_user_id = $1
+          AND cm.role = 'owner'
+          AND c.type = 'group'
+          AND c.is_disbanded = false;
+    """
+    rows = await conn.fetch(query, user_id)
+    # 处理可能存在的未命名群聊
+    return [row["conversation_name"] or "未命名群聊" for row in rows]
+
+
+async def db_disband_all_owned_groups(
+        conn: asyncpg.Connection,
+        user_id: int) -> list[int]:
+    """
+    【强力注销专用】批量解散用户作为群主的所有群聊。
+    返回被解散的 conversation_id 列表，以便外层发送系统通知。
+    """
+    # 1. 先查出所有需要解散的群 ID
+    query_get_ids = """
+        SELECT conversation_id
+        FROM conversation_member
+        WHERE member_user_id = $1 AND role = 'owner'
+    """
+    rows = await conn.fetch(query_get_ids, user_id)
+    conv_ids = [row["conversation_id"] for row in rows]
+
+    if not conv_ids:
+        return []
+
+    # 2. 循环复用现成的解散函数
+    for conv_id in conv_ids:
+        # 内部自带了鉴权和事务，直接调就行
+        await db_disband_group(conn, user_id, conv_id)
+
+    return conv_ids

@@ -138,10 +138,6 @@ async def db_mark_conversation_as_read(
     清除特定会话的未读红点（已读上报）
     需要同时更新 inbox 的状态和 member 表的 read_index 水位线
     """
-    # 确保用户在这个会话里
-    check_query = QUERY_CHECK_MEMBER_EXISTS
-    if not await conn.fetchval(check_query, conversation_id, user_id):
-        raise MessageException(MessageErrors.NotInConversation)
 
     async with conn.transaction():
         # 把收件箱里的该会话的所有未读消息标记为已读

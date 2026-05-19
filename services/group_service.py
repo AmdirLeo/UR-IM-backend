@@ -13,6 +13,7 @@ from schemas.group import (
     GroupInviteRequest,
     GroupInviteReviewRequest,
     GroupUpdateNameRequest,
+    GroupBatchInviteRequest,
 )
 from schemas.message import MessageType
 from core.exceptions import GroupException, GroupErrors
@@ -39,6 +40,7 @@ from db.repositories.group_repo import (
 )
 from schemas.message import SendMessageRequest, MessageType
 from services.message_service import send_message_service
+from db.repositories.friend_repo import db_check_is_friend, db_filter_valid_friends
 
 QUERY_FIND_SYSTEM_PRIVATE_CONV = """
     SELECT c.conversation_id
@@ -334,6 +336,16 @@ async def invite_to_group_service(
         db_session: asyncpg.Connection,
         current_user_id: int,
         req: GroupInviteRequest) -> dict:
+
+    # ========== 新增：好友关系鉴权 ==========
+    is_friend = await db_check_is_friend(db_session, current_user_id, req.user_id)
+    if not is_friend:
+        # 使用统一的 GroupException 格式
+        raise GroupException(
+            GroupErrors.PermissionDenied,
+            "权限不足：只能邀请自己的好友加入群聊")
+    # ========================================
+
     # 1. 创建入群申请记录（邀请制）
     invite_id = await db_invite_to_group(
         conn=db_session,
@@ -389,6 +401,91 @@ async def invite_to_group_service(
             req=msg_req
         )
     return {"apply_id": invite_id}
+
+
+async def invite_to_group_batch_service(
+        db_session: asyncpg.Connection,
+        current_user_id: int,
+        req: GroupBatchInviteRequest) -> dict:
+
+    # ========== 新增：批量好友过滤 ==========
+    valid_friend_ids = await db_filter_valid_friends(
+        db_session, current_user_id, req.user_ids
+    )
+
+    if not valid_friend_ids:
+        # 如果传过来的所有 ID 都不是当前用户的好友，直接按照统一格式阻断
+        raise GroupException(
+            GroupErrors.PermissionDenied,
+            "权限不足：只能邀请自己的好友加入群聊")
+    # ========================================
+
+    # 1. 批量创建入群申请记录（使用事务保证数据一致性）
+    apply_records = []
+    async with db_session.transaction():
+        for invitee_id in valid_friend_ids:
+            # 过滤掉自己邀请自己的情况（容错）
+            if invitee_id == current_user_id:
+                continue
+
+            # 复用你现有的 DB 插入逻辑，这样不会破坏已有的 group_invite_admin_state 等关联表逻辑
+            invite_id = await db_invite_to_group(
+                conn=db_session,
+                inviter_id=current_user_id,
+                conversation_id=req.conversation_id,
+                invitee_id=invitee_id,
+            )
+            apply_records.append(
+                {"user_id": invitee_id, "apply_id": invite_id})
+
+    # 如果所有有效邀请都被过滤了，直接返回
+    if not apply_records:
+        return {"applies": []}
+
+    # 2. 获取邀请人姓名
+    inviter_name = await db_session.fetchval(
+        QUERY_GET_USERNAME_BY_ID, current_user_id
+    )
+
+    # 3. 获取管理员和群主
+    admin_ids = await db_get_group_admins(db_session, req.conversation_id)
+
+    # 4. 为每个管理员发送私聊卡片通知
+    for admin_id in admin_ids:
+        conv_id = await db_session.fetchval(
+            QUERY_FIND_SYSTEM_PRIVATE_CONV,
+            admin_id
+        )
+
+        if conv_id is None:
+            continue  # 宽容处理：如果有管理员缺失系统会话，跳过他，不要阻塞其他人的通知
+
+        # 4.2 为当前管理员批量发送卡片（每个人一张卡片，方便前端逐个点击同意/拒绝）
+        for apply_info in apply_records:
+            msg_req = SendMessageRequest(
+                conversation_id=conv_id,
+                local_id=str(uuid.uuid4()),
+                message_content="[收到一条入群申请]",
+                msg_type=MessageType.CARD,
+                extra_data={
+                    "card_type": "group_apply",
+                    "apply_id": apply_info["apply_id"],
+                    "applicant_id": apply_info["user_id"],
+                    "inviter_id": current_user_id,
+                    "inviter_name": inviter_name,
+                    "conversation_id": req.conversation_id,
+                    "status": "pending"
+                }
+            )
+
+            # 4.3 发送消息
+            await send_message_service(
+                db_session=db_session,
+                user_id=-2,
+                req=msg_req
+            )
+
+    return {"applies": apply_records}
 
 
 async def notify_other_admins_invite_approved(

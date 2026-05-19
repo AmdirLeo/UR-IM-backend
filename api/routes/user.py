@@ -74,6 +74,19 @@ async def delete_account(
     return await user_service.delete_account_service(conn, current_user_id, req.password)
 
 
+@router.post("/delete/force", response_model=BaseResponse, summary="强制注销并解散群聊")
+async def force_delete_account(
+    req: DeleteAccountRequest,
+    current_user_id: CurrentUserId,
+    conn: DBConnection
+):
+    """
+    强力注销账号。
+    无视群主身份，注销账号的同时连带解散该用户作为群主的所有群聊。
+    """
+    return await user_service.force_delete_account_service(conn, current_user_id, req.password)
+
+
 # ==========================================
 # 3. 个人信息修改 (必须携带 Token)
 # ==========================================

@@ -66,13 +66,18 @@ async def test_group_journey_and_edge_cases():
         user_outsider_id = await db_create_user(
             conn, "group_outsider", hashed_pw, "g_outsider@test.com"
         )
+        # 👇 新增：创建一个完全没有好友关系的纯路人
+        user_non_friend_id = await db_create_user(
+            conn, "pure_stranger", hashed_pw, "pure_stranger@test.com"
+        )
         # 👇 新增：为每个用户创建与群聊助手(-2)的私聊会话
         for uid in [
                 user_owner_id,
                 user_admin_id,
                 user_member_id,
                 user_stranger_id,
-                user_outsider_id]:
+                user_outsider_id,
+                user_non_friend_id]:
             conv_id = await conn.fetchval("""
                 SELECT c.conversation_id
                 FROM conversation c
@@ -545,6 +550,18 @@ async def test_group_journey_and_edge_cases():
         # ========== 设置管理员通知验证结束 ==========
 
         # ========== 新增：撤销管理员并验证通知及待处理列表清理 ==========
+        # 👇👇👇 新增：确立 member 和 outsider 的好友关系，通过鉴权 👇👇👇
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            await conn.execute(
+                """
+                INSERT INTO friend_relationship (user_id, friend_user_id)
+                VALUES ($1, $2), ($2, $1) ON CONFLICT DO NOTHING;
+                """,
+                user_member_id, user_outsider_id
+            )
+            break
+        # 👆👆👆 新增结束 👆👆👆
         # 先让 member 再创建一个新的入群申请，确保待处理列表中有数据可供后续验证清理
         res_invite2 = await client.post(
             "/api/group/invite",
@@ -766,9 +783,30 @@ async def test_group_journey_and_edge_cases():
             assert extra.get("new_name") == new_group_name
             break
         # ========== 改名通知验证结束 ==========
+
+        # ========== 新增：手动缔结好友关系（为了通过单人邀请的鉴权） ==========
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            await conn.execute(
+                """
+                INSERT INTO friend_relationship (user_id, friend_user_id)
+                VALUES ($1, $2), ($2, $1) ON CONFLICT DO NOTHING;
+                """,
+                user_member_id, user_stranger_id
+            )
+            break
+        # =================================================================
         # ---------------------------------------------------------
         # 6. 群邀请与审核 (POST /api/group/invite & POST /api/group/invite/review)
         # ---------------------------------------------------------
+        # ========== 👇 新增测试：验证非好友单人邀请被拦截 ==========
+        res_invite_forbidden = await client.post(
+            "/api/group/invite",
+            json={"conversation_id": conversation_id, "user_id": user_non_friend_id},
+            headers=headers_member,
+        )
+        assert res_invite_forbidden.status_code == 403, "安全漏洞：竟然可以邀请非好友！"
+        # =========================================================
         # Member 邀请 Stranger (合法的 member 邀请流程)
         res_invite = await client.post(
             "/api/group/invite",
@@ -1011,6 +1049,187 @@ async def test_group_journey_and_edge_cases():
             headers=headers_stranger,
         )
         assert res_stranger_info.status_code == 200
+
+        # ---------------------------------------------------------
+        # 6.5 批量邀请成员 (POST /api/group/invite/batch)
+        # ---------------------------------------------------------
+        # 准备两个新的陌生人用于批量邀请测试
+        batch_invitee_1_id = None
+        batch_invitee_2_id = None
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            hashed_pw = get_password_hash("password123")
+            batch_invitee_1_id = await db_create_user(
+                conn, "batch_user_1", hashed_pw, "batch1@test.com"
+            )
+            batch_invitee_2_id = await db_create_user(
+                conn, "batch_user_2", hashed_pw, "batch2@test.com"
+            )
+            # 新增：手动缔结批量好友关系
+            await conn.execute(
+                """
+                INSERT INTO friend_relationship (user_id, friend_user_id)
+                VALUES ($1, $2), ($2, $1), ($1, $3), ($3, $1) ON CONFLICT DO NOTHING;
+                """,
+                user_member_id, batch_invitee_1_id, batch_invitee_2_id
+            )
+            # 新增结束
+            break
+
+        # Member 尝试批量邀请这两个新人，外加他自己（测试过滤逻辑）
+        batch_payload = {
+            "conversation_id": conversation_id,
+            "user_ids": [
+                batch_invitee_1_id,
+                batch_invitee_2_id,
+                user_member_id,
+                user_non_friend_id]}
+
+        res_batch_invite = await client.post(
+            "/api/group/invite/batch",
+            json=batch_payload,
+            headers=headers_member,
+        )
+        assert res_batch_invite.status_code == 200, "批量邀请接口应返回成功"
+
+        batch_data = res_batch_invite.json().get("data", {})
+        applies = batch_data.get("applies", [])
+
+        # 验证返回数据：应只生成2条申请记录（过滤掉了自己）
+        assert len(applies) == 2, "批量邀请应过滤掉自己，生成两条记录"
+
+        # 验证生成的申请记录里绝对没有那个非好友
+        assert not any(
+            item["user_id"] == user_non_friend_id for item in applies), "安全漏洞：非好友被成功批量邀请了"
+
+        apply_id_1 = next(
+            item["apply_id"] for item in applies if item["user_id"] == batch_invitee_1_id)
+        apply_id_2 = next(
+            item["apply_id"] for item in applies if item["user_id"] == batch_invitee_2_id)
+
+        assert apply_id_1 > 0 and apply_id_2 > 0
+
+        # ========== 验证：管理员/群主待处理列表包含这两条新申请 ==========
+        res_pending_admin_batch = await client.get(
+            "/api/group/invites/pending",
+            headers=headers_admin,
+        )
+        assert res_pending_admin_batch.status_code == 200
+        pending_cards_batch = res_pending_admin_batch.json()["data"]
+
+        found_apply_1 = any(
+            card["apply_id"] == apply_id_1 for card in pending_cards_batch)
+        found_apply_2 = any(
+            card["apply_id"] == apply_id_2 for card in pending_cards_batch)
+
+        assert found_apply_1 and found_apply_2, "Admin的待处理列表中应包含批量邀请生成的两条申请"
+
+        # ========== 验证：这两条申请可以在后续通过相同的 review 接口审批 ==========
+        # Admin 批准第一个申请
+        res_approve_batch_1 = await client.post(
+            "/api/group/invite/review",
+            json={"apply_id": apply_id_1, "status": "APPROVED"},
+            headers=headers_admin,
+        )
+        assert res_approve_batch_1.status_code == 200
+
+        # 验证批量邀请的第一个人已入群
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            is_member_1 = await conn.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM conversation_member WHERE conversation_id = $1 AND member_user_id = $2)",
+                conversation_id, batch_invitee_1_id
+            )
+            assert is_member_1 is True, "批量邀请被批准后，用户应加入群聊"
+            break
+
+        # =================================================================
+        # 🌟 新增：6.6 测试状态机自动结算机制（边缘案例与核心动态分母）
+        # =================================================================
+
+        # 【当前状态快照】：
+        # 群里有权审批的人（委员会）：Owner(user_owner_id) 和 Admin(user_admin_id)
+        # 待处理申请：apply_id_2 (由 batch_invitee_2_id 触发)
+
+        # ---- 触发器测试 A：管理员变动/降级导致申请自动拒绝 ----
+
+        # 1. 首先让群主 (Owner) 忽略这个 apply_id_2
+        res_owner_ignore = await client.post(
+            "/api/group/invite/review",
+            json={"apply_id": apply_id_2, "status": "IGNORED"},
+            headers=headers_owner,
+        )
+        assert res_owner_ignore.status_code == 200
+
+        # 2. 检查数据库：此时 Owner 忽略了，但 Admin 还没操作，全局状态应该还是 pending
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            g_status = await conn.fetchval("SELECT status FROM group_invite WHERE invite_id = $1", apply_id_2)
+            assert g_status == "pending", "仅一人忽略时，申请不应该死掉"
+            break
+
+        # 3. 核心大招：Owner 突然撤销了 Admin 的管理员职位（降级为普通成员）
+        # 这会触发 db_remove_admin_invite_states，清除 Admin 的待办，并重新计算分母！
+        res_demote_admin = await client.put(
+            "/api/group/admin",
+            json={
+                "conversation_id": conversation_id,
+                "user_id": user_admin_id,
+                "role": "member",
+            },
+            headers=headers_owner,
+        )
+        assert res_demote_admin.status_code == 200
+
+        # 4. 强力断言：此时群里唯一的“有效在职管理员”只剩下 Owner 自己了，而 Owner 之前已经点了忽略。
+        # 也就是说，“有效忽略率”达到了 100%，申请应该被系统默默置为 'rejected'！
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            g_status = await conn.fetchval("SELECT status FROM group_invite WHERE invite_id = $1", apply_id_2)
+            assert g_status == "rejected", "🌟 状态机故障：管理员降级后，老申请未被自动拒绝！"
+            break
+
+        # ---- 触发器测试 B：全员忽略导致申请自动拒绝 ----
+
+        # 为了测试纯粹的“全员忽略”，我们先恢复 Admin 身份，并由 Member 触发一笔崭新的加群申请
+        res_restore_admin = await client.put(
+            "/api/group/admin",
+            json={"conversation_id": conversation_id, "user_id": user_admin_id, "role": "admin"},
+            headers=headers_owner,
+        )
+        assert res_restore_admin.status_code == 200
+
+        # Member 再次邀请 batch_invitee_2_id 入群，产生全新 pending 申请
+        res_new_invite = await client.post(
+            "/api/group/invite",
+            json={"conversation_id": conversation_id, "user_id": batch_invitee_2_id},
+            headers=headers_member,
+        )
+        apply_id_3 = res_new_invite.json()["data"]["apply_id"]
+
+        # 1. 现任管理员之一 Admin 点忽略
+        await client.post(
+            "/api/group/invite/review",
+            json={"apply_id": apply_id_3, "status": "IGNORED"},
+            headers=headers_admin,
+        )
+        # 2. 现任管理员之二 Owner 也点忽略
+        await client.post(
+            "/api/group/invite/review",
+            json={"apply_id": apply_id_3, "status": "IGNORED"},
+            headers=headers_owner,
+        )
+
+        # 3. 强力断言：所有人都点忽略了，数据库全局状态必须自动变成 'rejected'
+        async for proxy_conn in get_db_conn():
+            conn = cast(asyncpg.Connection, proxy_conn)
+            g_status = await conn.fetchval("SELECT status FROM group_invite WHERE invite_id = $1", apply_id_3)
+            assert g_status == "rejected", "🌟 状态机故障：所有管理员选择忽略后，全局状态未转为 rejected！"
+            break
+
+        # =================================================================
+        # 🌟 新增测试结束，顺畅接入后续的踢人流程
+        # =================================================================
         # ---------------------------------------------------------
         # 7. 踢人 (DELETE /api/group/member)
         # ---------------------------------------------------------
@@ -1275,6 +1494,16 @@ async def test_group_invite_triggers_assistant_card(mock_ws_send):
                        ($1, $3, 'admin'),
                        ($1, $4, 'member')
             """, group_conv_id, user_owner_id, user_admin_id, user_member_id)
+
+            # 👇👇👇 新增：建立邀请人(member)和被邀请人(invitee)的好友关系 👇👇👇
+            await conn.execute(
+                """
+                INSERT INTO friend_relationship (user_id, friend_user_id)
+                VALUES ($1, $2), ($2, $1) ON CONFLICT DO NOTHING;
+                """,
+                user_member_id, user_invitee_id
+            )
+            # 👆👆👆 新增结束 👆👆👆
 
             break
 
