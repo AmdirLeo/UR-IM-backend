@@ -192,28 +192,34 @@ async def logout_service(current_user_id: int) -> BaseResponse:
     return BaseResponse(code=200, msg="登出成功")
 
 
+async def _verify_current_password_and_get_user(
+        conn, user_id: int, plain_password: str):
+    """
+    业务层通用辅助：校验密码并返回用户对象。
+    若密码错误或用户不存在，直接抛出异常。
+    """
+    # 1. 查用户信息
+    user = await db_get_user_by_id(conn, user_id)
+    if not user:
+        raise BusinessException(status_code=404, detail="用户不存在")
+
+    # 2. 查密码
+    hashed_pwd = await db_get_password_by_id(conn, user_id)
+    if not hashed_pwd:
+        raise BusinessException(status_code=400, detail="账号数据异常，无法验证身份")
+
+    # 3. 验密
+    if not verify_password(plain_password, hashed_pwd):
+        raise BusinessException(status_code=400, detail="验证密码错误")
+
+    return user
+
+
 async def delete_account_service(
         conn,
         current_user_id: int,
         plain_password: str) -> BaseResponse:
-    # 1. 尝试获取用户信息
-    user = await db_get_user_by_id(conn, current_user_id)
-
-    # 2. 检查用户是否存在（虽然有 Token 鉴权，但为了健壮性建议保留）
-    if not user:
-        raise BusinessException(status_code=404, detail="用户不存在")
-
-    # 3. 获取该用户的加密密码
-    # 参考你登录时的逻辑：db_get_password_by_id
-    hashed_pwd = await db_get_password_by_id(conn, current_user_id)
-
-    if not hashed_pwd:
-        raise BusinessException(status_code=400, detail="账号数据异常，无法验证身份")
-
-    # 4. 验证用户输入的密码是否匹配
-    if not verify_password(plain_password, hashed_pwd):
-        # 为了安全，注销时的密码错误可以直接提示“密码错误”
-        raise BusinessException(status_code=400, detail="注销失败：验证密码错误")
+    await _verify_current_password_and_get_user(conn, current_user_id, plain_password)
 
     # 5. 🌟【核心新增】拦截群主
     owned_groups = await db_get_owned_groups(conn, current_user_id)
@@ -245,17 +251,7 @@ async def force_delete_account_service(
         plain_password: str) -> BaseResponse:
     """强力注销接口：无视群主身份，连带解散名下所有群"""
 
-    # 1. 身份与密码验证
-    user = await db_get_user_by_id(conn, current_user_id)
-    if not user:
-        raise BusinessException(status_code=404, detail="用户不存在")
-
-    hashed_pwd = await db_get_password_by_id(conn, current_user_id)
-    if not hashed_pwd:
-        raise BusinessException(status_code=400, detail="账号数据异常，无法验证身份")
-
-    if not verify_password(plain_password, hashed_pwd):
-        raise BusinessException(status_code=400, detail="强力注销失败：验证密码错误")
+    await _verify_current_password_and_get_user(conn, current_user_id, plain_password)
 
     # 2. 🌟【核心逻辑】批量解散名下所有群聊
     disbanded_conv_ids = await db_disband_all_owned_groups(conn, current_user_id)
@@ -397,11 +393,11 @@ async def edit_portrait_service(conn, current_user_id: int, file: UploadFile):
         )
     except Exception as e:
         # 🌟 核心修复：把真凶打印出来！不要生吞报错！
-        print(f"\n[💥 MINIO UPLOAD ERROR] 具体原因: {str(e)}\n")
         raise BusinessException(status_code=500, detail="头像文件保存至云存储失败")
 
     # 5. 🌟 拼接对外暴露的完整网络 URL 路径
-    avatar_url = f"http://{settings.S3_ENDPOINT}/{settings.BUCKET_AVATAR}/{object_name}"
+    protocol = "https" if settings.S3_SECURE else "http"
+    avatar_url = f"{protocol}://{settings.S3_ENDPOINT}/{settings.BUCKET_AVATAR}/{object_name}"
 
     # 6. 更新数据库里的路径信息（Repo 层不需要动）
     is_success = await db_update_user_profile(
