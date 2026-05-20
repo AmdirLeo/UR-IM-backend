@@ -49,6 +49,7 @@ from services.message_service import send_message_service
 from db.repositories.friend_repo import db_remove_friend
 from core.s3_client import s3_client
 from core.config import settings
+import io
 
 
 async def search_users(

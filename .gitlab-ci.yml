@@ -41,7 +41,7 @@ build:
     S3_ENDPOINT: "im-minio.default.secoder.local:9000"
     S3_ACCESS_KEY: "IM_Admin_8w2P"
     S3_SECRET_KEY: "X9vM4cK7zL1qN5bY"
-    S3_SECURE: "False"
+    S3_SECURE: "0"
 
     JWT_SECRET_KEY: "test_secret_for_cicd_only"
     DATABASE_URL: "postgresql://postgres:123456@postgres:5432/postgres"
@@ -55,7 +55,7 @@ unit-test:
   script:
     # 🌟 拆除辅助轮：移除了 || true
     # 现在只要单测报错，流水线就会红，防止带着 Bug 的代码上线
-    - coverage run -m pytest --junit-xml=xunit-reports/xunit-result.xml
+    - coverage run -m pytest -s --junit-xml=xunit-reports/xunit-result.xml
     - ret=$?
     - coverage xml -o coverage-reports/coverage.xml
     - coverage report
