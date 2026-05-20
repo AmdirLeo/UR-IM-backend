@@ -36,6 +36,13 @@ build:
     MINIO_ROOT_USER: "IM_Admin_8w2P"
     MINIO_ROOT_PASSWORD: "X9vM4cK7zL1qN5bY"
     MINIO_BROWSER: "off"
+
+    # 🌟🌟🌟 新增：专门给你的 FastAPI 后端代码用的 🌟🌟🌟
+    S3_ENDPOINT: "im-minio.default.secoder.local:9000"
+    S3_ACCESS_KEY: "IM_Admin_8w2P"
+    S3_SECRET_KEY: "X9vM4cK7zL1qN5bY"
+    S3_SECURE: "False"
+
     JWT_SECRET_KEY: "test_secret_for_cicd_only"
     DATABASE_URL: "postgresql://postgres:123456@postgres:5432/postgres"
     REDIS_URL: "redis://redis:6379/0"
