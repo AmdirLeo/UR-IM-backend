@@ -380,16 +380,24 @@ async def edit_portrait_service(conn, current_user_id: int, file: UploadFile):
     # 3. 🌟 生成唯一的 Object Key（在 MinIO 中的文件名）
     object_name = f"{uuid.uuid4().hex}{ext}"
 
+    file_bytes = await file.read()
+    file_stream = io.BytesIO(file_bytes)
+
     # 4. 🌟 替代原有的 open/shutil，直接流式上传到 MinIO
     try:
+        # 防御性兜底建桶
+        if not s3_client.bucket_exists(settings.BUCKET_AVATAR):
+            s3_client.make_bucket(settings.BUCKET_AVATAR)
         s3_client.put_object(
             bucket_name=settings.BUCKET_AVATAR,  # 这里读出来的就是 "avatars"
             object_name=object_name,
-            data=file.file,                      # FastAPI 的文件二进制流
-            length=file.size,                    # 文件大小
+            data=file_stream,                      # FastAPI 的文件二进制流
+            length=len(file_bytes),                    # 文件大小
             content_type=file.content_type       # 保证浏览器能正确识别图片类型而不是触发下载
         )
-    except Exception:
+    except Exception as e:
+        # 🌟 核心修复：把真凶打印出来！不要生吞报错！
+        print(f"\n[💥 MINIO UPLOAD ERROR] 具体原因: {str(e)}\n")
         raise BusinessException(status_code=500, detail="头像文件保存至云存储失败")
 
     # 5. 🌟 拼接对外暴露的完整网络 URL 路径

@@ -28,11 +28,10 @@ build:
       alias: im-minio.default.secoder.local  # 核心：别名必须和 core/config.py 里写死的线上域名完全一致！
       command: ["server", "/data", "--address", ":9000"]
   variables:
-  variables:
     POSTGRES_USER: postgres
     POSTGRES_PASSWORD: "123456"
     POSTGRES_DB: postgres
-     🌟 关键修改：在这里把密码灌给官方镜像，和你的代码无缝对上暗号
+    # 🌟 关键修改：在这里把密码灌给官方镜像，和你的代码无缝对上暗号
     MINIO_ROOT_USER: "IM_Admin_8w2P"
     MINIO_ROOT_PASSWORD: "X9vM4cK7zL1qN5bY"
     MINIO_BROWSER: "off"
