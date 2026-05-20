@@ -9,13 +9,6 @@ class Settings(BaseSettings):
     VERSION: str = "0.1.0"
     DEBUG: bool = True
 
-    # 这行代码告诉 Pydantic 去当前目录下找 .env 文件
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding='utf-8',
-        extra='ignore'  # 忽略环境变量中多余的变量，防止报错
-    )
-
     # --- 数据库配置 ---
     # Pydantic 会自动从 .env 中读取 DATABASE_URL 变量
     DATABASE_URL: str = Field(
@@ -25,6 +18,20 @@ class Settings(BaseSettings):
     REDIS_URL: str = Field(
         default="redis://im_redis.Default.secoder.local:6379/0"
     )
+
+    # 🌟 --- MinIO / S3 分布式存储配置 ---
+    # 默认 Endpoint 写死 SECoder 截图里的内网域名和 80 端口
+    S3_ENDPOINT: str = Field(
+        default="im-minio.Default.secoder.local:80"
+    )
+    # 账号密码与你定制的 MinIO 镜像保持严格一致
+    S3_ACCESS_KEY: str = "IM_Admin_8w2P"
+    S3_SECRET_KEY: str = "X9vM4cK7zL1qN5bY"
+    S3_SECURE: bool = False  # 内网 http 通信用 False
+
+    # 存储桶规划
+    BUCKET_AVATAR: str = "avatars"
+    BUCKET_CHAT: str = "chatfiles"
 
     # --- 安全与 JWT 配置 ---
     JWT_SECRET_KEY: str = Field(

@@ -20,3 +20,22 @@ services:
     ports:
       - "6379:6379"
     restart: unless-stopped
+
+  im_minio:
+    image: minio/minio:latest
+    container_name: im_minio_local
+    ports:
+      - "9000:9000"       # API 端口（代码连接用）
+      - "9001:9001"       # Console 管理后台端口（浏览器访问用）
+    environment:
+      # 密码设置得跟线上完全一致，同事连 .env 都不用改就能直接跑！
+      MINIO_ROOT_USER: "IM_Admin_8w2P"
+      MINIO_ROOT_PASSWORD: "X9vM4cK7zL1qN5bY"
+    volumes:
+      - minio_local_data:/data
+    # 强制让本地的 API 走 9000，后台走 9001，符合标准的 S3 本地习惯
+    command: server /data --address ":9000" --console-address ":9001"
+
+volumes:
+  # ... 你原有的数据卷（如 db_data） ...
+  minio_local_data:
