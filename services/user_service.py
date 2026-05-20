@@ -391,7 +391,7 @@ async def edit_portrait_service(conn, current_user_id: int, file: UploadFile):
             length=len(file_bytes),                    # 文件大小
             content_type=file.content_type       # 保证浏览器能正确识别图片类型而不是触发下载
         )
-    except Exception as e:
+    except Exception:
         # 🌟 核心修复：把真凶打印出来！不要生吞报错！
         raise BusinessException(status_code=500, detail="头像文件保存至云存储失败")
 
