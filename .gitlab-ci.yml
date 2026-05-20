@@ -18,10 +18,10 @@ build:
   image: python:3.12-slim
   stage: test
   services:
-    - name: postgres:15-alpine
-      alias: postgres 
-    - name: redis:7-alpine
-      alias: redis
+    #- name: postgres:15-alpine
+      #alias: postgres 
+    #- name: redis:7-alpine
+      #alias: redis
     # 🌟 新增：挂载你之前固化了密码的自定义 MinIO 镜像作为测试伴生服务
     # 注意：请将下方的镜像路径替换为你 MinIO 仓库在 SECoder 上的真实 Registry 地址
     - name: minio/minio:latest
@@ -29,9 +29,9 @@ build:
       command: ["server", "/data", "--address", ":9000", "--console-address", ":9001"]
   variables:
   variables:
-    POSTGRES_USER: postgres
-    POSTGRES_PASSWORD: "123456"
-    POSTGRES_DB: postgres
+    #POSTGRES_USER: postgres
+    #POSTGRES_PASSWORD: "123456"
+    #POSTGRES_DB: postgres
     # 🌟 关键修改：在这里把密码灌给官方镜像，和你的代码无缝对上暗号
     MINIO_ROOT_USER: "IM_Admin_8w2P"
     MINIO_ROOT_PASSWORD: "X9vM4cK7zL1qN5bY"
