@@ -24,12 +24,17 @@ build:
       alias: redis
     # 🌟 新增：挂载你之前固化了密码的自定义 MinIO 镜像作为测试伴生服务
     # 注意：请将下方的镜像路径替换为你 MinIO 仓库在 SECoder 上的真实 Registry 地址
-    - name: registry.spring26b.secoder.net/default/im-minio:latest
+    - name: minio/minio:latest
       alias: im-minio.default.secoder.local  # 核心：别名必须和 core/config.py 里写死的线上域名完全一致！
+      command: ["server", "/data", "--address", ":9000", "--console-address", ":9001"]
+  variables:
   variables:
     POSTGRES_USER: postgres
     POSTGRES_PASSWORD: "123456"
     POSTGRES_DB: postgres
+    # 🌟 关键修改：在这里把密码灌给官方镜像，和你的代码无缝对上暗号
+    MINIO_ROOT_USER: "IM_Admin_8w2P"
+    MINIO_ROOT_PASSWORD: "X9vM4cK7zL1qN5bY"
     JWT_SECRET_KEY: "test_secret_for_cicd_only"
     DATABASE_URL: "postgresql://postgres:123456@postgres:5432/postgres"
     REDIS_URL: "redis://redis:6379/0"
