@@ -25,7 +25,7 @@ build:
     # 🌟 新增：挂载你之前固化了密码的自定义 MinIO 镜像作为测试伴生服务
     # 注意：请将下方的镜像路径替换为你 MinIO 仓库在 SECoder 上的真实 Registry 地址
     - name: registry.spring26b.secoder.net/default/im-minio:latest
-      alias: im-minio.Default.secoder.local  # 核心：别名必须和 core/config.py 里写死的线上域名完全一致！
+      alias: im-minio.default.secoder.local  # 核心：别名必须和 core/config.py 里写死的线上域名完全一致！
   variables:
     POSTGRES_USER: postgres
     POSTGRES_PASSWORD: "123456"
