@@ -20,13 +20,13 @@ build:
   services:
     - name: postgres:15-alpine
       alias: postgres 
-    #- name: redis:7-alpine
-      #alias: redis
+    - name: redis:7-alpine
+      alias: redis
     # 🌟 新增：挂载你之前固化了密码的自定义 MinIO 镜像作为测试伴生服务
     # 注意：请将下方的镜像路径替换为你 MinIO 仓库在 SECoder 上的真实 Registry 地址
-    - name: minio/minio:latest
+    - name: minio/minio:RELEASE.2022-05-26T05-48-41Z
       alias: im-minio.default.secoder.local  # 核心：别名必须和 core/config.py 里写死的线上域名完全一致！
-      command: ["server", "/data", "--address", ":9000", "--console-address", ":9001"]
+      command: ["server", "/data", "--address", ":9000", "--console-address", ":-1"]
   variables:
   variables:
     POSTGRES_USER: postgres
