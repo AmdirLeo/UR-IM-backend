@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # 🌟 --- MinIO / S3 分布式存储配置 ---
     # 默认 Endpoint 写死 SECoder 截图里的内网域名和 9000 端口
     S3_ENDPOINT: str = Field(
-        default="im-minio.default.secoder.local:9000"
+        default="im-minio.default.secoder.local:80"
     )
     # 账号密码与你定制的 MinIO 镜像保持严格一致
     S3_ACCESS_KEY: str = "IM_Admin_8w2P"
