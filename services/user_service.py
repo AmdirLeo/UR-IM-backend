@@ -397,7 +397,7 @@ async def edit_portrait_service(conn, current_user_id: int, file: UploadFile):
 
     # 5. 🌟 拼接对外暴露的完整网络 URL 路径
     protocol = "https" if settings.S3_SECURE else "http"
-    avatar_url = f"{protocol}://{settings.S3_ENDPOINT}/{settings.BUCKET_AVATAR}/{object_name}"
+    avatar_url = f"{protocol}://{settings.S3_PUBLIC_DOMAIN}/{settings.BUCKET_AVATAR}/{object_name}"
 
     # 6. 更新数据库里的路径信息（Repo 层不需要动）
     is_success = await db_update_user_profile(
