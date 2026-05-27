@@ -63,7 +63,9 @@ QUERY_GET_USERNAME_BY_ID = "SELECT username FROM user_account WHERE user_id = $1
 async def create_group_service(
         db_session: asyncpg.Connection,
         current_user_id: int,
-        req: GroupCreateRequest) -> dict:
+        req: GroupCreateRequest,
+        file: Optional[UploadFile] = None) -> dict:
+
     if not req.user_ids:
         raise GroupException(GroupErrors.InvalidRequest, "好友列表不能为空")
     # 假设如果被邀请的人不存在或者其他问题，在底层的 db 层（没有提及详细错误，但通常由外键抛出或忽略）处理
@@ -74,6 +76,19 @@ async def create_group_service(
         avatar_url=req.avatar,
         group_name=req.name,
     )
+    avatar_url = req.avatar
+
+    if file:
+        # 因为上面的 db_create_group 已经把你设为 owner 了
+        # 所以这里调用 edit 服务，里面的权限校验会毫无阻碍地通过！
+        portrait_response = await edit_group_portrait_service(
+            db_session=db_session,
+            current_user_id=current_user_id,
+            group_id=conv_id,
+            file=file
+        )
+        # 从返回的 Pydantic 模型里抽取出刚刚生成的公网 URL
+        avatar_url = portrait_response.filekey
 
     # ========== 新增：发送通知 ==========
     # 1. 通知所有被邀请成员（通过私聊助手）
@@ -84,7 +99,7 @@ async def create_group_service(
         member_ids=req.user_ids,
     )
 
-    return {"conversation_id": conv_id, "name": req.name, "avatar": req.avatar}
+    return {"conversation_id": conv_id, "name": req.name, "avatar": avatar_url}
 
 
 async def get_group_info_service(

@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from api.dependencies import CurrentUserId, DBConnection
 from fastapi import File, Form, UploadFile
+from typing import List, Optional
 from schemas.group import (
     GroupGenericResponse,
     GroupCreateRequest,
@@ -51,11 +52,14 @@ router = APIRouter()
 @router.post("/create", summary="创建群聊",
              response_model=GroupGenericResponse[GroupCreateData])
 async def create_group(
-    req: GroupCreateRequest,
     current_user_id: CurrentUserId,
     db_session: DBConnection,
+    name: str = Form(..., min_length=1, max_length=50, description="群名称"),
+    user_ids: List[int] = Form(..., description="被邀请的好友ID列表"),
+    file: Optional[UploadFile] = File(None, description="可选的群头像文件"),
 ):
-    data = await create_group_service(db_session, current_user_id, req)
+    req = GroupCreateRequest(user_ids=user_ids, name=name, avatar=None)
+    data = await create_group_service(db_session, current_user_id, req, file)
     return GroupGenericResponse(data=data)
 
 

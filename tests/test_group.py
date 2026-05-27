@@ -120,14 +120,17 @@ async def test_group_journey_and_edge_cases():
         # Owner 创建群聊，带上 admin 和 member，排除了 stranger
         res = await client.post(
             "/api/group/create",
-            json={"user_ids": [user_admin_id, user_member_id],
-                  "name": "Test Avengers"},
+            data={
+                "user_ids": [user_admin_id, user_member_id],
+                "name": "Test Avengers"
+            },
             headers=headers_owner,
         )
         assert res.status_code == 200
         data = res.json()["data"]
         assert data["name"] == "Test Avengers"
         assert "conversation_id" in data
+        assert data.get("avatar") is None
         conversation_id = data["conversation_id"]
 
         # 2. 验证被邀请成员（admin 和 member）都收到私聊系统通知
@@ -180,10 +183,42 @@ async def test_group_journey_and_edge_cases():
                 break
         # ========== 新增验证结束 ==========
 
+        # 新增测试 B：测试创建群聊的同时上传群头像
+        with patch("services.group_service.db_update_group_profile", new_callable=AsyncMock) as mock_db:
+            mock_db.return_value = True  # 模拟底层更新头像数据库成功
+
+            files_create = {
+                "file": (
+                    "new_group_avatar.png",
+                    b"fake_image_data",
+                    "image/png")}
+            res_with_avatar = await client.post(
+                "/api/group/create",
+                data={
+                    "user_ids": [user_admin_id],
+                    "name": "Avengers With Avatar"
+                },
+                files=files_create,
+                headers=headers_owner,
+            )
+            assert res_with_avatar.status_code == 200
+            data_with_avatar = res_with_avatar.json()["data"]
+            assert data_with_avatar["name"] == "Avengers With Avatar"
+            assert data_with_avatar.get("avatar") is not None
+            assert "filekey" in data_with_avatar["avatar"] or str(
+                data_with_avatar["avatar"]).startswith("http")
+
+            # 清理刚刚测试产生的脏图片
+            avatar_url = data_with_avatar.get("avatar", "")
+            if isinstance(avatar_url, str):
+                saved_path = avatar_url.lstrip("/")
+                if os.path.exists(saved_path):
+                    os.remove(saved_path)
+
         # 测试 Validation 异常 (422)：没传必填参数 user_ids
         res_invalid = await client.post(
             "/api/group/create",
-            json={"name": "Bad Group"},
+            data={"name": "Bad Group"},
             headers=headers_owner,
         )
         assert res_invalid.status_code == 422
