@@ -66,6 +66,7 @@ class GroupErrors(Enum):
     InvalidReviewAction = "InvalidReviewAction"
     InvalidRequest = "InvalidRequest"
     NoAdminInGroup = "NoAdminInGroup"
+    ProfileUpdateFailed = "ProfileUpdateFailed"
 
 
 # ==========================================
@@ -183,14 +184,12 @@ def setup_exception_handlers(app):
             GroupErrors.CannotKickHigherRole: (403, "无法踢出权限比自己高或同级的成员"),
             GroupErrors.InvalidRole: (400, "无效的角色类型"),
             GroupErrors.InviteNotFound: (404, "邀请记录不存在或已处理"),
-            GroupErrors.InvitePending: (
-                409,
-                "已有待处理的邀请记录，请耐心等待或前往处理",
-            ),
+            GroupErrors.InvitePending: (409, "已有待处理的邀请记录，请耐心等待或前往处理"),
             GroupErrors.CannotInviteSelf: (400, "不能邀请自己加入群聊"),
             GroupErrors.InvalidReviewAction: (400, "无效的审核操作"),
             GroupErrors.InvalidRequest: (400, "请求参数不合法"),
             GroupErrors.NoAdminInGroup: (400, "该群聊没有管理员，无法执行此操作"),
+            GroupErrors.ProfileUpdateFailed: (500, "数据库更新群头像失败")
         }
         status_code, detail = error_mapping.get(
             exc.error_code, (500, "群模块未知错误"))

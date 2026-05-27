@@ -918,7 +918,7 @@ async def edit_group_portrait_service(
             s3_client.remove_object(settings.BUCKET_AVATAR, object_name)
         except Exception:
             pass
-        raise GroupException(status_code=500, detail="数据库更新群头像失败")
+        raise GroupException(GroupErrors.ProfileUpdateFailed)
 
     return GroupPortraitResponse(
         code=200,
