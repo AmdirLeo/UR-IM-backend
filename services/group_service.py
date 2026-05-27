@@ -3,6 +3,7 @@ import uuid
 import json
 from typing import List, Optional, Dict
 from datetime import datetime, timezone
+from fastapi import UploadFile
 from schemas.group import (
     GroupCreateRequest,
     GroupGenericRequest,
@@ -14,6 +15,7 @@ from schemas.group import (
     GroupInviteReviewRequest,
     GroupUpdateNameRequest,
     GroupBatchInviteRequest,
+    GroupPortraitResponse
 )
 from schemas.message import MessageType
 from core.exceptions import GroupException, GroupErrors
@@ -37,10 +39,14 @@ from db.repositories.group_repo import (
     db_get_group_announcements,
     db_get_group_list,
     db_update_group_name,
+    db_update_group_profile,
 )
 from schemas.message import SendMessageRequest, MessageType
+from core.s3_client import upload_image_to_s3
 from services.message_service import send_message_service
 from db.repositories.friend_repo import db_check_is_friend, db_filter_valid_friends
+from core.s3_client import s3_client
+from core.config import settings
 
 QUERY_FIND_SYSTEM_PRIVATE_CONV = """
     SELECT c.conversation_id
@@ -863,3 +869,60 @@ async def update_group_name_service(
     await db_update_group_name(db_session, req.conversation_id, req.new_name)
 
     return {"conversation_id": req.conversation_id, "new_name": req.new_name}
+
+MAX_AVATAR_SIZE = 2 * 1024 * 1024  # 限制为 2MB (以字节为单位)
+
+
+async def edit_group_portrait_service(
+    db_session: asyncpg.Connection,
+    current_user_id: int,
+    group_id: int,
+    file: UploadFile
+):
+    """
+    修改群头像的业务逻辑服务
+    """
+
+    # 1. 校验权限：仅 owner 和 admin 可以修改
+    query_role = """
+        SELECT role FROM conversation_member
+        WHERE conversation_id = $1 AND member_user_id = $2
+    """
+    role = await db_session.fetchval(query_role, group_id, current_user_id)
+
+    if not role:
+        # 请替换为你的业务异常类，返回 403 或 404
+        raise GroupException(GroupErrors.NotInGroup)
+    if role not in ("owner", "admin"):
+        # 如果你有定义 GroupException 和状态码映射，请抛出对应 403 的异常
+        raise GroupException(GroupErrors.PermissionDenied)
+
+    # 🌟 复用同一个公共工具函数
+    object_name, group_avatar_url = await upload_image_to_s3(
+        file=file,
+        bucket_name=settings.BUCKET_AVATAR,  # 也可以用 settings.BUCKET_GROUP
+        max_size=MAX_AVATAR_SIZE,
+        err_msg_prefix="群头像"
+    )
+
+    # 更新群组数据库表
+    is_success = await db_update_group_profile(
+        db_session,
+        group_id=group_id,
+        avatar_url=group_avatar_url
+    )
+
+    # 逆向擦除逻辑
+    if not is_success:
+        try:
+            s3_client.remove_object(settings.BUCKET_AVATAR, object_name)
+        except Exception:
+            pass
+        raise GroupException(status_code=500, detail="数据库更新群头像失败")
+
+    return GroupPortraitResponse(
+        code=200,
+        filekey=group_avatar_url,
+        width=256,
+        height=256
+    )

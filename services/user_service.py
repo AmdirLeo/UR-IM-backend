@@ -9,6 +9,7 @@ from db.repositories.user_repo import (
     db_get_password_by_id,
     db_get_user_by_id,
 )
+from core.s3_client import upload_image_to_s3
 from db.redis_client import db_save_verification_code, db_verify_code
 from core.security import (
     get_password_hash,
@@ -355,7 +356,6 @@ async def edit_email_service(
 # ==========================================
 # 头像存储的本地相对路径配置
 # ==========================================
-AVATAR_DIR = "static/avatars"
 MAX_AVATAR_SIZE = 2 * 1024 * 1024  # 限制为 2MB (以字节为单位)
 
 
@@ -363,41 +363,12 @@ async def edit_portrait_service(conn, current_user_id: int, file: UploadFile):
     """
     修改头像的业务逻辑服务
     """
-    # 1. 【新增】：校验文件大小，放在最前面，第一时间把巨型文件踢出去
-    if file.size > MAX_AVATAR_SIZE:
-        raise BusinessException(status_code=400, detail="头像图片大小不能超过 2MB")
-
-    # 2. 校验后缀名，防止上传恶意文件
-    ext = os.path.splitext(file.filename)[1].lower()
-    allowed_extensions = [".jpg", ".jpeg", ".png", ".webp"]
-    if ext not in allowed_extensions:
-        raise BusinessException(status_code=400, detail="不支持的图片格式")
-
-    # 3. 🌟 生成唯一的 Object Key（在 MinIO 中的文件名）
-    object_name = f"{uuid.uuid4().hex}{ext}"
-
-    file_bytes = await file.read()
-    file_stream = io.BytesIO(file_bytes)
-
-    # 4. 🌟 替代原有的 open/shutil，直接流式上传到 MinIO
-    try:
-        # 防御性兜底建桶
-        if not s3_client.bucket_exists(settings.BUCKET_AVATAR):
-            s3_client.make_bucket(settings.BUCKET_AVATAR)
-        s3_client.put_object(
-            bucket_name=settings.BUCKET_AVATAR,  # 这里读出来的就是 "avatars"
-            object_name=object_name,
-            data=file_stream,                      # FastAPI 的文件二进制流
-            length=len(file_bytes),                    # 文件大小
-            content_type=file.content_type       # 保证浏览器能正确识别图片类型而不是触发下载
-        )
-    except Exception:
-        # 🌟 核心修复：把真凶打印出来！不要生吞报错！
-        raise BusinessException(status_code=500, detail="头像文件保存至云存储失败")
-
-    # 5. 🌟 拼接对外暴露的完整网络 URL 路径
-    protocol = "https" if settings.S3_SECURE else "http"
-    avatar_url = f"{protocol}://{settings.S3_PUBLIC_DOMAIN}/{settings.BUCKET_AVATAR}/{object_name}"
+    object_name, avatar_url = await upload_image_to_s3(
+        file=file,
+        bucket_name=settings.BUCKET_AVATAR,
+        max_size=MAX_AVATAR_SIZE,
+        err_msg_prefix="个人头像"
+    )
 
     # 6. 更新数据库里的路径信息（Repo 层不需要动）
     is_success = await db_update_user_profile(

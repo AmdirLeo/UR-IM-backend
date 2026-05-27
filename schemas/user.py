@@ -84,8 +84,7 @@ class PortraitResponse(BaseModel):
     修改头像接口的返回模型
     """
     code: int = Field(default=200, description="状态码")
-    filekey: str = Field(..., description="头像的相对路径 URL",
-                         examples=["/static/avatars/abc123.png"])
+    filekey: str = Field(..., description="头像的路径 URL")
     width: int = Field(default=256, description="建议的渲染宽度")
     height: int = Field(default=256, description="建议的渲染高度")
 

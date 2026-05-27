@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from api.dependencies import CurrentUserId, DBConnection
+from fastapi import File, Form, UploadFile
 from schemas.group import (
     GroupGenericResponse,
     GroupCreateRequest,
@@ -22,6 +23,7 @@ from schemas.group import (
     GroupUpdateNameRequest,
     GroupBatchInviteRequest,
     GroupBatchInviteData,
+    GroupPortraitResponse,
 )
 from services.group_service import (
     create_group_service,
@@ -39,6 +41,7 @@ from services.group_service import (
     get_group_list,
     update_group_name_service,
     invite_to_group_batch_service,
+    edit_group_portrait_service,
 )
 
 
@@ -237,3 +240,25 @@ async def update_group_name(
     )
     # 假设你有类似 GenericResponse 的统一返回模型
     return {"code": 200, "msg": "群名称修改成功", "data": res}
+
+
+@router.put("/edit/portrait", summary="修改群头像",
+            response_model=GroupPortraitResponse)  # 假设你复用了个人头像的返回结构
+async def edit_group_portrait(
+    current_user_id: CurrentUserId,
+    db_session: DBConnection,
+    conversation_id: int = Form(..., description="群聊ID"),
+    file: UploadFile = File(..., description="群头像图片文件"),
+):
+    """
+    修改群头像接口。
+    注意：包含文件上传，必须使用 Form 来接收其他普通参数。
+    """
+    # 这里的 service 需要包含 current_user_id，因为业务层需要鉴权（判断是不是群主/管理员）
+    data = await edit_group_portrait_service(
+        db_session=db_session,
+        current_user_id=current_user_id,
+        group_id=conversation_id,
+        file=file
+    )
+    return data

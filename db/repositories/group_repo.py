@@ -832,3 +832,30 @@ async def db_disband_all_owned_groups(
         await db_disband_group(conn, user_id, conv_id)
 
     return conv_ids
+
+
+async def db_update_group_profile(
+    conn: asyncpg.Connection,
+    group_id: int,
+    avatar_url: str
+) -> bool:
+    """
+    更新群聊的头像 (avatar_url)。
+
+    返回布尔值 (bool)，表示是否更新成功（即该群是否存在且确为群聊）。
+    此返回值将用于上层业务逻辑：如果为 False，则触发 MinIO 的图片逆向擦除逻辑。
+    """
+    query = """
+        UPDATE conversation
+        SET avatar_url = $1
+        WHERE conversation_id = $2
+          AND type = 'group'
+        RETURNING conversation_id;
+    """
+
+    # fetchval 会返回 RETURNING 的第一行的第一列 (即 conversation_id)
+    # 如果 WHERE 条件没命中（比如群不存在，或者它是个单聊），就会返回 None
+    updated_id = await conn.fetchval(query, avatar_url, group_id)
+
+    # 如果不为 None，说明数据库里确实有这一行被更新了，返回 True
+    return updated_id is not None

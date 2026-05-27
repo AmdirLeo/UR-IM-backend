@@ -24,7 +24,8 @@ class Settings(BaseSettings):
     S3_ENDPOINT: str = Field(
         default="im-minio.default.secoder.local:80"
     )
-    S3_PUBLIC_DOMAIN: str = Field(default="im-minio-default.app.spring26b.secoder.net")
+    S3_PUBLIC_DOMAIN: str = Field(
+        default="im-minio-default.app.spring26b.secoder.net")
     # 账号密码与你定制的 MinIO 镜像保持严格一致
     S3_ACCESS_KEY: str = "IM_Admin_8w2P"
     S3_SECRET_KEY: str = "X9vM4cK7zL1qN5bY"

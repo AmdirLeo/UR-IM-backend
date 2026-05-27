@@ -13,6 +13,8 @@ from core.security import get_password_hash, create_access_token
 from db.database import get_db_conn
 from db.repositories.user_repo import db_create_user
 from db.repositories.group_repo import QUERY_GET_MEMBER_ROLE
+import os
+from unittest.mock import patch, AsyncMock
 
 # ==========================================
 # 1. Setup FastAPI App
@@ -655,6 +657,79 @@ async def test_group_journey_and_edge_cases():
             )
             break
         # =================================================================
+
+        # ---------------------------------------------------------
+        # 5.6 修改群头像 (PUT /api/group/edit/portrait)
+        # ---------------------------------------------------------
+        # ⚠️ 注意：FastAPI 中同时上传文件和参数，需使用 multipart/form-data
+        # 参数传递必须放在 data=... 中，且转为字符串，文件放在 files=... 中
+        form_data = {"conversation_id": str(conversation_id)}
+
+        # 1. 越权测试：普通 Member 尝试修改群头像 -> 报错 403 PermissionDenied
+        files_normal = {"file": ("test_group.png", b"fake_data", "image/png")}
+        res_avatar_fail = await client.put(
+            "/api/group/edit/portrait",  # 请确保这与你 router 里定义的真实路径一致
+            data=form_data,
+            files=files_normal,
+            headers=headers_member,
+        )
+        assert res_avatar_fail.status_code == 403
+
+        # 2. 合法修改：Admin 成功修改群头像
+        # 使用 AsyncMock 拦截数据库真实写入，保护测试数据库的数据一致性
+        with patch("services.group_service.db_update_group_profile", new_callable=AsyncMock) as mock_db:
+            mock_db.return_value = True  # 模拟数据库更新成功
+
+            res_avatar_success = await client.put(
+                "/api/group/edit/portrait",
+                data=form_data,
+                files=files_normal,
+                headers=headers_admin,
+            )
+            assert res_avatar_success.status_code == 200
+
+            # 验证返回结构
+            avatar_data = res_avatar_success.json()
+            assert "filekey" in avatar_data
+
+            # 清理测试期间向 MinIO / 本地磁盘 写入的垃圾图片 (看齐 test_user)
+            saved_path = avatar_data["filekey"].lstrip("/")
+            if os.path.exists(saved_path):
+                os.remove(saved_path)
+
+        # 3. 边界测试：上传超过 2MB 的超大文件 -> 报错 400
+        large_file_content = b"0" * (2 * 1024 * 1024 + 1024)  # 2MB + 1KB
+        files_large = {
+            "file": (
+                "huge_group_avatar.png",
+                large_file_content,
+                "image/png")}
+
+        res_avatar_large = await client.put(
+            "/api/group/edit/portrait",
+            data=form_data,
+            files=files_large,
+            headers=headers_owner,  # 群主亲自上传大文件，也得被拦
+        )
+        assert res_avatar_large.status_code == 400
+        assert "不能超过 2MB" in res_avatar_large.text
+
+        # 4. 边界测试：上传不支持的文件格式 (如 .txt) -> 报错 400
+        files_txt = {
+            "file": (
+                "bad_avatar.txt",
+                b"I am a text file",
+                "text/plain")}
+
+        res_avatar_txt = await client.put(
+            "/api/group/edit/portrait",
+            data=form_data,
+            files=files_txt,
+            headers=headers_owner,
+        )
+        assert res_avatar_txt.status_code == 400
+        assert "不支持的图片格式" in res_avatar_txt.text
+
         # ---------------------------------------------------------
         # 6. 群邀请与审核 (POST /api/group/invite & POST /api/group/invite/review)
         # ---------------------------------------------------------

@@ -155,3 +155,13 @@ class ApplyInfo(BaseModel):
 
 class GroupBatchInviteData(BaseModel):
     applies: List[ApplyInfo] = Field(..., description="生成的申请记录列表")
+
+
+class GroupPortraitResponse(BaseModel):
+    """
+    修改群头像接口的返回模型
+    """
+    code: int = Field(default=200, description="状态码")
+    filekey: str = Field(..., description="头像的路径 URL")
+    width: int = Field(default=256, description="建议的渲染宽度")
+    height: int = Field(default=256, description="建议的渲染高度")
