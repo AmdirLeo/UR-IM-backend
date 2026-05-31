@@ -102,10 +102,18 @@ async def test_group_journey_and_edge_cases():
         dummy_jti_admin = uuid.uuid4().hex
         dummy_jti_member = uuid.uuid4().hex
         dummy_jti_stranger = uuid.uuid4().hex
-        await conn.execute("UPDATE user_account SET current_jti = $1 WHERE user_id = $2", dummy_jti_owner, user_owner_id)
-        await conn.execute("UPDATE user_account SET current_jti = $1 WHERE user_id = $2", dummy_jti_admin, user_admin_id)
-        await conn.execute("UPDATE user_account SET current_jti = $1 WHERE user_id = $2", dummy_jti_member, user_member_id)
-        await conn.execute("UPDATE user_account SET current_jti = $1 WHERE user_id = $2", dummy_jti_stranger, user_stranger_id)
+        await conn.execute(
+            "UPDATE user_account SET current_jti = $1 WHERE user_id = $2", dummy_jti_owner, user_owner_id
+        )
+        await conn.execute(
+            "UPDATE user_account SET current_jti = $1 WHERE user_id = $2", dummy_jti_admin, user_admin_id
+        )
+        await conn.execute(
+            "UPDATE user_account SET current_jti = $1 WHERE user_id = $2", dummy_jti_member, user_member_id
+        )
+        await conn.execute(
+            "UPDATE user_account SET current_jti = $1 WHERE user_id = $2", dummy_jti_stranger, user_stranger_id
+        )
         break  # 取一次连接执行完毕即可
     # 为用户生成真实的 JWT Token，完美通过路由的鉴权依赖
     token_owner = create_access_token(
@@ -1433,7 +1441,9 @@ async def test_group_invite_triggers_assistant_card(mock_ws_send):
             )
             # 👆👆👆 新增结束 👆👆👆
             dummy_jti_member = uuid.uuid4().hex
-            await conn.execute("UPDATE user_account SET current_jti = $1 WHERE user_id = $2", dummy_jti_member, user_member_id)
+            await conn.execute(
+                "UPDATE user_account SET current_jti = $1 WHERE user_id = $2", dummy_jti_member, user_member_id
+            )
             break
 
         # 2. 普通成员登录
