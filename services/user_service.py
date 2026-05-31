@@ -361,6 +361,10 @@ async def edit_email_service(
     # 1. 同样调用辅助函数，先验密码！
     await _verify_current_password(conn, current_user_id, edit_data.password)
 
+    existing_user = await db_get_user_by_email(conn, edit_data.new_email)
+    if existing_user:
+        raise BusinessException(status_code=400, detail="该邮箱已被注册")
+
     # 2. 密码对了，才允许改邮箱
     success = await db_update_user_profile(conn, current_user_id, email=edit_data.new_email)
     if not success:
