@@ -3,6 +3,7 @@ import json
 from typing import Dict
 from unittest.mock import patch
 from httpx import AsyncClient, ASGITransport
+import uuid
 
 # 引入项目核心依赖
 from main import app
@@ -75,11 +76,25 @@ async def test_friend_journey_and_edge_cases():
                     "INSERT INTO conversation_member (conversation_id, member_user_id) VALUES ($1, $2), ($1, -1)",
                     sys_conv_id, uid
                 )
-
+        # ✅ 现在改成这样（给它生成一个假 jti，并写入数据库）：
+        dummy_jti_a = uuid.uuid4().hex
+        # 更新数据库
+        await conn.execute("UPDATE user_account SET current_jti = $1 WHERE user_id = $2", dummy_jti_a, user_a_id)
+        # ✅ 现在改成这样（给它生成一个假 jti，并写入数据库）：
+        dummy_jti_b = uuid.uuid4().hex
+        # 更新数据库
+        await conn.execute("UPDATE user_account SET current_jti = $1 WHERE user_id = $2", dummy_jti_b, user_b_id)
         break
 
-    token_a = create_access_token(data={"sub": str(user_a_id)})
-    token_b = create_access_token(data={"sub": str(user_b_id)})
+    # 生成包含 jti 的 Token
+    token_a = create_access_token(
+        data={
+            "sub": str(user_a_id),
+            "jti": dummy_jti_a})
+    token_b = create_access_token(
+        data={
+            "sub": str(user_b_id),
+            "jti": dummy_jti_b})
 
     headers_a = get_auth_headers(token_a)
     headers_b = get_auth_headers(token_b)
@@ -411,10 +426,16 @@ async def test_get_pending_friend_requests_success():
             VALUES ($1, $2, 'A wants C', 'pending')
         """, user_a_id, user_c_id)
 
+        dummy_jti_b = uuid.uuid4().hex
+        await conn.execute("UPDATE user_account SET current_jti = $1 WHERE user_id = $2", dummy_jti_b, user_b_id)
+
         break
 
     # 2. B 登录
-    token_b = create_access_token(data={"sub": str(user_b_id)})
+    token_b = create_access_token(
+        data={
+            "sub": str(user_b_id),
+            "jti": dummy_jti_b})
     headers_b = get_auth_headers(token_b)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:
@@ -462,9 +483,12 @@ async def test_get_pending_friend_requests_empty():
             "INSERT INTO user_account (username, password, email) VALUES ($1, $2, $3) RETURNING user_id",
             "EmptyPendingUser", hashed_pw, "empty_pending@test.com"
         )
+        dummy_jti_a = uuid.uuid4().hex
+        # 更新数据库
+        await conn.execute("UPDATE user_account SET current_jti = $1 WHERE user_id = $2", dummy_jti_a, user_id)
         break
 
-    token = create_access_token(data={"sub": str(user_id)})
+    token = create_access_token(data={"sub": str(user_id), "jti": dummy_jti_a})
     headers = get_auth_headers(token)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as client:

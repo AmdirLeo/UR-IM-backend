@@ -33,7 +33,8 @@ CREATE TABLE user_account (
     register_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     login_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     is_deleted BOOLEAN DEFAULT FALSE,
-    deleted_at TIMESTAMPTZ
+    deleted_at TIMESTAMPTZ,
+    current_jti VARCHAR(64) -- 新增：用于记录当前有效的 JWT ID，实现单设备互踢
 );
 
 -- 2. 好友关系表

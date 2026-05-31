@@ -8,13 +8,17 @@ import asyncpg
 from db.database import get_db_conn
 from db.redis_client import db_consume_idempotent_token, db_check_rate_limit, db_get_ttl
 from schemas.user import EmailRequest
+import asyncpg
 
 # 声明前端携带 Token 的标准方式：在 HTTP Header 中使用 Authorization: Bearer <token>
 # 这里的 tokenUrl 只是给 Swagger UI 测试用的提示，告诉它去哪里换取 Token
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
-def get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
+async def get_current_user_id(
+    token: str = Depends(oauth2_scheme),
+    db_session: asyncpg.Connection = Depends(get_db_conn)
+) -> int:
     """
     全局 Token 拦截与解析依赖。
     如果 Token 合法，返回解密后的 user_id；如果非法或过期，直接抛出全局 401 异常拦截请求。
@@ -26,11 +30,12 @@ def get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
 
         # 提取之前在 create_access_token 中存入的 "sub" 字段
         user_id_str = payload.get("sub")
+        token_jti = payload.get("jti")  # 👇 新增：提取 Token 里的 jti
 
-        if user_id_str is None:
+        if user_id_str is None or token_jti is None:
             raise BusinessException(status_code=401, detail="无效的凭证载荷")
 
-        return int(user_id_str)
+        user_id = int(user_id_str)
 
     except jwt.ExpiredSignatureError:
         # 捕获 Token 过期异常
@@ -38,6 +43,25 @@ def get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
     except jwt.InvalidTokenError:
         # 捕获 Token 签名错误、被篡改或格式错误等异常
         raise BusinessException(status_code=401, detail="无效的身份凭证")
+
+    # 👇👇👇 新增核心逻辑：查库校验 JTI 👇👇👇
+    current_jti = await db_session.fetchval(
+        "SELECT current_jti FROM user_account WHERE user_id = $1",
+        user_id
+    )
+    # 1. 如果查出来是 NULL，说明账号被注销，或者管理员主动废弃了该用户的所有 Token
+    if current_jti is None:
+        raise BusinessException(status_code=401, detail="账号已注销或登录已失效")
+
+    # 互踢拦截：如果 Token 里的 jti 和数据库里最新登记的不一致
+    if current_jti != token_jti:
+        raise BusinessException(
+            status_code=401,
+            detail="您的账号已在其他设备登录，您已被强制下线"
+        )
+    # 👆👆👆 新增核心逻辑结束 👆👆👆
+
+    return user_id
 
 
 # ==========================================

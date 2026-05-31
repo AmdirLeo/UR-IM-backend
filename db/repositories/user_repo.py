@@ -98,7 +98,8 @@ async def db_delete_user(conn: asyncpg.Connection, user_id: int):
         password = 'DELETED_' || gen_random_uuid(), -- 销毁密码，防止再次登录
         email = 'deleted_' || user_id || '@deleted.local', -- 脱敏邮箱，释放原邮箱占用（视需求而定）
         is_deleted = TRUE,
-        deleted_at = CURRENT_TIMESTAMP
+        deleted_at = CURRENT_TIMESTAMP,
+        current_jti = NULL
     WHERE user_id = $1 AND is_deleted = FALSE;
     """
 

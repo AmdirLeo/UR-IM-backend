@@ -182,8 +182,24 @@ async def login_service(conn, login_data: UserLogin) -> LoginResponse:
     if not verify_password(login_data.password, hashed_pwd):
         raise BusinessException(status_code=400, detail="账号不存在或密码错误")
 
+    # 1. 生成本次登录的唯一标识符
+    jti = uuid.uuid4().hex
+
+    # 2. 将最新的 jti 更新到数据库中 (你可以选择新写一个 DB 函数，或者直接在这里 execute)
+    await conn.execute(
+        "UPDATE user_account SET current_jti = $1 WHERE user_id = $2",
+        jti, user["user_id"]
+    )
+
+    # 3. 将 jti 加入到 JWT 的 payload 中
+    access_token = create_access_token(
+        data={
+            "sub": str(user["user_id"]),
+            "jti": jti  # 👈 核心：把票据编号写进 Token
+        }
+    )
+
     await db_update_user_login_time(conn, user["user_id"])
-    access_token = create_access_token(data={"sub": str(user["user_id"])})
 
     return LoginResponse(code=200, token=access_token)
 

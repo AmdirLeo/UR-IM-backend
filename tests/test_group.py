@@ -4,6 +4,7 @@ import json
 from httpx import AsyncClient, ASGITransport
 from typing import Dict, cast
 from unittest.mock import patch
+import uuid
 
 # 引入项目核心依赖
 from main import app
@@ -97,12 +98,32 @@ async def test_group_journey_and_edge_cases():
                     "INSERT INTO conversation_member (conversation_id, member_user_id) VALUES ($1, $2), ($1, -2)",
                     conv_id, uid
                 )
+        dummy_jti_owner = uuid.uuid4().hex
+        dummy_jti_admin = uuid.uuid4().hex
+        dummy_jti_member = uuid.uuid4().hex
+        dummy_jti_stranger = uuid.uuid4().hex
+        await conn.execute("UPDATE user_account SET current_jti = $1 WHERE user_id = $2", dummy_jti_owner, user_owner_id)
+        await conn.execute("UPDATE user_account SET current_jti = $1 WHERE user_id = $2", dummy_jti_admin, user_admin_id)
+        await conn.execute("UPDATE user_account SET current_jti = $1 WHERE user_id = $2", dummy_jti_member, user_member_id)
+        await conn.execute("UPDATE user_account SET current_jti = $1 WHERE user_id = $2", dummy_jti_stranger, user_stranger_id)
         break  # 取一次连接执行完毕即可
     # 为用户生成真实的 JWT Token，完美通过路由的鉴权依赖
-    token_owner = create_access_token(data={"sub": str(user_owner_id)})
-    token_admin = create_access_token(data={"sub": str(user_admin_id)})
-    token_member = create_access_token(data={"sub": str(user_member_id)})
-    token_stranger = create_access_token(data={"sub": str(user_stranger_id)})
+    token_owner = create_access_token(
+        data={
+            "sub": str(user_owner_id),
+            "jti": dummy_jti_owner})
+    token_admin = create_access_token(
+        data={
+            "sub": str(user_admin_id),
+            "jti": dummy_jti_admin})
+    token_member = create_access_token(
+        data={
+            "sub": str(user_member_id),
+            "jti": dummy_jti_member})
+    token_stranger = create_access_token(
+        data={
+            "sub": str(user_stranger_id),
+            "jti": dummy_jti_stranger})
     headers_owner = get_auth_headers(token_owner)
     headers_admin = get_auth_headers(token_admin)
     headers_member = get_auth_headers(token_member)
@@ -1411,11 +1432,15 @@ async def test_group_invite_triggers_assistant_card(mock_ws_send):
                 user_member_id, user_invitee_id
             )
             # 👆👆👆 新增结束 👆👆👆
-
+            dummy_jti_member = uuid.uuid4().hex
+            await conn.execute("UPDATE user_account SET current_jti = $1 WHERE user_id = $2", dummy_jti_member, user_member_id)
             break
 
         # 2. 普通成员登录
-        token_member = create_access_token(data={"sub": str(user_member_id)})
+        token_member = create_access_token(
+            data={
+                "sub": str(user_member_id),
+                "jti": dummy_jti_member})
         headers_member = get_auth_headers(token_member)
 
         # 3. 成员邀请新人入群

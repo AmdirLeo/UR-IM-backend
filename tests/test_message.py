@@ -2,6 +2,7 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 from typing import Dict
 import json
+import uuid
 
 # 引入项目核心依赖
 from main import app
@@ -62,11 +63,26 @@ async def test_message_journey_and_edge_cases(mock_ws_send):
             user_a_id,
             user_b_id,
         )
+        # ✅ 现在改成这样（给它生成一个假 jti，并写入数据库）：
+        dummy_jti_a = uuid.uuid4().hex
+        # 更新数据库
+        await conn.execute("UPDATE user_account SET current_jti = $1 WHERE user_id = $2", dummy_jti_a, user_a_id)
+        # ✅ 现在改成这样（给它生成一个假 jti，并写入数据库）：
+        dummy_jti_b = uuid.uuid4().hex
+        # 更新数据库
+        await conn.execute("UPDATE user_account SET current_jti = $1 WHERE user_id = $2", dummy_jti_b, user_b_id)
         break  # 取一次连接执行完毕即可
 
     # 为用户生成真实的 JWT Token
-    token_a = create_access_token(data={"sub": str(user_a_id)})
-    token_b = create_access_token(data={"sub": str(user_b_id)})
+    # 生成包含 jti 的 Token
+    token_a = create_access_token(
+        data={
+            "sub": str(user_a_id),
+            "jti": dummy_jti_a})
+    token_b = create_access_token(
+        data={
+            "sub": str(user_b_id),
+            "jti": dummy_jti_b})
 
     headers_a = get_auth_headers(token_a)
     headers_b = get_auth_headers(token_b)

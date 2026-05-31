@@ -4,6 +4,7 @@ from unittest.mock import patch, AsyncMock
 import jwt
 import os
 from typing import Dict
+import uuid
 
 # 导入 app，conftest.py 会自动接管数据库配置
 from main import app
@@ -186,7 +187,37 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
                 "id": VALID_EMAIL, "password": VALID_PASSWORD}
         )
         assert response.status_code == 200
-        token = response.json()["token"]
+
+        # ---------------------------------------------------------
+        # 👇👇👇 新增：6.5 测试单点登录（设备互踢）功能 👇👇👇
+        # ---------------------------------------------------------
+        # 模拟设备 A 登录
+        res_device_a = await client.post(
+            LOGIN_API_PATH, json={"id": VALID_EMAIL, "password": VALID_PASSWORD}
+        )
+        token_a = res_device_a.json()["token"]
+
+        # 模拟设备 B 登录（此时数据库的 current_jti 被更新为 B 的）
+        res_device_b = await client.post(
+            LOGIN_API_PATH, json={"id": VALID_EMAIL, "password": VALID_PASSWORD}
+        )
+        token_b = res_device_b.json()["token"]
+
+        # 验证设备 A 的 Token 被判定为失效 (401)
+        res_kick = await client.get(
+            "/api/user/info", headers=get_auth_headers(token_a)
+        )
+        assert res_kick.status_code == 401
+        assert "其他设备登录" in res_kick.text
+
+        # 验证设备 B 的 Token 依然有效 (200)
+        res_success = await client.get(
+            "/api/user/info", headers=get_auth_headers(token_b)
+        )
+        assert res_success.status_code == 200
+
+        # ⚠️ 非常重要：更新后续流程使用的 token 为存活的 token_b，防止后续测试全部 401 失败
+        # 👆👆👆 互踢测试结束 👆👆👆
 
         response = await client.post(
             LOGIN_API_PATH, json={
@@ -194,6 +225,22 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
         )
         assert response.status_code == 200
         assert "token" in response.json()
+        token = response.json()["token"]
+
+        # ---------------------------------------------------------
+        # 6.6 测试成功获取个人信息 (原孤立测试)
+        # ---------------------------------------------------------
+        # 此时手里拿着刚刚登录成功的 token
+        res_info = await client.get(
+            "/api/user/info",
+            headers=get_auth_headers(token)
+        )
+        assert res_info.status_code == 200
+        info_data = res_info.json()
+        assert info_data["code"] == 200
+        assert "id" in info_data
+        assert info_data["email"] == VALID_EMAIL
+        # 验证能查到数据即可，不需要像 Mock 那样写死具体的 ID
 
         # ---------------------------------------------------------
         # 7. Access protected route with invalid/missing JWT (401)
@@ -467,54 +514,14 @@ async def test_user_journey_and_edge_cases(mock_generate_code):
             assert member_count == 0, "强力注销后，群聊成员没有被物理清空！"
             break
 
-
-@pytest.mark.asyncio
-async def test_get_user_info_success():
-    """测试成功获取个人信息"""
-    # 1. 签发测试 Token (假设当前登录用户 ID 为 1)
-    test_token = create_access_token(data={"sub": "1"})
-    headers = {"Authorization": f"Bearer {test_token}"}
-    # 2. 伪造数据库返回的字典数据
-    mock_user_data = {
-        "user_id": 1,
-        "username": "TestUser",
-        "email": "test@example.com",
-        "avatar_url": "/static/avatars/test.png",
-    }
-    # 3. 拦截数据库查询操作 (Repository层)，让它直接返回伪造数据
-    with patch(
-        "services.user_service.db_get_user_by_id", new_callable=AsyncMock
-    ) as mock_db:
-        mock_db.return_value = mock_user_data
-        # 4. 发起 HTTP GET 请求
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://testserver"
-        ) as ac:
-            response = await ac.get("/api/user/info", headers=headers)
-        # 5. 极其严谨的断言
-        assert response.status_code == 200
-        data = response.json()
-        assert data["code"] == 200
-        assert data["id"] == 1
-        assert data["username"] == "TestUser"
-        assert data["email"] == "test@example.com"
-        assert data["avatar_url"] == "/static/avatars/test.png"
-
-
-@pytest.mark.asyncio
-async def test_get_user_info_not_found():
-    """测试 Token 合法但数据库中找不到该用户（比如账号刚被注销）"""
-    test_token = create_access_token(data={"sub": "999"})
-    headers = {"Authorization": f"Bearer {test_token}"}
-    with patch(
-        "services.user_service.db_get_user_by_id", new_callable=AsyncMock
-    ) as mock_db:
-        # 模拟数据库查不到人，返回 None
-        mock_db.return_value = None
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://testserver"
-        ) as ac:
-            response = await ac.get("/api/user/info", headers=headers)
-        # 断言会被 Service 层拦截并抛出 404
-        assert response.status_code == 404
-        assert "用户不存在" in response.text
+        # =========================================================
+        # 🌟 新增：10f. 测试 Token 合法但数据库中找不到该用户 (原孤立测试)
+        # =========================================================
+        # 此时用户刚刚经过 delete/force 被物理删除了，但 new_token_for_delete 在时间上还没过期
+        res_info_not_found = await client.get(
+            "/api/user/info",
+            headers=delete_headers  # 拿着注销前生成的有效 Token 去请求
+        )
+        # 预期：鉴权层通过了 Token 格式校验，但在 Service 层查库时发现人没了
+        assert res_info_not_found.status_code == 401
+        assert "已注销" in res_info_not_found.text or "失效" in res_info_not_found.text
