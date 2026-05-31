@@ -68,11 +68,20 @@ async def create_group_service(
 
     if not req.user_ids:
         raise GroupException(GroupErrors.InvalidRequest, "好友列表不能为空")
+
+    valid_friend_ids = await db_filter_valid_friends(
+        db_session, current_user_id, req.user_ids
+    )
+
+    if not valid_friend_ids:
+        # 如果传过来的所有 ID 都不是当前用户的好友，直接按照统一格式阻断
+        raise GroupException(GroupErrors.PermissionDenied)
+
     # 假设如果被邀请的人不存在或者其他问题，在底层的 db 层（没有提及详细错误，但通常由外键抛出或忽略）处理
     conv_id = await db_create_group(
         conn=db_session,
         creator_id=current_user_id,
-        member_ids=req.user_ids,
+        member_ids=valid_friend_ids,
         avatar_url=req.avatar,
         group_name=req.name,
     )
@@ -96,7 +105,7 @@ async def create_group_service(
         conn=db_session,
         conversation_id=conv_id,
         creator_id=current_user_id,
-        member_ids=req.user_ids,
+        member_ids=valid_friend_ids,
     )
 
     return {"conversation_id": conv_id, "name": req.name, "avatar": avatar_url}

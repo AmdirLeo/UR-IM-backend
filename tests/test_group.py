@@ -73,6 +73,13 @@ async def test_group_journey_and_edge_cases():
         user_non_friend_id = await db_create_user(
             conn, "pure_stranger", hashed_pw, "pure_stranger@test.com"
         )
+        await conn.execute("""
+                INSERT INTO friend_relationship (user_id, friend_user_id)
+                VALUES
+                    ($1, $2), ($2, $1),
+                    ($1, $3), ($3, $1)
+                ON CONFLICT DO NOTHING;
+            """, user_owner_id, user_admin_id, user_member_id)
         # 👇 新增：为每个用户创建与群聊助手(-2)的私聊会话
         for uid in [
                 user_owner_id,

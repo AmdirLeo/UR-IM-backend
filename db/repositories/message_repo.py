@@ -375,6 +375,11 @@ async def db_filter_messages(
     群聊消息全能筛选器 (支持动态条件 + 游标分页 + 尊重本地删除逻辑)
     """
 
+    # 1. 安全防线：必须是该会话的成员才能看聊天记录
+    check_query = QUERY_CHECK_MEMBER_EXISTS
+    if not await conn.fetchval(check_query, conversation_id, user_id):
+        raise MessageException(MessageErrors.NotInConversation)
+
     # 1. 基础查询：从当前用户的收件箱出发，连表查出全局消息和会话映射表(拿 seq_id)
     base_query = """
         SELECT

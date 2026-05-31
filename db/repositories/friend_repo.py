@@ -153,6 +153,15 @@ async def db_handle_friend_request(
 
         sender_id = req_record["sender_id"]
 
+        # 1. 校验是否已经是好友
+        is_already_friend = await conn.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM friend_relationship WHERE user_id = $1 AND friend_user_id = $2)",
+            sender_id,
+            current_user_id,
+        )
+        if is_already_friend:
+            raise FriendException(FriendErrors.AlreadyFriends)
+
         # 2. 【核心修复】检查发送者是否还存活（处理注销账号的情况）
         is_sender_alive = False
         if sender_id is not None:
@@ -426,6 +435,7 @@ async def db_add_friends_to_tag(
         user_id: int,
         tag_name: str,
         friend_ids: list[int]) -> None:
+
     check_tag = await conn.fetchval(
         "SELECT EXISTS(SELECT 1 FROM user_friend_tag WHERE user_id = $1 AND tag_name = $2)",
         user_id,
@@ -433,6 +443,18 @@ async def db_add_friends_to_tag(
     )
     if not check_tag:
         raise BusinessException(status_code=404, detail=ERR_TAG_NOT_FOUND)
+
+    # 2. 鉴权：验证传入的所有 friend_ids 是否确实是该用户的真实好友
+    # 通过对比 friend_relationship 表，确保所有 fid 都在 user_id 的好友名单中
+    valid_friends = await conn.fetch(
+        "SELECT friend_user_id FROM friend_relationship WHERE user_id = $1 AND friend_user_id = ANY($2)",
+        user_id, friend_ids
+    )
+    valid_friend_ids = [r['friend_user_id'] for r in valid_friends]
+
+    # 如果查出来的合法好友少于传入的列表，说明包含非好友
+    if len(valid_friend_ids) < len(friend_ids):
+        raise BusinessException(status_code=400, detail="包含非好友ID")
 
     # 组装批量插入的数据: [(user_id, friend_id_1, tag), (user_id, friend_id_2, tag)...]
     records = [(user_id, fid, tag_name) for fid in friend_ids]

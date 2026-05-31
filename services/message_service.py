@@ -86,6 +86,10 @@ async def send_message_service(
     # ==========================================
     # 1. 新增：组装统一的 JSONB 载荷
     # ==========================================
+    if req.msg_type.value != "text" and user_id > 0 and req.extra_data[
+            "action"] != "group_announcement":
+        raise MessageException(MessageErrors.InvalidMessage)
+
     msg_body_dict = {
         "type": req.msg_type.value,
         "content": req.message_content,

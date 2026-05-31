@@ -50,20 +50,23 @@ class FriendListResponse(BaseResponse):
 
 
 class TagCreateRequest(BaseModel):
-    tag_name: str = Field(..., description="标签名称")
+    tag_name: str = Field(..., min_length=1, max_length=50, description="标签名称")
 
 
 class TagDeleteRequest(BaseModel):
-    tag_name: str = Field(..., description="标签名称")
+    tag_name: str = Field(..., min_length=1, max_length=50, description="标签名称")
 
 
 class TagAddFriendRequest(BaseModel):
-    tag_name: str = Field(..., description="标签名称")
-    friend_ids: list[int] = Field(..., description="好友ID列表")
+    tag_name: str = Field(..., min_length=1, max_length=50, description="标签名称")
+    friend_ids: list[int] = Field(...,
+                                  min_length=1,
+                                  max_length=50,
+                                  description="好友ID列表")
 
 
 class TagQueryRequest(BaseModel):
-    tag_name: str = Field(..., description="标签名称")
+    tag_name: str = Field(..., min_length=1, max_length=50, description="标签名称")
 
 
 class FriendTagQueryResponse(BaseModel):
