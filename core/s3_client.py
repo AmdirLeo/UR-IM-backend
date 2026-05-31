@@ -109,7 +109,7 @@ async def upload_image_to_s3(
             detail=f"{err_msg_prefix}文件保存至云存储失败")
 
     # 6. 拼接公网 URL
-    protocol = "https" if settings.S3_SECURE else "http"
+    protocol = "https" if settings.MINIO_USE_HTTPS else "http"
     public_url = f"{protocol}://{settings.S3_PUBLIC_DOMAIN}/{bucket_name}/{object_name}"
 
     return object_name, public_url

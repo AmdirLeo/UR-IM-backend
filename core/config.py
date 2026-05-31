@@ -29,7 +29,8 @@ class Settings(BaseSettings):
     # 账号密码与你定制的 MinIO 镜像保持严格一致
     S3_ACCESS_KEY: str = "IM_Admin_8w2P"
     S3_SECRET_KEY: str = "X9vM4cK7zL1qN5bY"
-    S3_SECURE: bool = True  # 内网 http 通信用 False
+    S3_SECURE: bool = False  # 内网 http 通信用 False
+    MINIO_USE_HTTPS: bool = True
 
     # 存储桶规划
     BUCKET_AVATAR: str = "avatars"
