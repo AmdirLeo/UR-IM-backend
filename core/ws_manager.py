@@ -24,28 +24,24 @@ class ConnectionManager:
                     "msg_type": "kicked_out",
                     "message": "您的账号已在其他设备登录，您已被强制下线。"
                 })
-                # 2. 强制关闭旧连接，并带上 1008 状态码（表示违反策略）
-                await old_ws.close(code=1008)
             except Exception as e:
                 print(f"发送踢出通知时出现异常: {e}")
             # 👆 --------------------------------------
 
-            await self.disconnect(user_id)
+            await self.disconnect(user_id, code=1008)
 
         self.active_connections[user_id] = {
             "ws": websocket, "last_active": time.time()}
 
-    async def disconnect(self, user_id: int):
+    async def disconnect(self, user_id: int, code: int = 1000):
         """主动断开并清理内存"""
-        if user_id in self.active_connections:
-            ws = self.active_connections[user_id]["ws"]
+        connection = self.active_connections.pop(user_id, None)
+        if connection:
+            ws = connection["ws"]
             try:
-                await ws.close()
+                await ws.close(code=code)
             except Exception:
                 pass
-            self.active_connections.pop(user_id, None)
-
-            # 【预留给数据库同学 TODO】: 在这里异步更新数据库，将用户的在线状态设为 False，更新最后离线时间
 
     def update_heartbeat(self, user_id: int):
         """刷新用户的最后活跃时间"""
