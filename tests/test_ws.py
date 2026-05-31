@@ -5,11 +5,37 @@ import jwt
 from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
+from unittest.mock import AsyncMock
 
 from main import app
 from core.security import create_access_token
 from core.ws_manager import manager
 from core.config import settings
+
+# 👈 新增导入获取数据库连接的函数
+from db.database import get_db_conn
+
+
+async def override_get_db_conn():
+    mock_conn = AsyncMock()
+    # 当鉴权代码执行 await db_session.fetchval 时，永远返回这个固定的 JTI
+    mock_conn.fetchval.return_value = "fixed-test-ws-jti"
+    yield mock_conn
+
+# 覆盖真实应用中的依赖
+
+
+@pytest.fixture(autouse=True)
+def apply_dependency_override():
+    """
+    这个 fixture 只在 test_ws.py 这个文件里生效。
+    在执行每个 WS 测试前替换依赖，测试结束后立刻还原。
+    这样就不会污染其他 HTTP 测试了！
+    """
+    app.dependency_overrides[get_db_conn] = override_get_db_conn
+    yield
+    app.dependency_overrides.clear()  # 测试结束后务必清空！
+
 
 # 1. 初始化测试客户端（关闭服务器内部异常抛出）
 client = TestClient(app, raise_server_exceptions=False)
@@ -17,7 +43,17 @@ client = TestClient(app, raise_server_exceptions=False)
 
 # 2. 辅助函数：快速生成带有有效 Token 的 WebSocket URL
 def get_ws_url(user_id: int) -> str:
-    token = create_access_token(data={"sub": str(user_id)})
+    payload = {
+        "sub": str(user_id),
+        "jti": "fixed-test-ws-jti",  # 👈 必须和上面 Mock DB 返回的一致！
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=30)
+    }
+    # 自己生成 Token，不调用会操作真实数据库的 create_access_token
+    token = jwt.encode(
+        payload,
+        settings.JWT_SECRET_KEY,
+        algorithm=getattr(settings, "ALGORITHM", "HS256")
+    )
     return f"/websocket/ws?token={token}"
 
 

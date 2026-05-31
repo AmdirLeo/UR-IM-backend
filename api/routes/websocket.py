@@ -4,13 +4,18 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, status
 from core.ws_manager import manager
 from core.config import settings
 from typing import Optional, Dict, Any
+from fastapi import Depends
+import asyncpg
+from db.database import get_db_conn
 
 router = APIRouter()
 
 
 async def authenticate_websocket(
         websocket: WebSocket,
-        token: str) -> Optional[int]:
+        token: str,
+        db_session: asyncpg.Connection
+) -> Optional[int]:
     """提取鉴权逻辑：返回 user_id 或 None"""
     try:
         payload = jwt.decode(
@@ -19,8 +24,22 @@ async def authenticate_websocket(
             algorithms=[getattr(settings, "ALGORITHM", "HS256")]
         )
         user_id_str = payload.get("sub")
-        if user_id_str:
-            return int(user_id_str)
+        token_jti = payload.get("jti")  # 👇 提取 Token 里的 jti
+        if not user_id_str or not token_jti or not str(user_id_str).isdigit():
+            return None
+        user_id = int(user_id_str)
+
+        # 👇👇👇 核心防御：查库校验 JTI
+        current_jti = await db_session.fetchval(
+            "SELECT current_jti FROM user_account WHERE user_id = $1",
+            user_id
+        )
+        # 如果查不到 JTI（账号注销），或者 JTI 不匹配（被其他设备踢出）
+        if current_jti is None or current_jti != token_jti:
+            return None  # 鉴定为非法重连，直接返回 None
+        # 👆👆👆
+
+        return user_id
     except (jwt.InvalidTokenError, ValueError):
         pass
 
@@ -62,10 +81,11 @@ async def websocket_endpoint(
     websocket: WebSocket,
     # 要求前端通过 ?token=xxx 传入 JWT
     token: str = Query(..., description="JWT Token"),
+    db_session: asyncpg.Connection = Depends(get_db_conn)
 ):
     await websocket.accept()
     # 1. 鉴权阶段
-    user_id = await authenticate_websocket(websocket, token)
+    user_id = await authenticate_websocket(websocket, token, db_session)
     if user_id is None:
         # 鉴权失败：告知客户端后关闭
         await websocket.send_json({"type": "error", "message": "鉴权失败，无效的 Token"})
